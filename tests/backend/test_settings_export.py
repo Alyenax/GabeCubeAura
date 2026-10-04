@@ -86,7 +86,7 @@ class SettingsExportTests(unittest.TestCase):
             )
 
             self.assertEqual(payload["schema_version"], 1)
-            self.assertEqual(payload["configuration"]["global"]["mode"], "performance")
+            self.assertEqual(payload["configuration"]["global"]["mode"], "audio_sync")
             self.assertNotIn("display_profiles", payload["configuration"]["global"])
             self.assertNotIn("launch_artwork_profiles", payload["configuration"]["global"])
             self.assertEqual(payload["configuration"]["profiles"]["display_by_appid"], {"42": "artwork"})
@@ -94,6 +94,18 @@ class SettingsExportTests(unittest.TestCase):
             self.assertEqual(payload["configuration"]["current_game"]["display"]["mode"], "artwork")
             self.assertEqual(payload["configuration"]["current_game"]["artwork"]["manual_y"], 0.83)
             self.assertNotIn("controllers", payload["configuration"])
+
+    def test_export_flattens_active_display_preset_without_local_restore_state(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = SettingsStore(str(Path(directory) / "config.json"))
+            store.update({"display_preset": "essential"})
+            exported = build_configuration_export(store, "1.3.1")
+            values = exported["configuration"]["global"]
+            self.assertEqual(values["display_preset"], "custom")
+            self.assertNotIn("display_preset_restore", values)
+            self.assertEqual(values["home_display"], "blackout")
+            self.assertEqual(values["game_display"], "blackout")
+            self.assertEqual(values["valve_ownership_policy"], "downloads")
 
     def test_write_is_readable_and_reports_exact_path(self):
         with tempfile.TemporaryDirectory() as directory:

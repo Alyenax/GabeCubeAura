@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
-from signalbar.models import ProviderOutput, normalize_frame
+from signalbar.models import LED_COUNT, ProviderOutput, normalize_frame
 from signalbar.providers.events import RED
+
+
+BLACKOUT_FRAME = normalize_frame([(0, 0, 0)] * LED_COUNT)
 
 
 class Arbiter:
@@ -23,6 +26,7 @@ class Arbiter:
                recording_marker_isolation=False, performance_always=False,
                controller_event=None, controller_base=None, weather_base=None,
                customization_base=None, screen_sync_base=None, screen_sync_fallback=None,
+               audio_sync_base=None,
                launch_artwork=None, steam_priority=False, companion_hud_active=False):
         if mode == "disabled":
             return ProviderOutput("none", None, "GabeCubeAura disabled")
@@ -50,7 +54,9 @@ class Arbiter:
 
         if weather_base is not None and weather_base.provider == "weather:preview" and weather_base.frame is not None:
             return self._with_recording_marker(weather_base, recording_marker, recording_marker_isolation)
-        if customization_base is not None and customization_base.provider == "customization:preview" and customization_base.frame is not None:
+        if customization_base is not None \
+                and customization_base.provider in {"customization:preview", "customization:calibration"} \
+                and customization_base.frame is not None:
             return self._with_recording_marker(customization_base, recording_marker, recording_marker_isolation)
 
         # TW3 SteamRGB owns the continuous in-game HUD only. GabeCubeAura's
@@ -79,10 +85,28 @@ class Arbiter:
                 recording_marker_isolation,
             )
 
+        if mode == "audio_sync":
+            base = (
+                audio_sync_base
+                if audio_sync_base is not None and audio_sync_base.frame is not None
+                else ProviderOutput("none", None, "Audio Sync unavailable")
+            )
+            return self._with_recording_marker(
+                base,
+                recording_marker and base.provider.startswith("audio-sync"),
+                recording_marker_isolation,
+            )
+
         if controller_base is not None and controller_base.frame is not None:
             return self._with_recording_marker(controller_base, recording_marker, recording_marker_isolation)
         if weather_base is not None and weather_base.frame is not None:
             return self._with_recording_marker(weather_base, recording_marker, recording_marker_isolation)
+
+        if mode == "blackout":
+            return ProviderOutput(
+                "blackout", BLACKOUT_FRAME,
+                "LEDs held off while GabeCubeAura retains ownership",
+            )
 
         if mode == "events":
             return ProviderOutput("none", None, "No permanent GabeCubeAura display selected here")
@@ -102,6 +126,6 @@ class Arbiter:
             base = idle
 
         return self._with_recording_marker(
-            base, recording_marker and base.provider.startswith(("performance", "artwork", "customization", "screen-sync")),
+            base, recording_marker and base.provider.startswith(("performance", "artwork", "customization", "screen-sync", "audio-sync")),
             recording_marker_isolation,
         )

@@ -91,6 +91,16 @@ class ScreenSyncProcessorTests(unittest.TestCase):
         self.assertGreater(frame[0][0], 100)
         self.assertGreater(frame[0][2], 100)
 
+    def test_audio_palette_keeps_the_raw_gamescope_sample(self):
+        processor = ScreenSyncProcessor()
+        raw = bgrx_frame(lambda row, column: (row * 10, column * 7, 90))
+        processor.process(raw, style="ambient", brightness=34)
+        self.assertEqual(len(processor.palette_samples), CAPTURE_WIDTH * CAPTURE_HEIGHT)
+        self.assertEqual(processor.palette_samples[0], (0, 0, 90))
+        self.assertEqual(processor.palette_samples[-1], (170, 231, 90))
+        processor.reset()
+        self.assertEqual(processor.palette_samples, ())
+
     def test_black_bars_are_only_ignored_after_three_consistent_frames(self):
         raw = bgrx_frame(
             lambda row, _column: (0, 0, 0) if row < 3 or row >= CAPTURE_HEIGHT - 2 else (0, 200, 40)
@@ -555,6 +565,17 @@ class ScreenSyncProviderTests(unittest.TestCase):
         values["stripmine_priority_screen_sync"] = "stripmine"
         self.assertFalse(should_run(values, True, False, True, True))
 
+    def test_audio_screen_sync_palette_requests_capture_without_a_running_game(self):
+        values = {
+            "audio_sync_style": "slow-prism",
+            "audio_sync_palette": "screen-sync",
+        }
+        self.assertTrue(Engine._audio_screen_capture_should_run(values, True))
+        values["audio_sync_palette"] = "sapphire"
+        self.assertFalse(Engine._audio_screen_capture_should_run(values, True))
+        values["audio_sync_palette"] = "screen-sync"
+        self.assertFalse(Engine._audio_screen_capture_should_run(values, False))
+
     def test_screen_sync_settings_validate_and_route_per_game(self):
         with tempfile.TemporaryDirectory() as directory:
             store = SettingsStore(str(Path(directory) / "settings.json"))
@@ -619,6 +640,7 @@ class ScreenSyncProviderTests(unittest.TestCase):
             {"performance": frame("performance")},
             {"weather_base": frame("weather:home")},
             {"controller_base": frame("controller:battery")},
+            {"audio_sync_base": frame("audio-sync:spectrum")},
         )
         for display in permanent_displays:
             with self.subTest(display=next(iter(display))):

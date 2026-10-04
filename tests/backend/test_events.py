@@ -315,7 +315,8 @@ class EventTests(unittest.TestCase):
                             hardware_factory=lambda: hardware)
             engine.update_settings({"mode": "artwork", "events_enabled": True,
                                     "event_notification_variant": "notification-original", "performance_always": False,
-                                    "controller_battery_display": "off"})
+                                    "controller_battery_display": "off",
+                                    "valve_ownership_policy": "cooperative"})
             engine.start()
             try:
                 self.assertTrue(self._wait_until(
@@ -463,7 +464,8 @@ class EventTests(unittest.TestCase):
             settings = SettingsStore(str(Path(folder) / "settings.json"))
             engine = Engine(settings, str(Path(folder) / "artwork.json"),
                             hardware_factory=lambda: hardware)
-            engine.update_settings({"events_enabled": True})
+            engine.update_settings({"events_enabled": True,
+                                    "valve_ownership_policy": "cooperative"})
             engine.start()
             try:
                 self.assertTrue(self._wait_until(

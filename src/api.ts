@@ -27,7 +27,16 @@ export const submitArtwork = callable<[
 ], Status>("submit_artwork");
 export const previewLaunchArtwork = callable<[], boolean>("preview_launch_artwork");
 export const previewCustomization = callable<[], boolean>("preview_customization");
-export const setSteamActivity = callable<[active: boolean, reason: string], boolean>("set_steam_activity");
+export const previewLightCalibration = callable<[], Status>("preview_light_calibration");
+export interface SteamActivityPolicy {
+  ownership_policy: "cooperative" | "downloads" | "critical";
+  suppress_download_animation: boolean;
+  restore_download_animation: boolean;
+}
+
+export const setSteamActivity = callable<[
+  active: boolean, reason: string,
+], SteamActivityPolicy>("set_steam_activity");
 export const setScreenSyncContext = callable<[
   context: "steam-screensaver",
   active: boolean,
@@ -35,6 +44,7 @@ export const setScreenSyncContext = callable<[
   detail: string,
 ], boolean>("set_screen_sync_context");
 export const previewScreenSync = callable<[], Status>("preview_screen_sync");
+export const previewAudioSync = callable<[], Status>("preview_audio_sync");
 export const reportRuntimeDiagnostic = callable<[
   event: string,
   appid: number,
@@ -66,8 +76,11 @@ export const setUpdatePreferences = callable<[
   autoCheck: boolean,
   notifications: boolean,
   checkIntervalMinutes: number,
-  channel: "stable" | "beta",
+  channel: "stable" | "beta" | "private",
 ], UpdateStatus>("set_update_preferences");
+export const startPrivateUpdateAuthorization = callable<[], UpdateStatus>("start_private_update_authorization");
+export const pollPrivateUpdateAuthorization = callable<[], UpdateStatus>("poll_private_update_authorization");
+export const disconnectPrivateUpdateAuthorization = callable<[], UpdateStatus>("disconnect_private_update_authorization");
 export const acknowledgeUpdateNotification = callable<[version: string], UpdateStatus>("acknowledge_update_notification");
 export const dismissUpdateError = callable<[], UpdateStatus>("dismiss_update_error");
 export const runUpdateLabScenario = callable<[scenario: UpdateLabResult["scenario"]], UpdateLabResult>("run_update_lab_scenario");

@@ -177,11 +177,39 @@ class LaunchArtworkTests(unittest.TestCase):
             self.assertEqual(engine.launch_palette.status(2)["dominant_colors"], PALETTES["2"])
             self.assertNotEqual(engine.artwork.cache_path, engine.launch_palette.cache_path)
 
-    def test_launch_settings_are_opt_in_and_clamped(self):
+    def test_artwork_vibrance_recolours_detected_launch_palette_but_not_custom_palette(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = SettingsStore(str(Path(directory) / "settings.json"))
+            engine = Engine(store, str(Path(directory) / "artwork-cache.json"))
+            muted = {
+                "2": [[108, 92, 78], [70, 88, 110]],
+                "3": [[108, 92, 78], [70, 88, 110], [92, 74, 104]],
+            }
+            custom = {
+                "2": [[255, 0, 0], [0, 0, 255]],
+                "3": [[255, 0, 0], [0, 255, 0], [0, 0, 255]],
+            }
+            engine.set_game(42, "Example Game")
+            engine.submit_launch_artwork(
+                42, "header", ARTWORK_FRAME, .5, muted, "header.jpg", "header",
+            )
+            self.assertEqual(engine.launch_artwork.status(42)["dominant_colors"], muted["2"])
+
+            engine.update_artwork_settings(42, {"vibrance": 200})
+            boosted = engine.launch_artwork.status(42)["dominant_colors"]
+            self.assertNotEqual(boosted, muted["2"])
+
+            engine.update_launch_artwork_settings(42, {
+                "palette_mode": "custom", "custom_palettes": custom,
+            })
+            engine.update_artwork_settings(42, {"vibrance": 0})
+            self.assertEqual(engine.launch_artwork.status(42)["dominant_colors"], custom["2"])
+
+    def test_launch_settings_default_to_approved_configuration_and_clamp(self):
         with tempfile.TemporaryDirectory() as directory:
             store = SettingsStore(str(Path(directory) / "config.json"))
-            self.assertFalse(store.all()["launch_artwork_animation_enabled"])
-            self.assertEqual(store.all()["launch_artwork_duration_seconds"], 8)
+            self.assertTrue(store.all()["launch_artwork_animation_enabled"])
+            self.assertEqual(store.all()["launch_artwork_duration_seconds"], 5)
             store.update({
                 "launch_artwork_animation_enabled": True,
                 "launch_artwork_pattern": "not-a-pattern",

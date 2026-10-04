@@ -25,7 +25,7 @@ CAPTURE_WIDTH = 34
 CAPTURE_HEIGHT = 18
 BYTES_PER_PIXEL = 4
 FRAME_BYTES = CAPTURE_WIDTH * CAPTURE_HEIGHT * BYTES_PER_PIXEL
-CAPTURE_REVISION = "1.2.1-session-release-v7"
+CAPTURE_REVISION = "1.3.0-session-release-v7"
 CAPTURE_PROCESS_MARKER = "client-name=GabeCubeAura-Screen-Sync"
 SESSION_RESTART_SETTLE_SECONDS = 2.0
 
@@ -70,6 +70,7 @@ class ScreenSyncProcessor:
         self._bar_streak = 0
         self._stable_bars = (0, 0)
         self._black_streak = 0
+        self._palette_samples = ()
 
     def reset(self):
         self._previous = None
@@ -77,6 +78,7 @@ class ScreenSyncProcessor:
         self._bar_streak = 0
         self._stable_bars = (0, 0)
         self._black_streak = 0
+        self._palette_samples = ()
 
     def _decode(self, raw):
         expected = self.width * self.height * BYTES_PER_PIXEL
@@ -187,6 +189,11 @@ class ScreenSyncProcessor:
         black_threshold = int(_clamp(float(black_threshold), 0.0, 32.0))
         pixels = self._decode(raw)
         top, bottom = self._detect_bars(pixels, black_threshold) if ignore_black_bars else (0, 0)
+        rows = range(top, max(top + 1, self.height - bottom))
+        self._palette_samples = tuple(
+            pixels[row * self.width + column]
+            for row in rows for column in range(self.width)
+        )
         colours = self._zones(pixels, top, bottom, style)
         colours = self._adjust(colours, brightness, colour_intensity, black_threshold)
         colours = self._spatial_blur(colours)
@@ -211,6 +218,11 @@ class ScreenSyncProcessor:
     @property
     def crop(self):
         return self._stable_bars
+
+    @property
+    def palette_samples(self):
+        """Raw RGB Gamescope pixels after stable cinematic bar cropping."""
+        return self._palette_samples
 
 
 class ScreenCaptureService:
@@ -923,3 +935,7 @@ class ScreenSyncProvider:
             "crop_bottom": self.processor.crop[1],
         })
         return status
+
+    @property
+    def palette_samples(self):
+        return self.processor.palette_samples

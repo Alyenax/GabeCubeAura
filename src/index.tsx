@@ -22,6 +22,7 @@ import {
   exportUpdateTestReport,
   checkForUpdates,
   dismissUpdateError,
+  disconnectPrivateUpdateAuthorization,
   importConfiguration,
   getArtwork,
   getStatus,
@@ -29,11 +30,14 @@ import {
   installPreparedUpdate,
   previewCountdown,
   previewCustomization,
+  previewLightCalibration,
   previewLaunchArtwork,
+  previewAudioSync,
   previewScreenSync,
   previewController,
   previewWeather,
   prepareUpdate,
+  pollPrivateUpdateAuthorization,
   resetConfiguration,
   runUpdateLabScenario,
   searchWeatherCities,
@@ -42,6 +46,7 @@ import {
   setGameDisplay,
   setSetting,
   setUpdatePreferences,
+  startPrivateUpdateAuthorization,
   startFreeTimer,
   stopFreeTimer,
   submitArtwork,
@@ -57,25 +62,73 @@ import { startGabeCubeAuraRuntime } from "./runtime";
 import { startUpdateNotifications } from "./update_notifications";
 import { buildSettingsSnapshot } from "./settings_snapshot";
 import { WEATHER_CONDITIONS, WEATHER_VARIANTS } from "./weather_variants";
+import { WEATHER_ICON_STYLE_OPTIONS, weatherIconSvg } from "./weather_icon_sets";
 import { startWeatherTopBar } from "./weather_topbar";
-import type { ArtworkPayload, ArtworkSource, CompanionPriority, GameDisplay, HomeDisplay, RGB, Status, UpdateLabResult, UpdateStatus, WeatherCondition, WeatherLocation } from "./types";
+import type { ArtworkPayload, ArtworkSource, CompanionPriority, GameDisplay, HomeDisplay, RGB, Status, UpdateLabResult, UpdateStatus, WeatherCondition, WeatherIconStyle, WeatherLocation } from "./types";
 
 const HOME_DISPLAY_OPTIONS: { data: HomeDisplay; label: string }[] = [
   { data: "steam", label: "GabeCubeAura Off" },
+  { data: "blackout", label: "Blackout (held off)" },
   { data: "customization", label: "Customization+" },
   { data: "performance", label: "Performance" },
+  { data: "audio_sync", label: "Audio Sync" },
   { data: "weather", label: "Weather" },
   { data: "controller", label: "Controller status" },
 ];
 
 const GAME_DISPLAY_OPTIONS: { data: GameDisplay; label: string }[] = [
   { data: "steam", label: "GabeCubeAura Off" },
+  { data: "blackout", label: "Blackout (held off)" },
   { data: "customization", label: "Customization+" },
   { data: "artwork", label: "Artwork" },
   { data: "performance", label: "Performance" },
   { data: "screen_sync", label: "Screen Sync" },
+  { data: "audio_sync", label: "Audio Sync" },
   { data: "weather", label: "Weather" },
   { data: "controller", label: "Controller status" },
+];
+
+const DISPLAY_PRESET_OPTIONS = [
+  { data: "custom", label: "Custom" },
+  { data: "lights-out", label: "Lights out" },
+  { data: "focus", label: "Focus" },
+  { data: "essential", label: "Essential" },
+  { data: "moderate", label: "Moderate" },
+  { data: "atmosphere", label: "Atmosphere" },
+  { data: "signals", label: "Signals" },
+  { data: "immersive", label: "Immersive" },
+  { data: "immersive-plus", label: "Immersive+" },
+  { data: "festive", label: "Festive" },
+];
+
+const DISPLAY_PRESET_DESCRIPTIONS: Record<string, string> = {
+  custom: "Your detailed routing and animation settings.",
+  "lights-out": "Hold all 17 LEDs off except for the Steam Families limit and critical red safety pattern.",
+  focus: "Use only Customization+ with the Steam Families limit and critical red safety pattern.",
+  essential: "Stay black except for Steam Families, confirmed downloads and the critical red safety pattern.",
+  moderate: "Customization+ at Home, Artwork in games, Game launches, Light Events, brief controller alerts and Screen Sync during the Steam screensaver.",
+  atmosphere: "Slow Prism with the Screen Sync palette at Home, Artwork in games, Game launches, Light Events, brief controller alerts and Screen Sync during the Steam screensaver.",
+  signals: "Controller status and continuous charging at Home, CPU/GPU in games, brief controller alerts, Game launches, Light Events and Screen Sync during the Steam screensaver.",
+  immersive: "Slow Prism with the Sapphire palette at Home, Screen Sync in games, Game launches, Light Events, brief controller alerts and Screen Sync during the Steam screensaver.",
+  "immersive-plus": "Slow Prism with the Screen Sync palette at Home and in games, plus Game launches, Light Events, brief controller alerts and Screen Sync during the Steam screensaver.",
+  festive: "Slow Prism with the Screen Sync palette at Home and Aurora in games, plus Game launches, Light Events, brief controller alerts and Screen Sync during the Steam screensaver.",
+};
+
+const VALVE_OWNERSHIP_OPTIONS = [
+  { data: "cooperative", label: "Compatible" },
+  { data: "downloads", label: "Downloads + safety" },
+  { data: "critical", label: "Safety only" },
+];
+
+const VALVE_OWNERSHIP_DESCRIPTIONS: Record<string, string> = {
+  cooperative: "Yield to detected Steam or external LED activity. This is the compatibility-first behaviour.",
+  downloads: "Keep GabeCubeAura in control except for confirmed Steam downloads and the critical red safety pattern. A reversible Steam LED manager request holds the native Download mode until each transfer ends.",
+  critical: "Keep GabeCubeAura in control except for the critical red safety pattern. During confirmed downloads, a reversible Steam LED manager override prevents Download mode from starting when this Steam build exposes the required private service.",
+};
+
+const LED_OUTPUT_CALIBRATION_OPTIONS = [
+  { data: "consistent", label: "Consistent output (Recommended)" },
+  { data: "follow", label: "Follow Steam brightness" },
 ];
 
 const UPDATE_INTERVAL_OPTIONS = [
@@ -90,6 +143,7 @@ const UPDATE_INTERVAL_OPTIONS = [
 const UPDATE_CHANNEL_OPTIONS = [
   { data: "stable", label: "Stable" },
   { data: "beta", label: "Beta" },
+  { data: "private", label: "Private Lab" },
 ];
 
 const displayLabel = (display: HomeDisplay | GameDisplay) => (
@@ -152,6 +206,73 @@ const SCREEN_SYNC_REACTIVITY_OPTIONS = [
 const SCREEN_SYNC_COLOUR_OPTIONS = [
   { data: "natural", label: "Natural" },
   { data: "vivid", label: "Vivid" },
+];
+
+const AUDIO_SYNC_STYLE_OPTIONS = [
+  { data: "spectrum", label: "17-band spectrum" },
+  { data: "audio-pulse", label: "Audio pulse" },
+  { data: "bass", label: "Bass pulse" },
+  { data: "constellation", label: "Constellation" },
+  { data: "hifi-crest", label: "Hi-Fi Crest" },
+  { data: "negative-bloom", label: "Negative Bloom" },
+  { data: "slow-prism", label: "Slow Prism" },
+  { data: "spatial", label: "Stereo field" },
+  { data: "stereo-lanterns", label: "Stereo Lanterns" },
+  { data: "velvet-relay", label: "Velvet Relay" },
+];
+const ADAPTIVE_AUDIO_STYLES = AUDIO_SYNC_STYLE_OPTIONS.map((option) => option.data);
+const AUDIO_SYNC_STYLE_TUNING: Record<string, {
+  brightness: number;
+  reactivity: string;
+  note: string;
+}> = {
+  "hifi-crest": { brightness: 160, reactivity: "balanced", note: "Reference balance for a visible bed and restrained travelling crest." },
+  "velvet-relay": { brightness: 184, reactivity: "fast", note: "Extra drive and fast attacks keep the centre-to-edge relay readable." },
+  "negative-bloom": { brightness: 192, reactivity: "fast", note: "A brighter safe base makes the moving true-black gap clearly visible." },
+  "stereo-lanterns": { brightness: 172, reactivity: "balanced", note: "Moderate light preserves two broad stereo lobes without diffuser glare." },
+  constellation: { brightness: 205, reactivity: "fast", note: "Sparse points receive more headroom so attacks stay visible between black gaps." },
+  "slow-prism": { brightness: 180, reactivity: "fast", note: "Fast response offsets the deliberately slow colour drift while audio controls its width." },
+  spectrum: { brightness: 190, reactivity: "fast", note: "Fast response and extra headroom produce a legible classic analyser." },
+  spatial: { brightness: 170, reactivity: "balanced", note: "Balanced motion keeps stereo placement clear without constant full-bar glare." },
+  bass: { brightness: 185, reactivity: "fast", note: "Fast low-frequency response gives the mirrored centre pulse a clean release." },
+  "audio-pulse": { brightness: 168, reactivity: "balanced", note: "Lower output keeps the mirrored palette readable while retaining a visible global pulse." },
+};
+const EXPERIMENTAL_AUDIO_DESCRIPTIONS: Record<string, string> = {
+  "velvet-relay": "Velvet Relay sends a bass impact from the centre to the shoulders and then the edges. Overlapping broad zones let the diffuser create motion between only 17 physical points.",
+  "negative-bloom": "Negative Bloom draws impact with a truly black gap moving from the centre to the edges. It avoids unreliable dark brown and grey RGB values by using either a safe active colour or complete extinction.",
+  "stereo-lanterns": "Stereo Lanterns uses two broad fixed lobes for left and right energy plus a restrained mono centre. No important detail depends on one LED or one perfectly timed write.",
+  constellation: "Constellation assigns at most five tinted cores to bass, mid attack and high texture. Dim neighbours let the diffuser connect them without turning the full strip into white glare.",
+  "slow-prism": "Slow Prism changes palette hue no more than once every eight 60 ms blocks. Audio mainly changes the illuminated width, keeping chromatic movement smooth and unobtrusive.",
+};
+const AUDIO_SYNC_REACTIVITY_OPTIONS = [
+  { data: "calm", label: "Calm" },
+  { data: "balanced", label: "Balanced" },
+  { data: "fast", label: "Fast" },
+  { data: "punchy", label: "Punchy" },
+];
+const AUDIO_SYNC_PALETTE_OPTIONS = [
+  { data: "artwork", label: "Artwork" },
+  { data: "aurora", label: "Aurora" },
+  { data: "candy", label: "Candy" },
+  { data: "coastline", label: "Coastline" },
+  { data: "copper", label: "Copper" },
+  { data: "custom", label: "Custom colours" },
+  { data: "deep-sea", label: "Deep Sea" },
+  { data: "ember", label: "Ember" },
+  { data: "forest", label: "Forest" },
+  { data: "glacier", label: "Glacier" },
+  { data: "ice", label: "Ice" },
+  { data: "lagoon", label: "Lagoon" },
+  { data: "lime", label: "Lime" },
+  { data: "magma", label: "Magma" },
+  { data: "orchid", label: "Orchid" },
+  { data: "pearl", label: "Pearl" },
+  { data: "plasma", label: "Plasma" },
+  { data: "sapphire", label: "Sapphire" },
+  { data: "screen-sync", label: "Screen Sync" },
+  { data: "silver", label: "Silver" },
+  { data: "solar", label: "Solar" },
+  { data: "sunset", label: "Sunset" },
 ];
 
 const PALETTE_OPTIONS = [
@@ -242,9 +363,7 @@ function updatePhaseLabel(update: UpdateStatus): string {
   switch (update.phase) {
     case "checking": return "Checking for updates...";
     case "up_to_date": return "GabeCubeAura is up to date.";
-    case "available": return update.return_to_stable
-      ? `Stable version ${update.available_version} is ready to download.`
-      : `Version ${update.available_version} is available.`;
+    case "available": return `Version ${update.available_version} is available.`;
     case "downloading": return `Downloading ${update.available_version}...`;
     case "verifying": return "Checking the downloaded package...";
     case "ready": return `Ready to install ${update.available_version}.`;
@@ -253,6 +372,7 @@ function updatePhaseLabel(update: UpdateStatus): string {
     case "updated": return `Updated successfully to ${update.installed_version}.`;
     case "rolled_back": return `The new version did not start correctly. GabeCubeAura restored ${update.rollback_version || update.installed_version}.`;
     case "error": return update.error || "Could not check for updates. Try again later.";
+    case "authorization_required": return "Connect GitHub to access Private Lab releases.";
     case "managed_by_decky": return "Updates are managed by Decky.";
     default: return "Ready to check for updates.";
   }
@@ -322,6 +442,9 @@ function OpaqueColorPickerModal({ title, color, closeModal, onConfirm }: {
   const [saturation, setSaturation] = useState(initialSaturation);
   const [lightness, setLightness] = useState(initialLightness);
   const selected = hslStringToRgb(`hsl(${hue}, ${saturation}%, ${lightness}%)`) ?? color;
+  const canonicalHex = `#${selected.map((channel) => channel.toString(16).padStart(2, "0")).join("").toUpperCase()}`;
+  const [hexText, setHexText] = useState(canonicalHex);
+  useEffect(() => setHexText(canonicalHex), [canonicalHex]);
   return <ConfirmModal strTitle={title} strOKButtonText="Use colour" strCancelButtonText="Cancel"
     onCancel={closeModal} onOK={() => { onConfirm(selected); closeModal(); }}>
     <div style={{ width: "100%" }}>
@@ -330,6 +453,22 @@ function OpaqueColorPickerModal({ title, color, closeModal, onConfirm }: {
           background: `rgb(${selected.join(", ")})`, boxShadow: "0 0 0 1px rgba(255,255,255,.45)" }} />
         <span style={{ opacity: .78, fontSize: ".8em" }}>Opaque RGB colour · no alpha channel on the LED hardware.</span>
       </div>
+      <TextField label="Hex" value={hexText} description="Exact #RRGGBB colour"
+        onChange={(event) => {
+          const next = event.currentTarget.value.toUpperCase();
+          setHexText(next);
+          const match = /^#?([0-9A-F]{6})$/.exec(next);
+          if (!match) return;
+          const rgb: RGB = [
+            parseInt(match[1].slice(0, 2), 16),
+            parseInt(match[1].slice(2, 4), 16),
+            parseInt(match[1].slice(4, 6), 16),
+          ];
+          const [nextHue, nextSaturation, nextLightness] = rgbToHsl(rgb);
+          setHue(nextHue);
+          setSaturation(nextSaturation);
+          setLightness(nextLightness);
+        }} />
       <SliderField label="Hue" value={hue} min={0} max={360} step={1} showValue
         onChange={setHue} />
       <SliderField label="Saturation" value={saturation} min={0} max={100} step={1} showValue valueSuffix="%"
@@ -353,7 +492,8 @@ function ColorChoice({ label, color, onClick }: {
   onClick: () => void;
 }) {
   const cssColor = `rgb(${color.join(", ")})`;
-  return <ButtonItem label={label} description={cssColor} onClick={onClick}>
+  const hexColor = `#${color.map((channel) => channel.toString(16).padStart(2, "0")).join("").toUpperCase()}`;
+  return <ButtonItem label={label} description={hexColor} onClick={onClick}>
     <span style={{
       display: "inline-block",
       width: 28,
@@ -370,39 +510,12 @@ function PreciseColorEditor({ label, color, onChange }: {
   color: RGB;
   onChange: (color: RGB) => void;
 }) {
-  const canonicalHex = `#${color.map((channel) => channel.toString(16).padStart(2, "0")).join("").toUpperCase()}`;
-  const [hexText, setHexText] = useState(canonicalHex);
-  useEffect(() => setHexText(canonicalHex), [canonicalHex]);
-  const setChannel = (channel: number, value: number) => {
-    const next = [...color] as RGB;
-    next[channel] = Math.max(0, Math.min(255, Math.round(value)));
-    onChange(next);
-  };
   const choose = () => {
     let modal: ReturnType<typeof showModal> | undefined;
     modal = showModal(<OpaqueColorPickerModal title={label} color={color}
       closeModal={() => modal?.Close()} onConfirm={onChange} />);
   };
-  return <div style={{ width: "100%" }}>
-    <ColorChoice label={label} color={color} onClick={choose} />
-    <TextField label="Hex" value={hexText} description="Exact #RRGGBB colour"
-      onChange={(event) => {
-        const next = event.currentTarget.value.toUpperCase();
-        setHexText(next);
-        const match = /^#?([0-9A-F]{6})$/.exec(next);
-        if (match) onChange([
-          parseInt(match[1].slice(0, 2), 16),
-          parseInt(match[1].slice(2, 4), 16),
-          parseInt(match[1].slice(4, 6), 16),
-        ]);
-      }} />
-    <SliderField label="Red" value={color[0]} min={0} max={255} step={1} showValue
-      onChange={(value) => setChannel(0, value)} />
-    <SliderField label="Green" value={color[1]} min={0} max={255} step={1} showValue
-      onChange={(value) => setChannel(1, value)} />
-    <SliderField label="Blue" value={color[2]} min={0} max={255} step={1} showValue
-      onChange={(value) => setChannel(2, value)} />
-  </div>;
+  return <ColorChoice label={label} color={color} onClick={choose} />;
 }
 
 function addRecordingMarker(status: Status, colors: Status["events"]["colors"] | undefined) {
@@ -783,6 +896,24 @@ function ControllersPanel({ status, setStatus }: { status: Status; setStatus: (n
   </>;
 }
 
+function WeatherIconSetPreview({ style }: { style: WeatherIconStyle }) {
+  return <div style={{ width: "100%" }}>
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+      {WEATHER_CONDITIONS.map((condition) => <span
+        key={condition.data}
+        role="img"
+        aria-label={condition.label}
+        title={condition.label}
+        style={{ display: "inline-flex", width: 27, height: 27, alignItems: "center", justifyContent: "center" }}
+        dangerouslySetInnerHTML={{ __html: weatherIconSvg(style, condition.data) }}
+      />)}
+    </div>
+    <div style={{ marginTop: 6, fontSize: ".72em", opacity: .7 }}>
+      Clear day, clear night, rain, cloud, cloud night, partly cloudy day, partly cloudy night, snow and thunderstorm.
+    </div>
+  </div>;
+}
+
 function WeatherPanel({ status, setStatus }: { status: Status; setStatus: (next: Status) => void }) {
   const [cityQuery, setCityQuery] = useState("");
   const [countryQuery, setCountryQuery] = useState("");
@@ -852,19 +983,24 @@ function WeatherPanel({ status, setStatus }: { status: Status; setStatus: (next:
       {status.weather_location ? <PanelSectionRow><ButtonItem label="Remove city"
         description="Turns weather off and stops weather requests."
         onClick={() => void setSetting("weather_location", null).then((next) => { setStatus(next); setMessage("City removed."); }).catch((error) => setMessage(String(error)))}>Remove</ButtonItem></PanelSectionRow> : null}
-      <PanelSectionRow><ToggleField label="SteamOS top-bar weather (experimental)"
+      <PanelSectionRow><ToggleField label="SteamOS top-bar weather"
         description="Show a weather icon and temperature beside the clock when Steam's top bar is available. Needs a chosen city. Independent of the LED display and controller gauge; hides if the top bar cannot be found."
         checked={status.weather_topbar_enabled}
         onChange={async (enabled) => {
-          if (enabled && !status.weather_location) {
-            setMessage("Choose a city before enabling top-bar weather.");
-            return;
-          }
           try {
             setStatus(await setSetting("weather_topbar_enabled", enabled));
-            setMessage(enabled ? "Top-bar weather enabled. It may take a few seconds to appear." : "Top-bar weather disabled.");
+            setMessage(enabled
+              ? status.weather_location
+                ? "Top-bar weather enabled. It may take a few seconds to appear."
+                : "Top-bar weather enabled. Choose a city when you want it to appear."
+              : "Top-bar weather disabled.");
           } catch (error) { setMessage(`Could not change top-bar weather: ${String(error)}`); }
         }} /></PanelSectionRow>
+      <PanelSectionRow><DropdownItem label="Top-bar icon family"
+        description="Choose the complete nine-condition icon set. Every icon is bundled locally; no icon CDN is contacted."
+        rgOptions={WEATHER_ICON_STYLE_OPTIONS} selectedOption={status.weather_icon_style}
+        onChange={async (option) => setStatus(await setSetting("weather_icon_style", String(option.data)))} /></PanelSectionRow>
+      <PanelSectionRow><WeatherIconSetPreview style={status.weather_icon_style} /></PanelSectionRow>
       <PanelSectionRow><DropdownItem label="Top-bar temperature unit"
         description="Applies to the number beside the SteamOS clock only, not the LED animations."
         rgOptions={WEATHER_TEMPERATURE_UNITS} selectedOption={status.weather_temperature_unit}
@@ -961,7 +1097,67 @@ function CustomizationPanel({ status, setStatus }: { status: Status; setStatus: 
   </PanelSection>;
 }
 
+function LightBarCalibration({ status, setStatus }: {
+  status: Status;
+  setStatus: (next: Status) => void;
+}) {
+  const calibration = status.led_output_calibration;
+  const consistent = status.led_output_calibration_mode === "consistent";
+  const detected = calibration.detected_brightness == null
+    ? "Waiting for hardware"
+    : `${calibration.detected_brightness} / 255`;
+  const stage = {
+    idle: "Idle",
+    "colour-separation": "Colour separation",
+    "white-balance": "White balance",
+    "motion-contrast": "Motion and contrast",
+  }[status.customization.calibration_stage];
+  return <PanelSection title="Light bar calibration · Lab">
+    <PanelSectionRow><div style={{ fontSize: ".78em", opacity: .82 }}>
+      Normalises Valve's global hardware brightness while GabeCubeAura owns the light bar. Pattern brightness remains independent.
+    </div></PanelSectionRow>
+    <PanelSectionRow><DropdownItem
+      label="Output mode"
+      description={consistent
+        ? "Temporarily uses the GabeCubeAura reference gain, then restores the saved Steam value before Valve takes over."
+        : "Keeps Steam's current global brightness. Colours, white balance and contrast may differ from the reference tuning."}
+      rgOptions={LED_OUTPUT_CALIBRATION_OPTIONS}
+      selectedOption={status.led_output_calibration_mode}
+      onChange={async (option) => setStatus(await setSetting("led_output_calibration_mode", String(option.data)))}
+    /></PanelSectionRow>
+    <PanelSectionRow><div style={{ width: "100%", fontSize: ".77em", lineHeight: 1.45, opacity: .82 }}>
+      <div>Steam brightness detected: <b>{detected}</b></div>
+      <div>GabeCubeAura Lab reference: <b>{calibration.reference_brightness} / 255</b></div>
+      <div>Restored when Steam takes over: <b>Yes</b></div>
+      {calibration.saved_steam_brightness != null
+        ? <div>Saved Steam brightness: <b>{calibration.saved_steam_brightness} / 255</b></div>
+        : null}
+      {!calibration.supported && status.available
+        ? <div style={{ color: "#ffd27a" }}>This SteamOS LED driver does not expose brightness_scale.</div>
+        : null}
+      {calibration.startup_recovered
+        ? <div style={{ color: "#93f7a7" }}>A brightness value left by an interrupted session was restored safely.</div>
+        : null}
+    </div></PanelSectionRow>
+    <PanelSectionRow><ButtonItem
+      label={consistent ? "Preview calibrated output" : "Preview current Steam brightness"}
+      description="Runs a 10-second colour separation, white balance and centre-out motion check using the current Audio Sync brightness."
+      disabled={!status.signalbar_enabled || !calibration.supported}
+      onClick={() => void previewLightCalibration().then(setStatus).catch(console.warn)}>
+      Preview for 10 seconds
+    </ButtonItem></PanelSectionRow>
+    {status.customization.calibration_preview_active ? <PanelSectionRow><div style={{ width: "100%", fontSize: ".78em" }}>
+      <div><b>{stage}</b> · {Math.ceil(status.customization.calibration_remaining_s)} s remaining</div>
+      <PalettePreview colors={status.customization.colors} />
+    </div></PanelSectionRow> : null}
+    <PanelSectionRow><div style={{ fontSize: ".73em", opacity: .68 }}>
+      Reference {calibration.reference_brightness} is experimental and based on the current physical Steam Machine calibration. Follow Steam brightness remains the default in this Lab.
+    </div></PanelSectionRow>
+  </PanelSection>;
+}
+
 function ScreenSyncPanel({ status, setStatus }: { status: Status; setStatus: (next: Status) => void }) {
+  const [showLiveDiagnostics, setShowLiveDiagnostics] = useState(false);
   const activation = status.screen_sync.activation;
   const directGamescopeSelector = status.screen_sync.node_id === null
     && status.screen_sync.capture_selector.includes("Gamescope name");
@@ -994,7 +1190,13 @@ function ScreenSyncPanel({ status, setStatus }: { status: Status; setStatus: (ne
       <PanelSectionRow><div style={{ fontSize: ".8em", opacity: .82 }}>
         Matches the visible Gamescope picture to the 17-pixel light bar. Frames stay in memory and are never saved or sent over the network.
       </div></PanelSectionRow>
-      <PanelSectionRow><div style={{ width: "100%", fontSize: ".78em", opacity: .78 }}>
+      <PanelSectionRow><ToggleField
+        label="Show live diagnostics"
+        description="Shows capture source, PipeWire state, frame rate and the live 17-colour preview. Intended for troubleshooting."
+        checked={showLiveDiagnostics}
+        onChange={setShowLiveDiagnostics} />
+      </PanelSectionRow>
+      {showLiveDiagnostics ? <PanelSectionRow><div style={{ width: "100%", fontSize: ".78em", opacity: .78 }}>
         <div>Capture revision: {status.screen_sync.revision}</div>
         <div style={{ color: status.debug.engine_running ? "#93f7a7" : "#ff9a9a" }}>
           Runtime: {status.debug.engine_running
@@ -1032,7 +1234,7 @@ function ScreenSyncPanel({ status, setStatus }: { status: Status; setStatus: (ne
           ? <div>Ignored black bars: {status.screen_sync.crop_top} top, {status.screen_sync.crop_bottom} bottom</div>
           : null}
         <PalettePreview colors={status.screen_sync.colors} />
-      </div></PanelSectionRow>
+      </div></PanelSectionRow> : null}
     </PanelSection>
     <PanelSection title="Activation">
       <PanelSectionRow><ToggleField
@@ -1042,7 +1244,7 @@ function ScreenSyncPanel({ status, setStatus }: { status: Status; setStatus: (ne
         onChange={async (value) => setStatus(await setSetting("screen_sync_screensaver_enabled", value))} />
       </PanelSectionRow>
       <PanelSectionRow><div style={{ width: "100%", fontSize: ".78em", opacity: .78 }}>
-        <div>{activationLabel}</div>
+        {showLiveDiagnostics ? <div>{activationLabel}</div> : null}
         <div>In-game default: {displayLabel(status.game_display)}</div>
         {status.display_override !== "inherit" && status.game.appid > 0
           ? <div>Current game override: {displayLabel(status.display_override)}</div>
@@ -1082,7 +1284,7 @@ function ScreenSyncPanel({ status, setStatus }: { status: Status; setStatus: (ne
       <PanelSectionRow><div style={{ fontSize: ".76em", opacity: .76 }}>
         When Screen Sync pauses for Steam Game Recording or another capture consumer, Customization+ takes over automatically. The centre LED remains red while recording.
       </div></PanelSectionRow>
-      {status.screen_sync.fallback_active ? <PanelSectionRow><div style={{ fontSize: ".78em" }}>
+      {showLiveDiagnostics && status.screen_sync.fallback_active ? <PanelSectionRow><div style={{ fontSize: ".78em" }}>
         Active: {status.screen_sync.fallback_reason}
       </div></PanelSectionRow> : null}
     </PanelSection>
@@ -1092,12 +1294,238 @@ function ScreenSyncPanel({ status, setStatus }: { status: Status; setStatus: (ne
           Screen Sync uses the local Gamescope PipeWire video source at 34 by 18 pixels and 10 frames per second. If Steam Game Recording, screen sharing, or another Gamescope capture consumer is active, capture stops and the fallback is used instead of competing for the stream.
         </div>
       </PanelSectionRow>
-      <PanelSectionRow><ButtonItem
-        label="Refresh capture status"
-        description="Read the current Gamescope and PipeWire state and update the 17-colour preview."
-        onClick={() => void getStatus().then(setStatus).catch(console.warn)}>
-        Refresh
+    </PanelSection>
+  </>;
+}
+
+function HifiCrestLab({ status, setStatus, quick = false }: {
+  status: Status;
+  setStatus: (next: Status) => void;
+  quick?: boolean;
+}) {
+  const [showQuickDiagnostics, setShowQuickDiagnostics] = useState(false);
+  return <PanelSection title={quick ? "Hi-Fi Crest Lab" : "Hi-Fi Crest Lab · temporary"}>
+    <PanelSectionRow><div style={{ fontSize: ".78em", opacity: .82 }}>
+      Live physical calibration. Changes apply immediately. 100% on all three controls reproduces the reference engine.
+    </div></PanelSectionRow>
+    {quick ? <PanelSectionRow><ToggleField
+      label="Show live diagnostics"
+      description="Shows Audio Sync timing, latency and analysis queue details. Intended for troubleshooting."
+      checked={showQuickDiagnostics}
+      onChange={setShowQuickDiagnostics} />
+    </PanelSectionRow> : null}
+    {quick && showQuickDiagnostics ? <AudioTimingReadout status={status} /> : null}
+    <PanelSectionRow><SliderField label="Crest strength"
+      description="Controls only the centre-out travelling wave. 0% disables it; 100% is the reference renderer."
+      value={status.audio_sync_lab_crest_strength} min={0} max={250} step={5} showValue valueSuffix="%"
+      onChange={async (value) => setStatus(await setSetting("audio_sync_lab_crest_strength", value))} /></PanelSectionRow>
+    <PanelSectionRow><SliderField label="Edge reach"
+      description="Controls how much energy remains when the crest reaches the outer LEDs without changing its travel speed."
+      value={status.audio_sync_lab_edge_reach} min={50} max={200} step={5} showValue valueSuffix="%"
+      onChange={async (value) => setStatus(await setSetting("audio_sync_lab_edge_reach", value))} /></PanelSectionRow>
+    <PanelSectionRow><SliderField label="Background level"
+      description="Controls the permanent bass, mid and high visualizer under the crest."
+      value={status.audio_sync_lab_background} min={0} max={150} step={5} showValue valueSuffix="%"
+      onChange={async (value) => setStatus(await setSetting("audio_sync_lab_background", value))} /></PanelSectionRow>
+    {quick ? <PanelSectionRow><ButtonItem label="Preview Audio Sync"
+      description="Starts the real system audio path for 15 seconds without changing Display routing."
+      onClick={() => void previewAudioSync().then(setStatus).catch(console.warn)}>
+      Preview for 15 seconds
+    </ButtonItem></PanelSectionRow> : null}
+  </PanelSection>;
+}
+
+function AudioContextMapping({ context, status, setStatus }: {
+  context: "home" | "game";
+  status: Status;
+  setStatus: (next: Status) => void;
+}) {
+  const styleKey = context === "home" ? "audio_sync_home_style" : "audio_sync_game_style";
+  const paletteKey = context === "home" ? "audio_sync_home_palette" : "audio_sync_game_palette";
+  const colourKeys: [
+    "audio_sync_home_colour_low" | "audio_sync_game_colour_low",
+    "audio_sync_home_colour_middle" | "audio_sync_game_colour_middle",
+    "audio_sync_home_colour_high" | "audio_sync_game_colour_high",
+  ] = context === "home"
+    ? ["audio_sync_home_colour_low", "audio_sync_home_colour_middle", "audio_sync_home_colour_high"]
+    : ["audio_sync_game_colour_low", "audio_sync_game_colour_middle", "audio_sync_game_colour_high"];
+  const style = status[styleKey];
+  const palette = status[paletteKey];
+  const recommended = AUDIO_SYNC_STYLE_TUNING[style];
+  const activeContext = context === "home" ? status.game.appid === 0 : status.game.appid > 0;
+  return <PanelSection title={context === "home" ? "Home pattern and palette" : "In-game pattern and palette"}>
+    <PanelSectionRow><div style={{ fontSize: ".76em", opacity: .78 }}>
+      {context === "home"
+        ? "Used when no game is running and Home is routed to Audio Sync."
+        : "Used when a game is running and its display route resolves to Audio Sync."}
+      {activeContext ? " This is the active context." : ""}
+    </div></PanelSectionRow>
+    <PanelSectionRow><DropdownItem label="Pattern" rgOptions={AUDIO_SYNC_STYLE_OPTIONS}
+      selectedOption={style}
+      onChange={async (option) => setStatus(await setSetting(styleKey, String(option.data)))} /></PanelSectionRow>
+    <PanelSectionRow><DropdownItem label="Palette" rgOptions={AUDIO_SYNC_PALETTE_OPTIONS}
+      selectedOption={palette}
+      onChange={async (option) => setStatus(await setSetting(paletteKey, String(option.data)))} /></PanelSectionRow>
+    {palette === "custom" ? colourKeys.map((key, index) => <PanelSectionRow key={key}>
+      <PreciseColorEditor label={["High frequencies · edges", "Middle frequencies · shoulders", "Low frequencies · centre"][index]}
+        color={status[key]}
+        onChange={(color) => void setSetting(key, color).then(setStatus).catch(console.warn)} />
+    </PanelSectionRow>) : null}
+    <PanelSectionRow><div style={{ fontSize: ".76em", opacity: .78 }}>
+      <b>Recommended shared tuning:</b> {recommended.reactivity[0].toUpperCase() + recommended.reactivity.slice(1)} · Brightness {recommended.brightness} / 255<br />
+      {recommended.note}
+    </div></PanelSectionRow>
+    <PanelSectionRow><ButtonItem label="Apply recommended shared tuning"
+      description="Loads the Steam Machine reference response for this pattern. It changes shared reactivity and brightness, but not either context palette."
+      onClick={() => void setSetting(styleKey, style).then(setStatus).catch(console.warn)}>
+      Apply
+    </ButtonItem></PanelSectionRow>
+    {palette === "screen-sync" ? <PanelSectionRow><div style={{ fontSize: ".76em", opacity: .74 }}>
+      Screen Sync extracts three coherent colours from live Gamescope. Artwork is used when live capture is unavailable. During session changes, the last stable palette is held until a new contextual palette is ready.
+    </div></PanelSectionRow> : null}
+    {palette === "artwork" ? <PanelSectionRow><div style={{ fontSize: ".76em", opacity: .74 }}>
+      Artwork uses the current game's three-colour artwork palette. During session changes, the last stable palette is held until the new artwork palette is ready.
+    </div></PanelSectionRow> : null}
+  </PanelSection>;
+}
+
+function AudioTimingReadout({ status }: { status: Status }) {
+  const audio = status.audio_sync;
+  const timing = audio.response_timing;
+  const actualBlockMs = audio.blocks_per_second > 0
+    ? 1000 / audio.blocks_per_second
+    : null;
+  const sampleAgeMs = audio.frame_age_s == null ? null : audio.frame_age_s * 1000;
+  const pair = (value: { rise_ms: number; fall_ms: number }) =>
+    `${Math.round(value.rise_ms)} / ${Math.round(value.fall_ms)} ms`;
+  return <PanelSectionRow><div style={{ width: "100%", fontSize: ".76em", opacity: .82 }}>
+    <div><b>Audio timing</b></div>
+    <div>
+      Analysis block: {audio.analysis_hop_ms.toFixed(0)} ms target
+      {actualBlockMs == null ? "" : ` · ${actualBlockMs.toFixed(1)} ms actual`}
+      {` · ${audio.blocks_per_second.toFixed(1)} blocks/s`}
+    </div>
+    <div>
+      FFT window: {audio.analysis_window_ms.toFixed(1)} ms · PipeWire request: {audio.capture_latency_ms.toFixed(0)} ms
+    </div>
+    <div>
+      LED request: {audio.led_request_interval_ms.toFixed(0)} ms · renderer floor: {audio.led_render_floor_ms.toFixed(0)} ms
+    </div>
+    <div>
+      Sample age: {sampleAgeMs == null ? "waiting" : `${sampleAgeMs.toFixed(1)} ms`}
+      {` · residual buffer ${audio.buffered_ms.toFixed(1)} ms · queue ${audio.queued_blocks}`}
+    </div>
+    <div>
+      Adaptive source level: shared {audio.hifi_metrics.window_s.toFixed(1)} / 10.2 s programme window
+    </div>
+    <div style={{ marginTop: 3 }}>
+      {timing.reactivity[0].toUpperCase() + timing.reactivity.slice(1)} 90% rise / fall:
+      {` level ${pair(timing.level)} · impact ${pair(timing.impact)} · attack ${pair(timing.attack)} · texture ${pair(timing.texture)} · background ${pair(timing.background)}`}
+    </div>
+    {status.audio_sync_style === "hifi-crest" ? <div>
+      Crest: {Math.round(timing.crest.cooldown_ms)} ms retrigger · {Math.round(timing.crest.centre_to_edge_ms)} ms centre to edge · {Math.round(timing.crest.lifetime_ms)} ms base lifetime
+    </div> : EXPERIMENTAL_AUDIO_DESCRIPTIONS[status.audio_sync_style] ? <div>
+      Lab renderer: 60 ms quantized frames · physical-bar optical encoder active
+    </div> : null}
+    {audio.dropped_blocks > 0 ? <div style={{ color: "#ff9a9a" }}>
+      Warning: {audio.dropped_blocks} analysis block{audio.dropped_blocks === 1 ? "" : "s"} dropped because the processing queue filled.
+    </div> : null}
+  </div></PanelSectionRow>;
+}
+
+function AudioSyncPanel({ status, setStatus }: { status: Status; setStatus: (next: Status) => void }) {
+  const [showLiveDiagnostics, setShowLiveDiagnostics] = useState(false);
+  const activeHome = status.home_display === "audio_sync";
+  const activeGame = status.game_display === "audio_sync";
+  const context = activeHome && activeGame ? "Everywhere" : activeHome ? "Home" : activeGame ? "In game" : "Not selected";
+  const phase = status.audio_sync.phase === "capturing"
+    ? `Listening at ${status.audio_sync.sample_rate / 1000} kHz stereo`
+    : status.audio_sync.phase === "error"
+      ? `Unavailable: ${status.audio_sync.error}`
+      : status.current_display === "audio_sync"
+        ? "Waiting for safe LED ownership"
+        : "Select Audio Sync in Display routing or start a preview";
+  const hifiCrestUsed = status.audio_sync_home_style === "hifi-crest" || status.audio_sync_game_style === "hifi-crest";
+  return <>
+    <PanelSection title="Audio Sync">
+      <PanelSectionRow><div style={{ fontSize: ".8em", opacity: .84 }}>
+        Turns the mixed system output into a responsive 17-pixel display. Capture and analysis stay local in memory. Audio is never saved or sent over the network.
+      </div></PanelSectionRow>
+      <PanelSectionRow><ToggleField
+        label="Show live diagnostics"
+        description="Shows capture state, live levels, palette source, timing and the 17-LED preview. Intended for troubleshooting."
+        checked={showLiveDiagnostics}
+        onChange={setShowLiveDiagnostics} />
+      </PanelSectionRow>
+      {showLiveDiagnostics ? <PanelSectionRow><div style={{ width: "100%", fontSize: ".78em", opacity: .8 }}>
+        <div>Permanent display: <b>{context}</b></div>
+        <div>{phase}</div>
+        <div>Capture revision: {status.audio_sync.revision}</div>
+        {status.audio_sync.runtime_dir ? <div>PipeWire session: {status.audio_sync.runtime_dir}</div> : null}
+        {status.audio_sync.capture_identity ? <div>PipeWire identity: {status.audio_sync.capture_identity}</div> : null}
+        {status.audio_sync.phase === "capturing" ? <div>
+          Left {Math.round(status.audio_sync.left_level * 100)}% · Right {Math.round(status.audio_sync.right_level * 100)}%
+        </div> : null}
+        {["screen-sync", "artwork"].includes(status.audio_sync_palette) && status.audio_sync.screen_palette.length === 3 ? <div>
+          Context palette: {status.audio_sync.screen_palette.map((color) =>
+            `#${color.map((channel) => channel.toString(16).padStart(2, "0")).join("").toUpperCase()}`
+          ).join(" · ")}
+        </div> : null}
+        {ADAPTIVE_AUDIO_STYLES.includes(status.audio_sync_style) && ["screen-sync", "artwork"].includes(status.audio_sync_palette) ? <div>
+          Palette source: <b>{status.audio_sync.palette_source === "screen-sync" ? "Screen Sync" : status.audio_sync.palette_source === "artwork" ? "Artwork" : status.audio_sync.palette_source === "held-transition" ? "Last stable palette" : status.audio_sync.palette_source === "selected" ? "Selected palette" : "Sapphire fallback"}</b>
+          {status.audio_sync_palette === "screen-sync" && status.audio_sync.palette_source !== "screen-sync" && status.screen_sync.error ? ` · ${status.screen_sync.error}` : ""}
+        </div> : null}
+        <PalettePreview colors={status.audio_sync.colors} />
+        {ADAPTIVE_AUDIO_STYLES.includes(status.audio_sync_style) ? <div>
+          Impact {Math.round(status.audio_sync.hifi_metrics.impact * 100)}% · Attack {Math.round(status.audio_sync.hifi_metrics.attack * 100)}% · Texture {Math.round(status.audio_sync.hifi_metrics.texture * 100)}% · Stereo {Math.round(status.audio_sync.hifi_metrics.stereo * 100)}% · Window {status.audio_sync.hifi_metrics.window_s.toFixed(1)} s
+        </div> : null}
+      </div></PanelSectionRow> : null}
+      {showLiveDiagnostics ? <AudioTimingReadout status={status} /> : null}
+      <PanelSectionRow><ButtonItem label="Preview Audio Sync"
+        description="Uses the real system audio path for 15 seconds without changing Display routing."
+        onClick={() => void previewAudioSync().then(setStatus).catch(console.warn)}>
+        Preview for 15 seconds
       </ButtonItem></PanelSectionRow>
+    </PanelSection>
+    <AudioContextMapping context="home" status={status} setStatus={setStatus} />
+    <AudioContextMapping context="game" status={status} setStatus={setStatus} />
+    <PanelSection title="Shared response">
+      <PanelSectionRow><div style={{ fontSize: ".76em", opacity: .78 }}>
+        Reactivity and brightness are shared by Home and in-game patterns. Automatic source-level matching stays active for every pattern.
+      </div></PanelSectionRow>
+      <PanelSectionRow><DropdownItem label="Reactivity" rgOptions={AUDIO_SYNC_REACTIVITY_OPTIONS}
+        selectedOption={status.audio_sync_reactivity}
+        onChange={async (option) => setStatus(await setSetting("audio_sync_reactivity", String(option.data)))} /></PanelSectionRow>
+      <PanelSectionRow><SliderField label="Brightness"
+        description="34 is the minimum retained because lower values switch the physical light bar off."
+        value={status.audio_sync_brightness} min={34} max={255} step={1} showValue valueSuffix=" / 255"
+        onChange={async (value) => setStatus(await setSetting("audio_sync_brightness", value))} /></PanelSectionRow>
+    </PanelSection>
+    {status.audio_sync_hifi_lab_enabled && hifiCrestUsed
+      ? <HifiCrestLab status={status} setStatus={setStatus} />
+      : null}
+    <PanelSection title="Priority and recovery">
+      <PanelSectionRow><ToggleField
+        label="Let Steam screensaver take over"
+        description="Uses Screen Sync while Steam's screensaver is active, then restores Audio Sync automatically. This is the same option shown on the Screen Sync page."
+        checked={status.screen_sync_screensaver_enabled}
+        onChange={async (value) => setStatus(await setSetting("screen_sync_screensaver_enabled", value))} />
+      </PanelSectionRow>
+      <PanelSectionRow><div style={{ fontSize: ".77em", opacity: .8 }}>
+        Steam and temporary alerts keep priority. Screensaver Screen Sync pauses Audio Sync, which resumes automatically afterward.
+      </div></PanelSectionRow>
+      {status.audio_sync_style === "audio-pulse" ? <PanelSectionRow><div style={{ fontSize: ".76em", opacity: .74 }}>
+        Audio Pulse applies one global audio envelope to a mirrored three-colour gradient from the selected palette.
+      </div></PanelSectionRow> : null}
+      {status.audio_sync_style === "bass" ? <PanelSectionRow><div style={{ fontSize: ".76em", opacity: .74 }}>
+        Bass pulse mirrors the selected three-colour palette as an edge, shoulder, centre, shoulder, edge gradient. Low-frequency energy remains strongest at the centre and softer toward both edges.
+      </div></PanelSectionRow> : null}
+      {status.audio_sync_style === "hifi-crest" ? <PanelSectionRow><div style={{ fontSize: ".76em", opacity: .74 }}>
+        Hi-Fi Crest places bass impact at the centre, mid attack on both shoulders and high texture at the edges. Stereo balance weights each side, while strong bass onsets launch a restrained centre-out crest.
+      </div></PanelSectionRow> : null}
+      {EXPERIMENTAL_AUDIO_DESCRIPTIONS[status.audio_sync_style] ? <PanelSectionRow><div style={{ fontSize: ".76em", opacity: .74 }}>
+        <b>Experimental optical pattern.</b> {EXPERIMENTAL_AUDIO_DESCRIPTIONS[status.audio_sync_style]}
+      </div></PanelSectionRow> : null}
     </PanelSection>
   </>;
 }
@@ -1111,6 +1539,7 @@ function CompatibilityPanel({ status, setStatus }: { status: Status; setStatus: 
     ["Game launches", "stripmine_priority_game_launches", "Temporary animations using colours from the launched game's artwork."],
     ["Customization+", "stripmine_priority_customization", "The persistent user-authored display."],
     ["Screen Sync", "stripmine_priority_screen_sync", "Live colours captured from the running game."],
+    ["Audio Sync", "stripmine_priority_audio_sync", "Live colours driven by the mixed system audio output."],
     ["Light Events", "stripmine_priority_light_events", "Notifications, achievements, screenshots and recording cues."],
   ] as const);
   return <>
@@ -1177,7 +1606,7 @@ function CompatibilityPanel({ status, setStatus }: { status: Status; setStatus: 
   </>;
 }
 
-type Page = "quick" | "routing" | "customization" | "artwork" | "performance" | "screen-sync" | "launches" | "countdown" | "events" | "controllers" | "weather" | "compatibility" | "updates" | "advanced";
+type Page = "quick" | "routing" | "customization" | "artwork" | "performance" | "screen-sync" | "audio-sync" | "launches" | "countdown" | "events" | "controllers" | "weather" | "updates" | "advanced";
 
 const PAGE_END_LABELS: Record<Exclude<Page, "quick">, string> = {
   routing: "Display routing",
@@ -1185,12 +1614,12 @@ const PAGE_END_LABELS: Record<Exclude<Page, "quick">, string> = {
   artwork: "Artwork",
   performance: "Performance",
   "screen-sync": "Screen Sync",
+  "audio-sync": "Audio Sync",
   launches: "Game launches",
   countdown: "Playtime",
   events: "Light events",
   controllers: "Controllers",
   weather: "Weather",
-  compatibility: "Compatibility",
   updates: "Updates",
   advanced: "Advanced",
 };
@@ -1222,11 +1651,13 @@ function Content({ page = "quick" }: { page?: Page }) {
   const [configurationActionMessage, setConfigurationActionMessage] = useState("");
   const [configurationBusy, setConfigurationBusy] = useState(false);
   const [launchPreviewError, setLaunchPreviewError] = useState("");
+  const [routingMessage, setRoutingMessage] = useState("");
   const [update, setUpdate] = useState<UpdateStatus | null>(null);
   const [updateBusy, setUpdateBusy] = useState(false);
   const [updateLabResult, setUpdateLabResult] = useState<UpdateLabResult | null>(null);
   const [updateLabReportPath, setUpdateLabReportPath] = useState("");
   const manualTimer = useRef<number | null>(null);
+  const artworkVibranceTimer = useRef<number | null>(null);
   const setStatus = (next: Status) => {
     setStatusState(next);
   };
@@ -1237,12 +1668,13 @@ function Content({ page = "quick" }: { page?: Page }) {
     const timer = window.setInterval(() => {
       void getStatus().then((next) => alive && setStatus(next)).catch(() => undefined);
     }, page === "events" || page === "controllers" || page === "weather"
-      || page === "compatibility" || page === "launches" ? 100
-      : page === "screen-sync" ? 250 : 1000);
+      || page === "launches" ? 100
+      : page === "screen-sync" || page === "audio-sync" ? 250 : 1000);
     return () => {
       alive = false;
       window.clearInterval(timer);
       if (manualTimer.current != null) window.clearTimeout(manualTimer.current);
+      if (artworkVibranceTimer.current != null) window.clearTimeout(artworkVibranceTimer.current);
     };
   }, [page]);
 
@@ -1259,6 +1691,29 @@ function Content({ page = "quick" }: { page?: Page }) {
       window.clearInterval(timer);
     };
   }, [page]);
+
+  useEffect(() => {
+    if (page !== "updates" || update?.private_auth_state !== "pending") return;
+    let alive = true;
+    let inFlight = false;
+    const poll = async () => {
+      if (inFlight) return;
+      inFlight = true;
+      try {
+        const next = await pollPrivateUpdateAuthorization();
+        if (alive) setUpdate(next);
+      } catch (error) {
+        console.warn("[GabeCubeAura] private authorization poll failed", error);
+      } finally {
+        inFlight = false;
+      }
+    };
+    const timer = window.setInterval(() => void poll(), 5000);
+    return () => {
+      alive = false;
+      window.clearInterval(timer);
+    };
+  }, [page, update?.private_auth_state]);
 
   useEffect(() => {
     setLaunchPreviewError("");
@@ -1372,8 +1827,11 @@ function Content({ page = "quick" }: { page?: Page }) {
 
   useEffect(() => {
     if (!status) return;
+    const contextualAudioPalette = ADAPTIVE_AUDIO_STYLES.includes(status.audio_sync_style)
+      && ["screen-sync", "artwork"].includes(status.audio_sync_palette);
     const needsArtwork = page === "artwork" || page === "launches"
-      || (page === "quick" && status.current_display === "artwork");
+      || (page === "quick" && status.current_display === "artwork")
+      || contextualAudioPalette && (page === "audio-sync" || status.current_display === "audio_sync");
     if (!needsArtwork) {
       setHero(null);
       setHeroRequestKey("");
@@ -1389,7 +1847,8 @@ function Content({ page = "quick" }: { page?: Page }) {
       });
     }
   }, [page, status?.game.appid, status?.current_display, status?.artwork_source,
-    status?.launch_artwork_source, loadAndSampleArtwork]);
+    status?.launch_artwork_source, status?.audio_sync_style,
+    status?.audio_sync_palette, loadAndSampleArtwork]);
 
   if (!status) {
     return <PanelSection><PanelSectionRow>Loading GabeCubeAura…</PanelSectionRow></PanelSection>;
@@ -1410,7 +1869,17 @@ function Content({ page = "quick" }: { page?: Page }) {
   const changeArtworkSetting = async (key: string, value: unknown) => {
     const next = await setArtworkSetting(status.game.appid, key, value);
     setStatus(next);
-    if (next.game.appid > 0) await loadAndSampleArtwork(next.game.appid, next.artwork_source, "artwork");
+    if (key !== "vibrance" && next.game.appid > 0) {
+      await loadAndSampleArtwork(next.game.appid, next.artwork_source, "artwork");
+    }
+  };
+  const applyDisplayPreset = async (preset: string) => {
+    try {
+      setStatus(await setSetting("display_preset", preset));
+      setRoutingMessage("");
+    } catch (error) {
+      setRoutingMessage(String(error).replace(/^Error:\s*/, ""));
+    }
   };
   const changeManualPosition = (value: number) => {
     setStatus({ ...status, artwork_manual_y: value });
@@ -1419,6 +1888,14 @@ function Content({ page = "quick" }: { page?: Page }) {
       manualTimer.current = null;
       void changeArtworkSetting("manual_y", value);
     }, 250);
+  };
+  const changeArtworkVibrance = (value: number) => {
+    setStatus({ ...status, artwork_vibrance: value });
+    if (artworkVibranceTimer.current != null) window.clearTimeout(artworkVibranceTimer.current);
+    artworkVibranceTimer.current = window.setTimeout(() => {
+      artworkVibranceTimer.current = null;
+      void changeArtworkSetting("vibrance", value);
+    }, 120);
   };
   const chooseTemperatureColor = (
     key: "temperature_custom_cool" | "temperature_custom_middle" | "temperature_custom_hot",
@@ -1440,7 +1917,7 @@ function Content({ page = "quick" }: { page?: Page }) {
       setStatus(next);
       if (!started) {
         setLaunchPreviewError(!next.signalbar_enabled
-          ? "Enable GabeCubeAura outputs before starting a preview."
+          ? "Enable GabeCubeAura before starting a preview."
           : "Preview could not start. Wait for the current game's artwork palette, then try again.");
       }
     } catch (error) {
@@ -1450,6 +1927,7 @@ function Content({ page = "quick" }: { page?: Page }) {
   const performanceColors = performancePreview(status);
   const baseShownColors = status.provider.startsWith("launch-artwork:") ? status.launch_artwork.colors
     : status.provider.startsWith("screen-sync") ? status.screen_sync.colors
+    : status.provider.startsWith("audio-sync") ? status.audio_sync.colors
     : status.provider.startsWith("customization:") ? status.customization.colors
     : status.provider.startsWith("event:") ? status.events.colors
     : status.provider.startsWith("controller:") || status.provider.startsWith("controller-") ? status.controllers.colors
@@ -1462,6 +1940,7 @@ function Content({ page = "quick" }: { page?: Page }) {
   const shownLabel = status.provider.startsWith("launch-artwork:")
     ? `Game launch · ${LAUNCH_ARTWORK_PATTERN_OPTIONS.find((item) => item.data === status.launch_artwork_pattern)?.label ?? status.launch_artwork_pattern}`
     : status.provider.startsWith("screen-sync") ? "Screen Sync"
+    : status.provider.startsWith("audio-sync") ? "Audio Sync"
     : status.provider.startsWith("customization:") ? `Customization+ · ${customizationPatternLabel(status.customization_pattern)}`
     : status.provider.startsWith("event:") ? status.events.variant
     : status.provider.startsWith("controller:") ? `Controller · ${status.controllers.variant}`
@@ -1470,6 +1949,7 @@ function Content({ page = "quick" }: { page?: Page }) {
       : status.provider === "controller-charge-complete" ? "Controller fully charged"
       : status.provider.startsWith("weather") ? `Weather · ${status.weather.location?.name ?? "preview"}`
     : status.provider === "countdown" ? status.countdown.label
+      : status.provider === "blackout" ? "Blackout · LEDs held off"
       : status.provider === "valve" ? "Steam / another app"
         : status.provider === "none" ? "No GabeCubeAura output" : status.provider;
   const showPage = (target: Page) => page === target;
@@ -1491,11 +1971,9 @@ function Content({ page = "quick" }: { page?: Page }) {
     const token = update.confirmation_token;
     const target = update.available_version;
     let modal: ReturnType<typeof showModal> | undefined;
-    modal = showModal(<ConfirmModal strTitle={update.return_to_stable ? "Return to stable GabeCubeAura?" : "Update GabeCubeAura?"}
-      strDescription={update.return_to_stable
-        ? `Return from ${update.installed_version} to stable ${target}? The downloaded package passed its checksum and package checks. Your settings and artwork cache will be kept. If the stable build does not start, GabeCubeAura restores the working beta. Decky will restart briefly.`
-        : `Update from ${update.installed_version} to ${target}? The downloaded package passed its checksum and package checks. Your settings and artwork cache will be kept. Decky will restart briefly.`}
-      strOKButtonText={update.return_to_stable ? "Install stable and restart" : "Update and restart Decky"} strCancelButtonText="Cancel"
+    modal = showModal(<ConfirmModal strTitle="Update GabeCubeAura?"
+      strDescription={`Update from ${update.installed_version} to ${target}? The downloaded package passed its checksum and package checks. Your settings and artwork cache will be kept. Decky will restart briefly.`}
+      strOKButtonText="Update and restart Decky" strCancelButtonText="Cancel"
       onCancel={() => modal?.Close()}
       onOK={() => {
         modal?.Close();
@@ -1553,15 +2031,9 @@ function Content({ page = "quick" }: { page?: Page }) {
       </PanelSection> : null}
 
       {page === "quick" ? <PanelSection title="Permanent displays">
-        <PanelSectionRow><ToggleField label="Enable GabeCubeAura outputs"
-          description="Turns off every GabeCubeAura light without deleting display routes, launch effects, or per-game choices."
+        <PanelSectionRow><ToggleField label="Enable GabeCubeAura"
           checked={status.signalbar_enabled}
           onChange={async (value) => setStatus(await setSetting("signalbar_enabled", value))} /></PanelSectionRow>
-        <PanelSectionRow><div style={{ width: "100%", fontSize: ".82em" }}>
-          <div>Home: <b>{displayLabel(status.home_display)}</b></div>
-          <div>In game: <b>{displayLabel(status.game_display)}</b></div>
-          <div>Current: <b>{displayLabel(status.current_display)}</b></div>
-        </div></PanelSectionRow>
         {status.game.appid > 0 ? <>
           <PanelSectionRow><DropdownItem label="Display for this game"
             description={`Saved for ${status.game.title || `AppID ${status.game.appid}`}. Does not change other games.`}
@@ -1573,17 +2045,6 @@ function Content({ page = "quick" }: { page?: Page }) {
               : `Active display: ${displayLabel(status.current_display)}${status.display_override === "inherit" ? " (in-game default)" : " (game profile)"}. Temporary signals keep their own priority.`}
           </div></PanelSectionRow>
         </> : null}
-      </PanelSection> : null}
-
-      {page === "quick" ? <PanelSection title="Temporary layers">
-        <PanelSectionRow><div style={{ width: "100%", fontSize: ".82em", lineHeight: 1.5 }}>
-          <div>Game launches: <b>{status.launch_artwork_animation_enabled
-            ? `On · ${LAUNCH_ARTWORK_PATTERN_OPTIONS.find((item) => item.data === status.launch_artwork_pattern)?.label} · ${status.launch_artwork_duration_seconds} s · ${status.launch_artwork_colour_count} colours`
-            : "Off"}</b></div>
-          <div>Light events: <b>{status.events_enabled ? "On" : "Off"}</b></div>
-          <div>Playtime warnings: <b>{status.parental_countdown_enabled ? "On" : "Off"}</b></div>
-          <div>Controller alerts: <b>{status.controller_alerts_enabled ? "On" : "Off"}</b></div>
-        </div></PanelSectionRow>
       </PanelSection> : null}
 
       {page === "quick" ? <PanelSection title="Now showing">
@@ -1611,7 +2072,6 @@ function Content({ page = "quick" }: { page?: Page }) {
             </div> : null}
             <PalettePreview colors={shownColors} />
             <div style={{ opacity: .65 }}>17-LED logical preview</div>
-            <div style={{ opacity: .72 }}>Family countdown takes priority. Short alerts temporarily replace the selected permanent display, then it returns.</div>
           </div>
         </PanelSectionRow>
         <PanelSectionRow>
@@ -1621,12 +2081,30 @@ function Content({ page = "quick" }: { page?: Page }) {
         </PanelSectionRow>
       </PanelSection> : null}
 
+      {page === "quick" && status.audio_sync_hifi_lab_enabled && status.audio_sync_style === "hifi-crest"
+        ? <HifiCrestLab status={status} setStatus={setStatus} quick />
+        : null}
+
       {showPage("routing") ? <>
         <PanelSection title="Display routing">
-          <PanelSectionRow><ToggleField label="Enable GabeCubeAura outputs"
+          <PanelSectionRow><ToggleField label="Enable GabeCubeAura"
             description="Turns off every GabeCubeAura light without deleting display routes, launch effects, or per-game choices."
             checked={status.signalbar_enabled}
             onChange={async (value) => setStatus(await setSetting("signalbar_enabled", value))} /></PanelSectionRow>
+          <PanelSectionRow><DropdownItem label="Lighting preset"
+            description={DISPLAY_PRESET_DESCRIPTIONS[status.display_preset] ?? DISPLAY_PRESET_DESCRIPTIONS.custom}
+            rgOptions={DISPLAY_PRESET_OPTIONS} selectedOption={status.display_preset}
+            onChange={(option) => void applyDisplayPreset(String(option.data))} /></PanelSectionRow>
+          {routingMessage ? <PanelSectionRow><div style={{ fontSize: ".78em", color: "#ffd27a" }}>
+            {routingMessage}
+          </div></PanelSectionRow> : null}
+          <PanelSectionRow><DropdownItem label="Steam ownership"
+            description={VALVE_OWNERSHIP_DESCRIPTIONS[status.valve_ownership_policy] ?? VALVE_OWNERSHIP_DESCRIPTIONS.cooperative}
+            rgOptions={VALVE_OWNERSHIP_OPTIONS} selectedOption={status.valve_ownership_policy}
+            onChange={async (option) => setStatus(await setSetting("valve_ownership_policy", String(option.data)))} /></PanelSectionRow>
+          <PanelSectionRow><div style={{ fontSize: ".76em", opacity: .78 }}>
+            The critical red exception is detected from the physical LED pattern because Steam exposes no public semantic thermal-warning signal. It is a conservative best-effort safeguard, not a guaranteed source identification.
+          </div></PanelSectionRow>
           <PanelSectionRow><DropdownItem label="Home display"
             description="The permanent display used when no game is running. Temporary alerts and previews may still replace it."
             rgOptions={HOME_DISPLAY_OPTIONS} selectedOption={status.home_display}
@@ -1636,9 +2114,10 @@ function Content({ page = "quick" }: { page?: Page }) {
             rgOptions={GAME_DISPLAY_OPTIONS} selectedOption={status.game_display}
             onChange={async (option) => setStatus(await setSetting("game_display", String(option.data)))} /></PanelSectionRow>
           <PanelSectionRow><div style={{ fontSize: ".78em", opacity: .75 }}>
-            <b>GabeCubeAura Off</b> means no permanent GabeCubeAura display in that context; Steam keeps the bar between temporary layers. Game launches, alerts and playtime warnings remain available. The master switch above disables everything. Weather requires a city.
+            <b>GabeCubeAura Off</b> releases the permanent display to Steam. <b>Blackout</b> actively holds all 17 LEDs off while keeping GabeCubeAura ownership. Temporary GabeCubeAura layers still follow the selected preset. The master switch releases everything. Weather requires a city.
           </div></PanelSectionRow>
         </PanelSection>
+        <LightBarCalibration status={status} setStatus={setStatus} />
         {status.game.appid > 0 ? <PanelSection title="Current game override">
           <PanelSectionRow><DropdownItem label={status.game.title || `AppID ${status.game.appid}`}
             description="Saved for this AppID only."
@@ -1651,6 +2130,8 @@ function Content({ page = "quick" }: { page?: Page }) {
       {showPage("customization") ? <CustomizationPanel status={status} setStatus={setStatus} /> : null}
 
       {showPage("screen-sync") ? <ScreenSyncPanel status={status} setStatus={setStatus} /> : null}
+
+      {showPage("audio-sync") ? <AudioSyncPanel status={status} setStatus={setStatus} /> : null}
 
       {showPage("artwork") ? <PanelSection title="Artwork display">
         <PanelSectionRow>
@@ -1692,6 +2173,19 @@ function Content({ page = "quick" }: { page?: Page }) {
             />
           </PanelSectionRow>
         ) : null}
+        <PanelSectionRow>
+          <SliderField
+            label="Artwork colour intensity"
+            description="Adjusts perceptual vibrance while retaining lightness. 0% is greyscale, 100% preserves the current GabeCubeAura rendering and 200% is the strongest protected boost."
+            value={status.artwork_vibrance}
+            min={0}
+            max={200}
+            step={5}
+            showValue
+            valueSuffix="%"
+            onChange={changeArtworkVibrance}
+          />
+        </PanelSectionRow>
         {currentArtwork ? (
           <PanelSectionRow>
             <ArtworkImage
@@ -1787,7 +2281,7 @@ function Content({ page = "quick" }: { page?: Page }) {
         <PanelSectionRow><ButtonItem
           label="Preview launch animation"
           description={!status.signalbar_enabled
-            ? "Enable GabeCubeAura outputs first."
+            ? "Enable GabeCubeAura first."
             : status.game.appid > 0 && (status.launch_artwork.dominant_colors?.length ?? 0) > 0
             ? "Play the selected pattern with the current game's active palette."
             : "Start a game and wait for its palette first."}
@@ -1812,7 +2306,7 @@ function Content({ page = "quick" }: { page?: Page }) {
         <PanelSectionRow><ButtonItem
           label="Preview launch animation"
           description={!status.signalbar_enabled
-            ? "Enable GabeCubeAura outputs first."
+            ? "Enable GabeCubeAura first."
             : status.game.appid > 0 && (status.launch_artwork.dominant_colors?.length ?? 0) > 0
               ? "Play the selected pattern again after reviewing the artwork."
               : "Start a game and wait for its palette first."}
@@ -1943,13 +2437,11 @@ function Content({ page = "quick" }: { page?: Page }) {
 
       {showPage("weather") ? <WeatherPanel status={status} setStatus={setStatus} /> : null}
 
-      {showPage("compatibility") ? <CompatibilityPanel status={status} setStatus={setStatus} /> : null}
-
       {showPage("updates") && update ? <>
         <PanelSection title="Software updates">
           <PanelSectionRow><div style={{ width: "100%", fontSize: ".82em", lineHeight: 1.45 }}>
             <div>Installed version: <b>{update.installed_version}</b></div>
-            <div>{update.channel === "stable" ? "Latest stable version" : "Latest beta or stable version"}: <b>{update.available_version || update.installed_version}</b></div>
+            <div>{update.channel === "stable" ? "Latest stable version" : update.channel === "beta" ? "Latest beta or stable version" : "Latest private lab version"}: <b>{update.available_version || update.installed_version}</b></div>
             <div>Current status: <b>{updatePhaseLabel(update)}</b></div>
             <div>Last checked: {formatUpdateDate(update.last_checked_at)}</div>
             {update.prepared_digest ? <div>Verified SHA256: <code>{update.prepared_digest.slice(0, 12)}...</code></div> : null}
@@ -1959,12 +2451,12 @@ function Content({ page = "quick" }: { page?: Page }) {
             disabled={updateBusy || ["checking", "downloading", "verifying", "ready", "installing", "restart_pending"].includes(update.phase)}
             onClick={() => void runUpdateAction(checkForUpdates)}>Check now</ButtonItem></PanelSectionRow>
           {update.release_url ? <PanelSectionRow><ButtonItem label="View release notes"
-            description="Opens the official Alyenax/GabeCubeAura release page."
+            description={`Opens the selected ${update.channel === "private" ? "private Lab" : "public GabeCubeAura"} release page.`}
             onClick={() => Navigation.NavigateToExternalWeb(update.release_url)}>Open GitHub</ButtonItem></PanelSectionRow> : null}
-          {update.phase === "available" ? <PanelSectionRow><ButtonItem label={update.return_to_stable ? `Download stable ${update.available_version}` : "Download update"}
+          {update.phase === "available" ? <PanelSectionRow><ButtonItem label="Download update"
             description="Downloads and checks the archive. Nothing is installed yet."
             disabled={updateBusy} onClick={() => void runUpdateAction(prepareUpdate)}>Download and verify</ButtonItem></PanelSectionRow> : null}
-          {update.phase === "ready" ? <PanelSectionRow><ButtonItem label={update.return_to_stable ? `Return to stable ${update.available_version}` : `Install ${update.available_version}`}
+          {update.phase === "ready" ? <PanelSectionRow><ButtonItem label={`Install ${update.available_version}`}
             description="Settings and artwork caches are kept. Decky restarts briefly."
             disabled={updateBusy} onClick={confirmUpdateInstall}>Update and restart Decky</ButtonItem></PanelSectionRow> : null}
           {update.release_notes ? <PanelSectionRow><div style={{ width: "100%", fontSize: ".76em", opacity: .8, whiteSpace: "pre-wrap", maxHeight: 180, overflow: "hidden" }}>
@@ -1973,29 +2465,69 @@ function Content({ page = "quick" }: { page?: Page }) {
           {update.phase === "error" ? <PanelSectionRow><ButtonItem label="Dismiss update error"
             onClick={() => void runUpdateAction(dismissUpdateError)}>Dismiss</ButtonItem></PanelSectionRow> : null}
         </PanelSection>
+        {update.channel === "private" ? <PanelSection title="Private Lab access">
+          <PanelSectionRow><div style={{ width: "100%", fontSize: ".78em", opacity: .84, lineHeight: 1.45 }}>
+            <div>Repository: <b>{update.private_repository}</b></div>
+            <div>GitHub access: <b>{update.private_auth_state === "connected" ? "Connected" : update.private_auth_state === "pending" ? "Waiting for authorization" : "Not connected"}</b></div>
+            <div style={{ marginTop: 5 }}>The plugin requests read-only access through a GitHub device code. No password or client secret is stored in GabeCubeAura.</div>
+          </div></PanelSectionRow>
+          {update.private_auth_state !== "connected" && update.private_auth_state !== "pending" ? <PanelSectionRow><ButtonItem
+            label="Connect GitHub"
+            description="Creates a short-lived code for github.com/login/device."
+            disabled={updateBusy || !update.private_auth_configured}
+            onClick={() => void runUpdateAction(startPrivateUpdateAuthorization)}>
+            Generate code
+          </ButtonItem></PanelSectionRow> : null}
+          {update.private_auth_state === "pending" ? <>
+            <PanelSectionRow><div style={{ width: "100%", padding: "8px 0", textAlign: "center" }}>
+              <div style={{ fontSize: ".75em", opacity: .72 }}>Enter this code on GitHub</div>
+              <div style={{ fontSize: "1.45em", fontWeight: 800, letterSpacing: ".14em", marginTop: 4 }}>{update.private_user_code}</div>
+              <div style={{ fontSize: ".72em", opacity: .66, marginTop: 4 }}>Expires {formatUpdateDate(update.private_auth_expires_at)}</div>
+            </div></PanelSectionRow>
+            <PanelSectionRow><ButtonItem label="Open GitHub device authorization"
+              description="Opens GitHub in the browser. Enter the code shown above."
+              onClick={() => Navigation.NavigateToExternalWeb(update.private_verification_uri || "https://github.com/login/device")}>Open GitHub</ButtonItem></PanelSectionRow>
+            <PanelSectionRow><ButtonItem label="I authorized this device"
+              description="Detection is automatic. Use this to check immediately."
+              disabled={updateBusy}
+              onClick={() => void runUpdateAction(pollPrivateUpdateAuthorization)}>Finish connection</ButtonItem></PanelSectionRow>
+          </> : null}
+          {update.private_auth_state === "connected" ? <PanelSectionRow><ButtonItem
+            label="Disconnect Private Lab"
+            description="Deletes the locally stored GitHub access and refresh tokens."
+            disabled={updateBusy}
+            onClick={() => void runUpdateAction(disconnectPrivateUpdateAuthorization)}>
+            Disconnect
+          </ButtonItem></PanelSectionRow> : null}
+          {!update.private_auth_configured ? <PanelSectionRow><div style={{ fontSize: ".76em", color: "#ffb3b3" }}>
+            This build does not yet contain the GitHub App client ID.
+          </div></PanelSectionRow> : null}
+        </PanelSection> : null}
         <PanelSection title="Automatic checks">
           <PanelSectionRow><ToggleField label="Automatically check for updates"
-            description="Checks once after GabeCubeAura starts, then at the selected interval. Nothing is installed without your confirmation."
+            description="Checks the selected Alyenax release channel at this interval. Nothing is installed without your confirmation."
             checked={update.auto_check} onChange={(value) => void runUpdateAction(() => setUpdatePreferences(value, update.notifications, update.check_interval_minutes, update.channel))} /></PanelSectionRow>
-          <PanelSectionRow><DropdownItem label="Automatic check interval"
-            description="Used after the automatic check that runs when Steam loads the plugin."
+          <PanelSectionRow><DropdownItem label="Check interval"
+            description="How often GabeCubeAura checks automatically. Manual checks remain available."
             disabled={!update.auto_check || updateBusy}
             rgOptions={UPDATE_INTERVAL_OPTIONS} selectedOption={update.check_interval_minutes}
             onChange={(option) => void runUpdateAction(() => setUpdatePreferences(update.auto_check, update.notifications, Number(option.data), update.channel))} /></PanelSectionRow>
           <PanelSectionRow><DropdownItem label="Update channel"
             description={update.channel === "stable"
               ? "Stable releases only."
-              : "Published beta releases and later stable releases. Changing channel checks immediately."}
+              : update.channel === "beta"
+                ? "Beta releases and later stable releases. Installation still requires confirmation."
+                : "Private hardware-lab releases from Alyenax/GabeCubeAura-Lab. GitHub authorization is required."}
             disabled={updateBusy || ["downloading", "verifying", "ready", "installing", "restart_pending"].includes(update.phase)}
             rgOptions={UPDATE_CHANNEL_OPTIONS} selectedOption={update.channel}
-            onChange={(option) => void runUpdateAction(() => setUpdatePreferences(update.auto_check, update.notifications, update.check_interval_minutes, String(option.data) as "stable" | "beta"))} /></PanelSectionRow>
+            onChange={(option) => void runUpdateAction(() => setUpdatePreferences(update.auto_check, update.notifications, update.check_interval_minutes, String(option.data) as "stable" | "beta" | "private"))} /></PanelSectionRow>
           <PanelSectionRow><ToggleField label="Notify me when an update is available"
             description="Shows one Decky notification for each new version on the selected channel."
             checked={update.notifications} onChange={(value) => void runUpdateAction(() => setUpdatePreferences(update.auto_check, value, update.check_interval_minutes, update.channel))} /></PanelSectionRow>
         </PanelSection>
         <PanelSection title="Installation safety">
           <PanelSectionRow><div style={{ width: "100%", fontSize: ".78em", opacity: .82 }}>
-            Updates are downloaded from the official GabeCubeAura repository and checked before installation. Settings and artwork caches are kept. Decky restarts briefly after an update.
+            Updates are downloaded from the selected Alyenax repository and checked before installation. Private Lab credentials are stored separately from exported settings. Settings and artwork caches are kept. Decky restarts briefly after an update.
             {update.last_result ? <div style={{ marginTop: 7 }}>Last result: {updatePhaseLabel(update)}</div> : null}
           </div></PanelSectionRow>
           <PanelSectionRow><ButtonItem label="Check again"
@@ -2004,7 +2536,17 @@ function Content({ page = "quick" }: { page?: Page }) {
         </PanelSection>
       </> : null}
 
+      {showPage("advanced") ? <CompatibilityPanel status={status} setStatus={setStatus} /> : null}
+
       {showPage("advanced") ? <PanelSection title="Advanced / debug">
+        <PanelSectionRow>
+          <ToggleField
+            label="Show Hi-Fi Crest Lab"
+            description="Shows the physical calibration controls in the Decky tab and Audio Sync settings when Hi-Fi Crest is selected."
+            checked={status.audio_sync_hifi_lab_enabled}
+            onChange={async (value) => setStatus(await setSetting("audio_sync_hifi_lab_enabled", value))}
+          />
+        </PanelSectionRow>
         <PanelSectionRow>
           <ToggleField
             label="Show debug details"
@@ -2089,6 +2631,9 @@ function Content({ page = "quick" }: { page?: Page }) {
                   {status.debug.steam_lease_remaining_s > 0
                     ? ` · lease ${status.debug.steam_lease_remaining_s.toFixed(1)} s`
                     : ""}
+                </div>
+                <div>
+                  Steam download LED mode: {status.debug.steam_led_override_state}
                 </div>
                 <div>
                   Ownership recovery: {status.debug.last_recovery_age_s == null
@@ -2192,7 +2737,7 @@ function Content({ page = "quick" }: { page?: Page }) {
         </ButtonItem></PanelSectionRow>
       </PanelSection> : null}
 
-      {page !== "quick" ? <SettingsPageEnd page={page} setStatus={setStatus} /> : null}
+      {page !== "quick" && page !== "audio-sync" ? <SettingsPageEnd page={page} setStatus={setStatus} /> : null}
 
     </>
   );
@@ -2204,13 +2749,13 @@ function GabeCubeAuraSettings() {
     { title: "Customization+", route: "/gabecubeaura/settings/customization", content: <Content page="customization" /> },
     { title: "Artwork", route: "/gabecubeaura/settings/artwork", content: <Content page="artwork" /> },
     { title: "Performance", route: "/gabecubeaura/settings/performance", content: <Content page="performance" /> },
-    { title: "Screen Sync", route: "/gabecubeaura/settings/screen-sync", content: <Content page="screen-sync" /> },
     { title: "Game launches", route: "/gabecubeaura/settings/launches", content: <Content page="launches" /> },
     { title: "Playtime", route: "/gabecubeaura/settings/countdown", content: <Content page="countdown" /> },
     { title: "Light events", route: "/gabecubeaura/settings/events", content: <Content page="events" /> },
     { title: "Controllers", route: "/gabecubeaura/settings/controllers", content: <Content page="controllers" /> },
     { title: "Weather", route: "/gabecubeaura/settings/weather", content: <Content page="weather" /> },
-    { title: "Compatibility", route: "/gabecubeaura/settings/compatibility", content: <Content page="compatibility" /> },
+    { title: "Screen Sync", route: "/gabecubeaura/settings/screen-sync", content: <Content page="screen-sync" /> },
+    { title: "Audio Sync", route: "/gabecubeaura/settings/audio-sync", content: <Content page="audio-sync" /> },
     { title: "Updates", route: "/gabecubeaura/settings/updates", content: <Content page="updates" /> },
     "separator",
     { title: "Advanced / debug", route: "/gabecubeaura/settings/advanced", content: <Content page="advanced" /> },

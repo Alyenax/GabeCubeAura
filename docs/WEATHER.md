@@ -1,4 +1,4 @@
-# Weather in GabeCubeAura 1.2.1-beta.1
+# Weather in GabeCubeAura 1.3.0
 
 Choose a city in Settings, Weather, then select Weather as the permanent Home
 or in-game display. Location is never detected automatically. Current
@@ -20,7 +20,7 @@ Weather offers 22 loops:
 - 2 snow scenes
 - 2 storm scenes
 
-The 8 night transpositions in this beta preserve the approved daytime motion
+The 8 night transpositions in this release preserve the approved daytime motion
 while changing the palette and light source:
 
 - Sun glints becomes Breathing moon, with a 6-second loop.

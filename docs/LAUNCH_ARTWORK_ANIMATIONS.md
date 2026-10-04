@@ -23,6 +23,11 @@ results receive the same bounded contrast correction as Artwork mode. A nearly
 monochrome image is completed with lighter/darker values of the detected hue;
 GabeCubeAura does not invent an unrelated accent hue.
 
+When the palette source is Artwork, the detected colours also follow the
+current game's Artwork colour intensity setting. This is an instant transform
+of the cached palette and does not decode or sample the image again. A custom
+launch palette is always kept exact and is never changed by this control.
+
 The two launch palettes are stored in a dedicated
 `launch-artwork-cache.json`. The permanent Artwork display keeps its own cache,
 source and 17-pixel sample row. Consequently, changing the launch colour source

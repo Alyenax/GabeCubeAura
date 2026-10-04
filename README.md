@@ -1,16 +1,15 @@
 # GabeCubeAura
 
-**GabeCubeAura 1.2.1 brings real-time screen colours, richer controller
-support and expanded Weather scenes to the official Steam Machine's 17-pixel
-light bar.**
+**GabeCubeAura 1.3.2 adds real-time Audio Sync, ready-made display presets and
+more precise control over the official Steam Machine's 17-pixel light bar.**
 
 Make your Steam Machine's 17-pixel light bar useful and a little more
-expressive. This release combines the complete v1.1.3 feature set with Screen Sync,
-fixed layouts for up to four controllers, eight additional night Weather scenes
-and safer recovery across Steam, Gamescope and Decky session changes.
+expressive. This release keeps Screen Sync, Artwork, Weather, controller status
+and system signals, then adds ten Audio Sync patterns, separate Home and
+in-game audio looks, and safer handoffs between GabeCubeAura and Steam.
 
-[Download GabeCubeAura 1.2.1](https://github.com/Alyenax/GabeCubeAura/releases/download/v1.2.1/GabeCubeAura-v1.2.1.zip)
-· [Release notes](https://github.com/Alyenax/GabeCubeAura/releases/tag/v1.2.1)
+[Download GabeCubeAura 1.3.2](https://github.com/Alyenax/GabeCubeAura/releases/download/v1.3.2/GabeCubeAura-v1.3.2.zip)
+· [Release notes](https://github.com/Alyenax/GabeCubeAura/releases/tag/v1.3.2)
 · [TW3 SteamRGB companion](https://github.com/Alyenax/TW3-SteamRGB)
 
 [Try the interactive GabeCubeAura preview before installing](https://alyenax.github.io/gabecubeaura-concept/)
@@ -117,18 +116,37 @@ All existing routing still applies. Choose separate permanent displays for
 Home and games, then let temporary launch, playtime and Steam moments take the
 stage before the selected display returns.
 
+### Audio Sync
+
+Audio Sync turns the mixed system sound into light locally, without recording
+or saving audio. Choose from ten patterns, including Hi-Fi Crest, Slow Prism,
+Spectrum and Stereo Field, then combine any pattern with a built-in palette,
+custom colours, live Screen Sync colours or the running game's Artwork.
+
+Home and in-game can use different patterns, palettes and custom colours.
+Fresh installations use Slow Prism with the Screen Sync palette in both
+contexts, Fast response and brightness 180. Steam downloads, alerts, Game
+launches and the screensaver keep their existing priority.
+
+![Audio Sync using Slow Prism with the Screen Sync palette on the Steam Machine light bar](docs/media/animations/audio-sync-slow-prism-screen-sync.gif)
+
 ### Display routing and temporary layers
 
 Choose one permanent display for Home and another for games: GabeCubeAura Off,
-Customization+, Artwork (games only), Performance, Screen Sync (games only),
-Weather, or Controllers. A per-game override
+Blackout, Customization+, Artwork (games only), Performance, Screen Sync (games
+only), Audio Sync, Weather, or Controllers. A per-game override
 can replace the in-game default. Game launches, Playtime, Light events, and
 Controller alerts are separate temporary layers, so they work without forcing
 a particular permanent display. Choosing GabeCubeAura Off reproduces the former
 Signals-only behaviour: GabeCubeAura yields the bar between temporary signals.
+Blackout instead keeps ownership and holds all 17 LEDs off.
+
+Nine one-step presets configure a complete setup: Lights out, Focus, Essential,
+Moderate, Atmosphere, Signals, Immersive, Immersive+ and Festive. Returning to
+Custom restores the setup saved before the first preset was selected.
 
 StripMine is developed by the same author as GabeCubeAura. With StripMine
-v0.1.1-alpha.7 or newer, open **Settings > Compatibility** to
+v0.1.1-alpha.7 or newer, open **Settings > Advanced / debug > Compatibility** to
 choose which plugin owns the bar for Artwork, Performance, Weather, Controller
 displays, Game launches, and Light Events while the mine is active. GabeCubeAura
 and StripMine acknowledge every transfer before writing, then restore the
@@ -141,7 +159,7 @@ live The Witcher 3 HUD. While its fresh ownership claim is active,
 GabeCubeAura yields only its permanent display. Steam system activity,
 GabeCubeAura previews, alerts, Game launches and playtime countdowns remain
 above the game HUD. The former experimental Witcher Lab is not bundled with
-GabeCubeAura 1.2.1.
+GabeCubeAura 1.3.2.
 
 ### Playtime Countdown
 
@@ -185,8 +203,9 @@ are kept.
 
 ![Weather animations on the Steam Machine light bar](docs/media/animations/weather.gif)
 
-An optional, experimental weather icon and temperature can also appear beside
-the SteamOS clock. Choose °C or °F for the top-bar number. This works
+The SteamOS top-bar weather indicator is enabled by default and appears once a
+city is selected. Choose °C or °F and one of three locally bundled icon
+styles. This works
 independently of the LED weather scene and has been confirmed on one Steam
 Machine; Steam UI updates could change its placement. No temperature colours
 are mapped to LEDs.
@@ -197,7 +216,7 @@ Select a city before enabling live weather. If you enter a country, use its
 full name (for example France), not a two-letter code. GabeCubeAura fetches current
 conditions from Open-Meteo about every 15 minutes, without an API key or
 automatic location detection. Only one permanent display is selected in each
-context; Controllers remains the fresh-install Home default.
+context; Audio Sync is the fresh-install Home and in-game display.
 
 ## Light events
 
@@ -247,7 +266,7 @@ GabeCubeAura follows a strict order:
    the alert.
 6. Game launches temporarily replace regular countdowns; those countdowns
    return afterwards.
-7. Screen Sync, Artwork, Performance, Weather, Controllers or Customization+
+7. Screen Sync, Audio Sync, Artwork, Performance, Weather, Controllers or Customization+
    provides the selected permanent display.
 8. A single native transition is allowed to settle before GabeCubeAura restores its
    expected display. Repeated native writes keep control with Steam.
@@ -267,7 +286,9 @@ briefly. Settings and artwork caches remain outside the replaced plugin
 directory. If the new backend does not confirm a healthy startup within 45
 seconds, the previous plugin version is restored automatically.
 
-The Stable channel is the default and ignores GitHub prereleases. The optional
+The Stable channel is the default, checks every 24 hours and ignores GitHub
+prereleases. No private authorization or token is configured on a fresh
+installation. The optional
 Beta channel accepts published beta releases as well as later stable releases.
 Both use the same verification and confirmation flow. Changing the selector to
 **Beta** starts a fresh release check immediately for published prereleases.
@@ -277,8 +298,8 @@ version number is lower than an installed beta.
 ### Decky Loader
 
 1. Install [Decky Loader](https://decky.xyz/).
-2. Download `GabeCubeAura-v1.2.1.zip` from the
-   [v1.2.1 release](https://github.com/Alyenax/GabeCubeAura/releases/tag/v1.2.1).
+2. Download `GabeCubeAura-v1.3.2.zip` from the
+   [v1.3.2 release](https://github.com/Alyenax/GabeCubeAura/releases/tag/v1.3.2).
    Do not extract it.
 3. Open **Decky > Settings > General** and enable **Developer mode** only if the
    **Developer** section is not already visible.
@@ -299,9 +320,9 @@ light bar through root-owned `valve-leds` sysfs files.
 
 1. Open GabeCubeAura in Decky's quick-access menu.
 2. Choose a **Home display** and an **In-game display** under Display routing.
-3. Open **Detailed settings** for Artwork, Performance, Screen Sync,
-   Weather, Game launches, Playtime, Light events, Controllers, Compatibility,
-   and Advanced options.
+3. Open **Detailed settings** for Artwork, Performance, Screen Sync, Audio Sync,
+   Weather, Game launches, Playtime, Light events and Controllers. Compatibility
+   is grouped inside Advanced / debug.
 4. Use Preview to compare animations before changing your live settings.
 
 Live Light events are enabled on a fresh installation. Controller alerts have
@@ -384,6 +405,11 @@ default is two.
 The official Steam Machine's physical LED order is reversed by default while
 the Decky preview remains left to right.
 
+The shipped Consistent output policy temporarily applies the tested 9 / 255
+Steam brightness reference only while GabeCubeAura owns the bar, then restores
+Steam's saved value before handing control back. Follow Steam brightness
+remains available in Display routing.
+
 ### Configuration backup and reset
 
 Open **Advanced / debug > Show debug details** and choose **Export configuration
@@ -402,8 +428,9 @@ exported JSON or the artwork cache; both stop a running personal timer.
 
 ## Safety and privacy
 
-- No cloud telemetry or cloud account login. Weather city search and Open-Meteo
-  requests occur only when you use the optional Weather feature.
+- No cloud telemetry. Weather city search and Open-Meteo requests occur only
+  when you use the optional Weather feature. Private Lab authorization is
+  optional, and fresh installations start disconnected without a token.
 - No SteamOS read-only filesystem modification
 - Local read-only discovery of Steam and custom-grid artwork
 - Serialized and rate-limited hardware writes
@@ -447,7 +474,7 @@ corepack pnpm build
 corepack pnpm package
 ```
 
-The installable archives are written to `out/GabeCubeAura-v1.2.1.zip` and
+The installable archives are written to `out/GabeCubeAura-v1.3.2.zip` and
 `out/GabeCubeAura.zip`. Their identical SHA256 values are written to
 `out/SHA256SUMS`.
 

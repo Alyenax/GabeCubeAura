@@ -117,6 +117,8 @@ class Plugin:
             changes["manual_y"] = value
         elif key == "source":
             changes["source"] = value
+        elif key == "vibrance":
+            changes["vibrance"] = value
         self.engine.update_artwork_settings(appid, changes)
         return self.engine.status()
 
@@ -162,9 +164,12 @@ class Plugin:
     async def preview_customization(self):
         return self.engine.preview_customization()
 
+    async def preview_light_calibration(self):
+        self.engine.preview_light_calibration()
+        return self.engine.status()
+
     async def set_steam_activity(self, active: bool, reason: str = "Steam event"):
-        self.engine.set_steam_activity(active, reason)
-        return True
+        return self.engine.set_steam_activity(active, reason)
 
     async def set_screen_sync_context(self, context: str, active: bool,
                                       state: str = "available", detail: str = ""):
@@ -172,6 +177,10 @@ class Plugin:
 
     async def preview_screen_sync(self):
         self.engine.preview_screen_sync(15.0)
+        return self.engine.status()
+
+    async def preview_audio_sync(self):
+        self.engine.preview_audio_sync(15.0)
         return self.engine.status()
 
     async def report_runtime_diagnostic(self, event: str, appid: int = 0,
@@ -251,6 +260,21 @@ class Plugin:
             notifications,
             check_interval_minutes,
             channel,
+        )
+
+    async def start_private_update_authorization(self):
+        return await asyncio.get_running_loop().run_in_executor(
+            None, self.update_manager.start_private_authorization,
+        )
+
+    async def poll_private_update_authorization(self):
+        return await asyncio.get_running_loop().run_in_executor(
+            None, self.update_manager.poll_private_authorization,
+        )
+
+    async def disconnect_private_update_authorization(self):
+        return await asyncio.get_running_loop().run_in_executor(
+            None, self.update_manager.disconnect_private_authorization,
         )
 
     async def acknowledge_update_notification(self, version: str):

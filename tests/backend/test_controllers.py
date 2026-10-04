@@ -176,13 +176,13 @@ class ControllerTests(unittest.TestCase):
                     if kind == "duo":
                         self.assertEqual(controller_frame(kind, variant, 2.5, 74, 25)[8], (0, 0, 0))
 
-    def test_settings_persist_validate_and_default_to_home_gauge(self):
+    def test_settings_persist_validate_and_default_to_brief_charging(self):
         with tempfile.TemporaryDirectory() as folder:
             path = str(Path(folder) / "settings.json")
             store = SettingsStore(path)
-            self.assertEqual(store.all()["controller_battery_display"], "home")
-            self.assertEqual(store.all()["controller_charging_mode"], "continuous-home")
-            self.assertEqual(store.all()["controller_charging_display"], "home")
+            self.assertEqual(store.all()["controller_battery_display"], "off")
+            self.assertEqual(store.all()["controller_charging_mode"], "brief")
+            self.assertEqual(store.all()["controller_charging_display"], "off")
             self.assertEqual(store.all()["controller_alert_context"], "both")
             self.assertEqual(store.all()["controller_colour_preset"], "automatic")
             store.update({"controller_battery_display": "home", "controller_charging_mode": "continuous-home",
@@ -197,8 +197,8 @@ class ControllerTests(unittest.TestCase):
             self.assertEqual(restored.all()["controller_connect_variant"], "welcome")
             self.assertEqual(restored.all()["controller_alert_context"], "both")
             self.assertEqual(restored.all()["controller_low_threshold"], 30)
-            self.assertEqual(restored.all()["controller_charging_mode"], "continuous-home")
-            self.assertEqual(restored.all()["controller_charging_display"], "home")
+            self.assertEqual(restored.all()["controller_charging_mode"], "brief")
+            self.assertEqual(restored.all()["controller_charging_display"], "off")
 
     def test_old_player_palette_defaults_migrate_but_custom_colours_are_preserved(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -740,6 +740,9 @@ class ControllerTests(unittest.TestCase):
                     clock = Clock()
                     provider = ControllerProvider(clock=clock)
                     values = SettingsStore("/nonexistent/signalbar-settings.json").all()
+                    values["controller_battery_display"] = "everywhere"
+                    values["controller_charging_mode"] = "continuous-everywhere"
+                    values["controller_charging_display"] = "everywhere"
                     values["controller_charging_variant"] = style
                     values["controller_colour_charging"] = [23, 93, 180]
                     left_charging = side in ("left", "both")
@@ -811,6 +814,8 @@ class ControllerTests(unittest.TestCase):
         clock = Clock()
         provider = ControllerProvider(clock=clock)
         values = SettingsStore("/nonexistent/signalbar-settings.json").all()
+        values["controller_charging_mode"] = "continuous-everywhere"
+        values["controller_charging_display"] = "everywhere"
         provider.update([controller(41, charging=True)], values)
         charge = provider.persistent_output(values)
         base = ProviderOutput("artwork", normalize_frame([(10, 20, 30)] * 17), "")

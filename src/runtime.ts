@@ -3,6 +3,7 @@ import { Router, findModuleExport } from "@decky/ui";
 import {
   gameChanged,
   getArtwork,
+  getStatus,
   reportParentalMinutes,
   reportRuntimeDiagnostic,
   setSteamActivity,
@@ -18,6 +19,11 @@ import { ControllerMonitor, isSteamInputService } from "./controller_monitor";
 import { isSteamControllerStore } from "./controller_battery";
 import type { SteamControllerStore } from "./controller_battery";
 import { normalizeAppId } from "./steam_app_id";
+import {
+  downloadItemsActive,
+  downloadOverviewActive,
+  resolveDownloadActivity,
+} from "./download_activity";
 import { GameSessionLatch, selectObservedGame } from "./game_session";
 import type { GameSessionDecision } from "./game_session";
 import { ParentalPlaytimeSubscription } from "./parental_playtime";
@@ -37,12 +43,22 @@ import {
   screenshotWasCaptured,
 } from "./steam_events";
 import type { LightEvent, SteamServerNotificationStore } from "./steam_events";
+import {
+  isSteamLEDManagerTransport,
+  isSteamLEDModeOverrideService,
+  SteamDownloadLedOverride,
+} from "./steam_led_manager";
+import type { SteamDownloadOverrideState } from "./steam_led_manager";
 import type { Status } from "./types";
 
 declare const SteamClient: any;
 declare const appStore: any;
 
 type Registration = { unregister?: () => void } | undefined;
+
+function wait(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+}
 
 function runningApp() {
   try {
@@ -74,6 +90,7 @@ class GabeCubeAuraRuntime {
   private retryTimer: number | undefined;
   private gameRegistration: Registration;
   private downloadRegistration: Registration;
+  private downloadItemsRegistration: Registration;
   private resumeRegistration: Registration;
   private parental = new ParentalPlaytimeSubscription(
     () => {
@@ -92,6 +109,18 @@ class GabeCubeAuraRuntime {
   private lastServerCommentAt = 0;
   private controllerMonitor: ControllerMonitor | undefined;
   private downloadActive = false;
+  private downloadOverviewActive = false;
+  private downloadItemsActive = false;
+  private downloadItemsSeen = false;
+  private downloadActivitySource = "startup-waiting";
+  private steamActivitySyncing = false;
+  private steamActivityDirty = false;
+  private steamLedOverrideState: SteamDownloadOverrideState | "" = "";
+  private downloadLedOverride = new SteamDownloadLedOverride(
+    () => findModuleExport(isSteamLEDModeOverrideService),
+    () => findModuleExport(isSteamLEDManagerTransport),
+  );
+  private steamLedRecovery: Promise<SteamDownloadOverrideState> = Promise.resolve("inactive");
   private screensaverService: SteamScreensaverService | undefined;
   private screensaverRegistration: SteamScreensaverRegistration;
   private screensaverRegistrationAttempted = false;
@@ -101,11 +130,13 @@ class GabeCubeAuraRuntime {
   start() {
     if (this.alive) return;
     this.alive = true;
+    this.steamLedRecovery = this.downloadLedOverride.recoverAfterRestart();
     this.applySessionDecision(this.session.seed(runningApp()));
     // Establish the observed AppID before lifetime notifications are attached.
     // Some Steam builds replay the currently running session immediately.
     this.baselineEstablished = true;
     this.registerSteamEvents();
+    this.renewSteamActivity();
     this.pollTimer = window.setInterval(() => {
       this.observeRunningApp();
       this.renewSteamActivity();
@@ -126,6 +157,7 @@ class GabeCubeAuraRuntime {
     if (this.retryTimer !== undefined) window.clearTimeout(this.retryTimer);
     this.gameRegistration?.unregister?.();
     this.downloadRegistration?.unregister?.();
+    this.downloadItemsRegistration?.unregister?.();
     this.resumeRegistration?.unregister?.();
     this.parental.stop();
     this.notificationsRegistration?.unregister?.();
@@ -135,6 +167,13 @@ class GabeCubeAuraRuntime {
     this.lastNativeCommentAt = 0;
     this.lastServerCommentAt = 0;
     this.downloadActive = false;
+    this.downloadOverviewActive = false;
+    this.downloadItemsActive = false;
+    this.downloadItemsSeen = false;
+    this.downloadActivitySource = "stopped";
+    this.steamActivityDirty = false;
+    this.downloadLedOverride.stop();
+    this.steamLedOverrideState = "";
     this.unregisterScreensaverState();
     this.screensaverService = undefined;
     this.screensaverFailures = 0;
@@ -315,20 +354,110 @@ class GabeCubeAuraRuntime {
     }
     try {
       this.downloadRegistration = SteamClient?.Downloads?.RegisterForDownloadOverview?.((overview: any) => {
-        const active = overview?.update_state && overview.update_state !== "None";
-        this.downloadActive = Boolean(active);
-        this.renewSteamActivity();
+        this.setDownloadActivity(downloadOverviewActive(overview), "overview");
       });
     } catch (error) {
       console.warn("[GabeCubeAura] Steam download hook unavailable", error);
     }
+    try {
+      this.downloadItemsRegistration = SteamClient?.Downloads?.RegisterForDownloadItems?.((
+        _listChanged: boolean,
+        downloadItems: unknown[],
+      ) => {
+        if (!Array.isArray(downloadItems)) return;
+        this.setDownloadActivity(downloadItemsActive(downloadItems), "items");
+      });
+    } catch (error) {
+      console.warn("[GabeCubeAura] Steam download item hook unavailable", error);
+    }
+  }
+
+  private setDownloadActivity(active: boolean, source: "overview" | "items") {
+    if (source === "items") {
+      this.downloadItemsSeen = true;
+      this.downloadItemsActive = active;
+    } else {
+      this.downloadOverviewActive = active;
+    }
+    const decision = resolveDownloadActivity(
+      this.downloadOverviewActive,
+      this.downloadItemsActive,
+      this.downloadItemsSeen,
+    );
+    this.downloadActive = decision.active;
+    this.downloadActivitySource = decision.source;
+    this.renewSteamActivity();
   }
 
   private renewSteamActivity() {
-    void setSteamActivity(
-      this.downloadActive,
-      this.downloadActive ? "Steam download activity" : "",
-    ).catch(console.warn);
+    this.steamActivityDirty = true;
+    if (this.steamActivitySyncing) return;
+    this.steamActivitySyncing = true;
+    void this.syncSteamActivity().finally(() => {
+      this.steamActivitySyncing = false;
+      if (this.steamActivityDirty && this.alive) this.renewSteamActivity();
+    });
+  }
+
+  private async syncSteamActivity() {
+    while (this.steamActivityDirty && this.alive) {
+      this.steamActivityDirty = false;
+      const active = this.downloadActive;
+      try {
+        const recovered = await this.steamLedRecovery;
+        if (this.steamLedOverrideState === "" && recovered !== "inactive") {
+          this.steamLedOverrideState = recovered;
+        }
+        const policy = await setSteamActivity(
+          active,
+          active ? `Steam download activity (${this.downloadActivitySource})` : "",
+        );
+        if (!this.alive) {
+          this.downloadLedOverride.stop();
+          return;
+        }
+        const suppressDownload = active && policy.suppress_download_animation;
+        const restoreDownload = active && policy.restore_download_animation;
+        let state: SteamDownloadOverrideState;
+        if (restoreDownload && !await this.waitForValveDownloadHandoff()) {
+          state = "error";
+        } else {
+          state = await this.downloadLedOverride.update(
+            suppressDownload,
+            restoreDownload,
+          );
+        }
+        if (state !== this.steamLedOverrideState) {
+          this.steamLedOverrideState = state;
+          await reportRuntimeDiagnostic(
+            "steam_led_override", 0, state, 0,
+          ).catch(() => undefined);
+        }
+      } catch (error) {
+        this.downloadLedOverride.stop();
+        if (this.steamLedOverrideState !== "error") {
+          this.steamLedOverrideState = "error";
+          await reportRuntimeDiagnostic(
+            "steam_led_override", 0, "error", 0,
+          ).catch(() => undefined);
+        }
+        console.warn("[GabeCubeAura] Steam activity sync failed", error);
+      }
+    }
+  }
+
+  private async waitForValveDownloadHandoff(): Promise<boolean> {
+    const deadline = Date.now() + 1200;
+    while (this.alive && this.downloadActive && Date.now() < deadline) {
+      try {
+        const status = await getStatus();
+        if (status.owner === "Valve" && status.provider === "valve") return true;
+      } catch {
+        // The backend may be restarting at the same time as Decky's frontend.
+      }
+      await wait(50);
+    }
+    return false;
   }
 
   private async pollScreensaver() {

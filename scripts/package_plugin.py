@@ -19,6 +19,8 @@ FILES = [
     "package.json",
     "LICENSE",
     "THIRD_PARTY_NOTICES.md",
+    "licenses/Material-Symbols-Apache-2.0.txt",
+    "licenses/Phosphor-Icons-MIT.txt",
     "dist/index.js",
 ]
 

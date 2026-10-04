@@ -1,4 +1,4 @@
-/* Experimental SteamOS top-bar weather indicator.
+/* SteamOS top-bar weather indicator.
 
 Decky does not expose a stable top-bar slot. This feature deliberately mounts
 only when a plausible clock/icon row is found in Steam's main UI document. It
@@ -7,24 +7,12 @@ never appends an orphan indicator to the plugin document or overlays the game.
 
 import { Router } from "@decky/ui";
 import { getStatus } from "./api";
-import type { WeatherCondition } from "./types";
+import { weatherIconSvg } from "./weather_icon_sets";
 import { weatherTopBarReading } from "./weather_topbar_model";
 
 const ROOT_ID = "gabecubeaura-weather-topbar";
 const REFRESH_MS = 5_000;
 const CLOCK = /^\d{1,2}:\d{2}(?:\s*[AP]M)?$/i;
-
-const ICONS: Record<WeatherCondition, string> = {
-  clear_day: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M4.9 4.9l1.5 1.5m11.2 11.2 1.5 1.5M19.1 4.9l-1.5 1.5M6.4 17.6l-1.5 1.5"/>',
-  clear_night: '<path d="M20.4 14.2A8.5 8.5 0 0 1 9.8 3.6 8.5 8.5 0 1 0 20.4 14.2Z"/><path d="M18.5 3.5v3m-1.5-1.5h3"/>',
-  cloud: '<path d="M6.5 18h11.3a4 4 0 0 0 .2-8 6.2 6.2 0 0 0-11.8-1.2A4.6 4.6 0 0 0 6.5 18Z"/>',
-  cloud_night: '<path d="M6.5 18h11.3a4 4 0 0 0 .2-8 6.2 6.2 0 0 0-11.8-1.2A4.6 4.6 0 0 0 6.5 18Z"/>',
-  rain: '<path d="M6.5 15h11.3a4 4 0 0 0 .2-8 6.2 6.2 0 0 0-11.8-1.2A4.6 4.6 0 0 0 6.5 15Z"/><path d="m8 18-1 2m5-2-1 2m5-2-1 2"/>',
-  snow: '<path d="M6.5 14h11.3a4 4 0 0 0 .2-8 6.2 6.2 0 0 0-11.8-1.2A4.6 4.6 0 0 0 6.5 14Z"/><path d="M8 18v4m-2-2h4m6-2v4m-2-2h4"/>',
-  storm: '<path d="M6.5 15h11.3a4 4 0 0 0 .2-8 6.2 6.2 0 0 0-11.8-1.2A4.6 4.6 0 0 0 6.5 15Z"/><path d="m13 15-3 4h3l-2 3"/>',
-  breaks: '<path d="M4 8a4 4 0 0 1 6-3m-8 3h1m4-6v1"/><path d="M7 18h10.8a4 4 0 0 0 .2-8 6.2 6.2 0 0 0-11.4-1A4.6 4.6 0 0 0 7 18Z"/>',
-  breaks_night: '<path d="M6.5 3A5.5 5.5 0 0 0 11 8.5"/><path d="M7 18h10.8a4 4 0 0 0 .2-8 6.2 6.2 0 0 0-11.4-1A4.6 4.6 0 0 0 7 18Z"/>',
-};
 
 function visibleTopRight(element: HTMLElement, viewport: number): boolean {
   const box = element.getBoundingClientRect();
@@ -184,7 +172,7 @@ class WeatherTopBar {
     if (this.root.parentElement !== anchor.row || this.root.nextElementSibling !== anchor.before) {
       anchor.row.insertBefore(this.root, anchor.before);
     }
-    const svg = `<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[this.reading.condition]}</svg>`;
+    const svg = weatherIconSvg(this.reading.icon_style, this.reading.condition);
     if (this.icon!.innerHTML !== svg) this.icon!.innerHTML = svg;
     if (this.value!.textContent !== this.reading.text) this.value!.textContent = this.reading.text;
     if (this.root.getAttribute("aria-label") !== this.reading.title) {

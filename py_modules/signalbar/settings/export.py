@@ -35,6 +35,10 @@ def build_configuration_export(settings, version: str, current_game=None, genera
     display_profiles = values.pop("display_profiles", {})
     artwork_profiles = values.pop("artwork_profiles", {})
     launch_artwork_profiles = values.pop("launch_artwork_profiles", {})
+    # A preset's restore snapshot is local undo state, not user configuration.
+    # Export the currently effective recipe as an ordinary custom setup.
+    values.pop("display_preset_restore", None)
+    values["display_preset"] = "custom"
 
     game = None
     raw_game = current_game if isinstance(current_game, dict) else {}

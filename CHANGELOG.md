@@ -1,5 +1,134 @@
 # Changelog
 
+## 1.3.2 - 2026-10-04
+
+Stable release. Changes since 1.2.1:
+
+### Highlights
+
+- **Audio Sync:** turn game and system audio into real-time light with ten
+  patterns, including Hi-Fi Crest, Slow Prism, Spectrum and Stereo Field.
+- **Separate Home and in-game looks:** choose a different Audio Sync pattern,
+  palette and custom colours for each context.
+- **Nine display presets:** switch the complete light-bar setup in one action
+  with Lights out, Focus, Essential, Moderate, Atmosphere, Signals, Immersive,
+  Immersive+ or Festive.
+- **Artwork colour intensity:** adjust game artwork from greyscale to vivid
+  colour without changing its brightness or reloading the image.
+- **SteamOS weather in the top bar:** show the current weather icon and
+  temperature beside the clock with three locally bundled icon styles.
+- **Light-bar calibration:** optionally keep GabeCubeAura output consistent,
+  preview colour separation and safely restore Steam's brightness afterward.
+- **More control over Steam effects:** use Blackout and the new Compatible,
+  Downloads + safety and Safety only ownership policies.
+
+### New features
+
+- Add Audio Sync as a permanent Home, in-game and per-AppID display. Mixed
+  PipeWire output is analysed locally and kept in memory; stale samples are
+  never rendered or written to disk.
+- Add ten selectable Audio Sync patterns. Hi-Fi Crest maps adaptive bass, mid,
+  high-frequency texture and stereo direction to broad physical-bar zones.
+  Spectrum, Stereo Field, Bass Pulse and Audio Pulse remain available beside
+  five new diffuser-aware patterns: Velvet Relay, Negative Bloom, Stereo
+  Lanterns, Constellation and Slow Prism.
+- Apply one bounded 10.2-second programme reference to every Audio Sync
+  pattern, so quiet, loud and compressed sources retain motion without a
+  separate level trim. Spectrum preserves the relative energy of its 17
+  logarithmic frequency bands.
+- Make Audio Sync patterns independent from palettes. Built-in colour families,
+  custom colours, the running game's Artwork and live Screen Sync samples can
+  be combined with any pattern. Live samples are harmonised into bounded
+  centre, shoulder and edge roles for the Steam Machine diffuser.
+- Save independent Home and in-game Audio Sync patterns, palettes and custom
+  colours. Existing settings migrate to both contexts, while brightness and
+  reactivity remain shared. Add Calm, Balanced, Fast and Punchy response
+  profiles plus one-button recommended tuning for each pattern.
+- Add nine one-step routing presets: Lights out, Focus, Essential, Moderate,
+  Atmosphere, Signals, Immersive, Immersive+ and Festive. Returning to Custom
+  restores the setup saved before the first preset was applied, and editing a
+  recipe converts it into a custom setup.
+- Add Blackout as a true permanent display and three Steam ownership policies:
+  Compatible, Downloads + safety and Safety only. The protected policies use
+  capability-detected, reversible Steam LED manager requests while always
+  yielding to the conservative critical-red hardware safeguard.
+- Add an opt-in Consistent output calibration policy. It temporarily applies
+  the tested 9 / 255 Valve hardware brightness reference only while
+  GabeCubeAura owns the bar, restores the saved value on handoff and includes
+  atomic recovery plus a ten-second colour and motion preview. Version 1.3.2
+  ships with Consistent output selected; Follow Steam remains available.
+- Add Artwork colour intensity from 0% greyscale to a protected 200% maximum.
+  Perceptual OKLab adjustment preserves lightness, avoids clipped channels and
+  updates Artwork displays, Audio Sync Artwork palettes and artwork-derived
+  launch colours without re-downloading the image.
+- Add the optional SteamOS top-bar weather indicator with three locally bundled
+  icon families and previews for all nine weather conditions. Fresh installs
+  enable it with Phosphor Duotone; it stays hidden until a city is selected.
+- Add a read-only Private Lab update channel for Alyenax's target-hardware
+  builds. GitHub device authorization, owner-only token storage, semantic Lab
+  tags, checksums, explicit installation confirmation and the existing rollback
+  path are required for every private package.
+- Ship fresh installations on the Stable update channel with one automatic
+  check every 24 hours. No private authorization or token is preconfigured.
+
+### Major fixes
+
+- Preserve partial PipeWire reads and process every complete 60 ms analysis
+  block in chronological order. The bounded queue now reports dropped blocks,
+  uses real sample timestamps and no longer loses residual audio at the 50 ms
+  capture cadence.
+- Keep the last valid Audio Sync frame and palette across Home/game transitions,
+  launch animations and capture restarts. A fresh Gamescope palette is accepted
+  only when ready, preventing a blue Steam frame or fallback-colour flash while
+  retaining the priority of downloads, alerts, launch effects and critical
+  hardware warnings.
+- Correct Steam download detection. Detailed download-item state now identifies
+  active, incomplete and non-deferred transfers; queued work such as Proton
+  Hotfix cannot suspend GabeCubeAura. The broad overview remains a fallback for
+  SteamOS versions without a usable detailed replay.
+- Recover Steam LED manager state after Decky restarts, detect transfers already
+  in progress, restore native hardware controls before yielding and acquire or
+  release Download/Customize modes only after the backend ownership handoff.
+  Service rejection and shutdown during an in-flight request now restore the
+  previous manager state instead of reporting false success.
+- Recover Screen Sync cleanly across plugin replacement, AppID changes and
+  Desktop/Gaming Mode transitions. Stale GabeCubeAura GStreamer clients are
+  released, each new capture gets its own process group and failed or PAUSED
+  pipelines are closed before rediscovery.
+- Pass Artwork colour intensity through the real Decky RPC allowlist. The value
+  is now stored and returned instead of snapping back to 100% after the UI call.
+
+### Minor fixes
+
+- Give Hi-Fi Crest a 120 ms centre-to-edge crest, bounded retrigger and lifetime
+  timing, and expose measured block cadence, FFT window, buffer, queue, sample
+  age, LED interval and envelope timing in the optional diagnostics.
+- Add Sapphire and Coastline palettes. Screen Sync and Artwork use Sapphire as
+  their cold fallback, hold the last stable contextual colours and fade into a
+  new live source instead of flashing Aurora.
+- Make every routing recipe explicit about Audio Sync context, Steam Families,
+  controller alerts, charging and Light Events. Immersive uses Slow Prism with
+  Sapphire at Home and Screen Sync in games; Immersive+ uses Slow Prism with
+  Screen Sync in both contexts; Festive uses Screen Sync at Home and Aurora in
+  games.
+- Reduce only the Clear sky night moon-white steps from 128/192/255 to
+  112/168/224. Other night palettes, backgrounds, timing and choreography are
+  unchanged.
+- Sort Audio Sync patterns and palettes, remove obsolete Lab prefixes from
+  pattern names and make Slow Prism recommend Fast response.
+- Replace large inline RGB sliders with a compact colour control that keeps hue,
+  saturation, lightness and exact Hex entry together.
+- Hide detailed Audio Sync and Screen Sync telemetry until Show live diagnostics
+  is enabled. Keep the temporary Hi-Fi Crest calibration controls behind their
+  own Advanced / debug switch in both Audio Sync views.
+- Simplify the quick Decky panel by removing redundant preset, ownership,
+  temporary-layer and output explanations. Rename the master switch to
+  `Enable GabeCubeAura`, keep actionable status visible and place Updates just
+  before Advanced / debug.
+- Remove the Experimental label from top-bar weather, drop the Meteocons family
+  and its packaged license, and keep Material Rounded and Phosphor license texts
+  in the installable archive.
+
 ## 1.2.1 - 2026-10-02
 
 Stable release. Changes since 1.1.3:

@@ -3,8 +3,12 @@ from pathlib import Path
 import unittest
 
 from signalbar.arbiter import Arbiter
+from signalbar.arbiter.guard import ManualClock
 from signalbar.models import GameState, ProviderOutput
-from signalbar.providers.customization import CUSTOMIZATION_PATTERNS, customization_frame
+from signalbar.providers.customization import (
+    CUSTOMIZATION_PATTERNS, CustomizationProvider, calibration_frame,
+    customization_frame,
+)
 from signalbar.settings import SettingsStore
 
 
@@ -24,6 +28,32 @@ def belongs_to_palette(pixel):
 
 
 class CustomizationTests(unittest.TestCase):
+    def test_light_bar_calibration_preview_has_three_distinct_bounded_stages(self):
+        frames = [calibration_frame(elapsed, 160) for elapsed in (0.5, 4.0, 7.0)]
+        self.assertEqual(len(set(frames)), 3)
+        self.assertTrue(all(len(frame) == 17 for frame in frames))
+        self.assertTrue(all(0 <= channel <= 160 for frame in frames
+                            for pixel in frame for channel in pixel))
+
+        clock = ManualClock(100)
+        provider = CustomizationProvider(clock=clock)
+        provider.preview_calibration(10)
+        values = {
+            "audio_sync_brightness": 160,
+            "customization_colour_count": 1,
+            "customization_colour_1": [255, 120, 24],
+            "customization_pattern": "steady",
+            "customization_brightness": 128,
+            "customization_speed": 50,
+            "customization_direction": "forward",
+        }
+        self.assertEqual(provider.output(values).provider, "customization:calibration")
+        self.assertEqual(provider.status(values)["calibration_stage"], "colour-separation")
+        clock.advance(3.4)
+        self.assertEqual(provider.status(values)["calibration_stage"], "white-balance")
+        clock.advance(3.4)
+        self.assertEqual(provider.status(values)["calibration_stage"], "motion-contrast")
+
     def test_all_grouped_patterns_render_bounded_palette_locked_frames(self):
         self.assertEqual(len(CUSTOMIZATION_PATTERNS), 61)
         for pattern in CUSTOMIZATION_PATTERNS:
@@ -67,6 +97,10 @@ class CustomizationTests(unittest.TestCase):
             self.assertEqual(values["customization_direction"], "forward")
             values = store.update({"customization_brightness": 0})
             self.assertEqual(values["customization_brightness"], 34)
+            values = store.update({"led_output_calibration_mode": "consistent"})
+            self.assertEqual(values["led_output_calibration_mode"], "consistent")
+            values = store.update({"led_output_calibration_mode": "invalid"})
+            self.assertEqual(values["led_output_calibration_mode"], "consistent")
 
     def test_arbiter_selects_customization_as_a_permanent_base(self):
         arbiter = Arbiter()
@@ -78,6 +112,14 @@ class CustomizationTests(unittest.TestCase):
             customization_base=custom,
         )
         self.assertEqual(result.provider, "customization:steady")
+
+        calibration = ProviderOutput("customization:calibration", ((3, 4, 5),) * 17, "lab")
+        result = arbiter.choose(
+            mode="performance", guard_allows=True, game=GameState(),
+            performance=empty, artwork=empty, idle=empty,
+            customization_base=calibration,
+        )
+        self.assertEqual(result.provider, "customization:calibration")
 
 
 if __name__ == "__main__":

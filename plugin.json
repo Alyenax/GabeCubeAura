@@ -5,7 +5,7 @@
   "api_version": 1,
   "publish": {
     "tags": ["system", "utility", "root"],
-    "description": "Real-time screen colours, artwork, custom effects, weather and status lighting for the Steam Machine light bar.",
+    "description": "Real-time audio, screen colours, artwork, custom effects, weather and status lighting for the Steam Machine light bar.",
     "image": "https://raw.githubusercontent.com/Alyenax/GabeCubeAura/main/docs/media/gabecubeaura-product-hero.png"
   }
 }

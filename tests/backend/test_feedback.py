@@ -105,6 +105,7 @@ class FeedbackTests(unittest.TestCase):
     def test_engine_collects_in_artwork_and_disabled_even_without_led_hardware(self):
         with tempfile.TemporaryDirectory() as folder:
             settings = SettingsStore(str(Path(folder) / "settings.json"))
+            settings.update({"home_display": "controller", "game_display": "performance"})
             attempts = []
 
             def unavailable():
@@ -141,6 +142,7 @@ class FeedbackTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             path = str(Path(folder) / "settings.json")
             settings = SettingsStore(path)
+            settings.update({"game_display": "performance"})
             engine = Engine(settings, str(Path(folder) / "cache"))
             settings.update_display(42, "performance")
             settings.update_display(99, "artwork")
@@ -273,6 +275,8 @@ class FeedbackTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as folder:
             settings = SettingsStore(str(Path(folder) / "settings.json"))
+            settings.update({"mode": "performance", "home_display": "steam",
+                             "game_display": "performance"})
             settings.update_display(42, "performance")
             engine = Engine(settings, str(Path(folder) / "cache"), hardware_factory=Hardware)
             seen = []

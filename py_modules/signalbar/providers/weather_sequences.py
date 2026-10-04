@@ -14,6 +14,7 @@ CLOUD_SLOW_CONVERGENCE_SECONDS = 48.0
 NIGHT = [0, 8, 38]
 NIGHT_CLOUD = [35, 35, 35]
 MOON_WHITES = ([128, 128, 128], [192, 192, 192], [255, 255, 255])
+CLEAR_NIGHT_MOON_WHITES = ([112, 112, 112], [168, 168, 168], [224, 224, 224])
 
 
 def weather_loop_seconds(condition, variant):
@@ -105,14 +106,14 @@ def _night_base(frame):
         frame[index] = NIGHT[:]
 
 
-def _moon_white_step(value):
+def _moon_white_step(value, whites=MOON_WHITES):
     if value < .28:
         return NIGHT
     if value < .58:
-        return MOON_WHITES[0]
+        return whites[0]
     if value < .84:
-        return MOON_WHITES[1]
-    return MOON_WHITES[2]
+        return whites[1]
+    return whites[2]
 
 
 def _moon(frame, variant, time):
@@ -120,8 +121,8 @@ def _moon(frame, variant, time):
     _night_base(frame)
     if variant == 0:  # Breathing moon, transposed from the Sun glints slot.
         breath = (1 - math.cos(time * math.pi / 3)) / 2
-        core = _moon_white_step(.72 + .28 * breath)
-        halo = _moon_white_step(.18 + .66 * breath)
+        core = _moon_white_step(.72 + .28 * breath, CLEAR_NIGHT_MOON_WHITES)
+        halo = _moon_white_step(.18 + .66 * breath, CLEAR_NIGHT_MOON_WHITES)
         frame[8] = core[:]
         frame[9] = core[:]
         if breath > .16:
@@ -136,7 +137,7 @@ def _moon(frame, variant, time):
         distance = abs(index - 8)
         field = smooth(radius + 1.25, radius - 1.15, distance)
         if field > .12:
-            frame[index] = _moon_white_step(.35 + .65 * field)[:]
+            frame[index] = _moon_white_step(.35 + .65 * field, CLEAR_NIGHT_MOON_WHITES)[:]
 
 
 def _rain(frame, variant, time):

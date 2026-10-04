@@ -118,7 +118,7 @@ class ValveLedHardware:
         return (effect, enabled), tuple(pixel[0] for pixel in pixels)
 
     @staticmethod
-    def native_priority_reason(signature) -> str:
+    def native_priority_state(signature):
         """Recognize native states that must never be replaced by a plugin.
 
         Steam's explicit download lease remains the primary signal. Hardware
@@ -129,13 +129,13 @@ class ValveLedHardware:
         controls, pixels = signature
         effect, enabled, brightness_scale = controls
         if str(enabled or "1").strip().lower() in {"0", "false", "off"}:
-            return ""
+            return "", ""
         effect = str(effect or "").strip().lower()
         if effect in VALVE_ANIMATED_EFFECTS:
-            return f"Valve {effect} hardware effect"
+            return "effect", f"Valve {effect} hardware effect"
         try:
             if int(str(brightness_scale or "255"), 0) <= 0:
-                return ""
+                return "", ""
         except ValueError:
             pass
 
@@ -149,8 +149,12 @@ class ValveLedHardware:
             if visible and red >= 96 and green <= max(24, red // 4) and blue <= max(24, red // 4):
                 critical_red += 1
         if pixels and critical_red >= max(1, len(pixels) - 2):
-            return "Valve critical red hardware signal"
-        return ""
+            return "critical-red", "Valve critical red hardware signal"
+        return "", ""
+
+    @staticmethod
+    def native_priority_reason(signature) -> str:
+        return ValveLedHardware.native_priority_state(signature)[1]
 
     def capture_state(self):
         with self._io_lock:
@@ -158,7 +162,33 @@ class ValveLedHardware:
                 "frame": self.read_frame(),
                 "effect": self._read_control("effect"),
                 "enabled": self._read_control("enabled"),
+                "brightness_scale": self._read_control("brightness_scale"),
             }
+
+    def read_brightness_scale(self) -> Optional[int]:
+        """Return Valve's global LED gain when this driver exposes it."""
+        with self._io_lock:
+            raw = self._read_control("brightness_scale")
+            if raw is None:
+                return None
+            try:
+                return max(0, min(255, int(str(raw), 0)))
+            except (TypeError, ValueError):
+                return None
+
+    def set_brightness_scale(self, value: int) -> bool:
+        """Set the global gain without changing effect ownership or RGB data."""
+        with self._io_lock:
+            clean = max(0, min(255, int(value)))
+            return self._write_control("brightness_scale", str(clean))
+
+    def restore_brightness_scale_if(self, expected: int, saved: int) -> bool:
+        """Restore a saved gain only if no external actor changed our value."""
+        with self._io_lock:
+            current = self.read_brightness_scale()
+            if current is None or current != max(0, min(255, int(expected))):
+                return False
+            return self.set_brightness_scale(saved)
 
     def claim_manual_control(self):
         """Select the hardware mode required for direct per-pixel writes."""
@@ -183,6 +213,9 @@ class ValveLedHardware:
             frame = state.get("frame")
             if frame is not None:
                 self.write_frame(frame)
+            brightness_scale = state.get("brightness_scale")
+            if brightness_scale is not None:
+                self._write_control("brightness_scale", brightness_scale)
             effect = state.get("effect")
             if effect is not None:
                 self._write_control("effect", effect)

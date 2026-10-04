@@ -1,6 +1,8 @@
-export type Mode = "artwork" | "performance" | "customization" | "screen_sync" | "events" | "disabled";
-export type HomeDisplay = "steam" | "customization" | "performance" | "weather" | "controller";
-export type GameDisplay = "steam" | "customization" | "artwork" | "performance" | "screen_sync" | "weather" | "controller";
+export type Mode = "artwork" | "performance" | "customization" | "screen_sync" | "audio_sync" | "blackout" | "events" | "disabled";
+export type HomeDisplay = "steam" | "blackout" | "customization" | "performance" | "audio_sync" | "weather" | "controller";
+export type GameDisplay = "steam" | "blackout" | "customization" | "artwork" | "performance" | "screen_sync" | "audio_sync" | "weather" | "controller";
+export type DisplayPreset = "custom" | "lights-out" | "focus" | "essential" | "moderate" | "atmosphere" | "signals" | "immersive" | "immersive-plus" | "festive";
+export type ValveOwnershipPolicy = "cooperative" | "downloads" | "critical";
 export type ArtworkMode = "auto" | "center" | "lower" | "manual";
 export type ArtworkSource = "hero" | "header" | "capsule";
 export type LaunchArtworkPattern = "arpege-crossed" | "two-hands" | "legato" | "nocturne" | "crescendo"
@@ -14,11 +16,12 @@ export type CountdownColour = "cyan" | "green" | "amber" | "violet" | "white";
 export type RGB = [number, number, number];
 export type CompanionPriority = "stripmine" | "signalbar";
 export type WeatherCondition = "clear_day" | "clear_night" | "rain" | "cloud" | "cloud_night" | "breaks" | "breaks_night" | "snow" | "storm";
+export type WeatherIconStyle = "current" | "material-rounded" | "phosphor-duotone";
 export interface WeatherLocation { name: string; country: string; latitude: number; longitude: number }
 
 export type UpdatePhase = "idle" | "checking" | "up_to_date" | "available"
   | "downloading" | "verifying" | "ready" | "installing" | "restart_pending"
-  | "updated" | "rolled_back" | "error" | "managed_by_decky";
+  | "updated" | "rolled_back" | "error" | "managed_by_decky" | "authorization_required";
 
 export interface UpdateStatus {
   phase: UpdatePhase;
@@ -38,9 +41,14 @@ export interface UpdateStatus {
   auto_check: boolean;
   notifications: boolean;
   check_interval_minutes: 15 | 60 | 180 | 360 | 720 | 1440;
-  channel: "stable" | "beta";
-  return_to_stable: boolean;
+  channel: "stable" | "beta" | "private";
   test_build: boolean;
+  private_auth_configured: boolean;
+  private_auth_state: "disconnected" | "pending" | "connected" | "expired" | "error";
+  private_user_code: string;
+  private_verification_uri: string;
+  private_auth_expires_at: number;
+  private_repository: string;
 }
 
 export interface UpdateLabResult {
@@ -67,6 +75,18 @@ export interface Status {
   default_mode: HomeDisplay | GameDisplay;
   display_override: "inherit" | GameDisplay;
   signalbar_enabled: boolean;
+  display_preset: DisplayPreset;
+  valve_ownership_policy: ValveOwnershipPolicy;
+  led_output_calibration_mode: "follow" | "consistent";
+  led_output_calibration: {
+    mode: "follow" | "consistent";
+    supported: boolean;
+    detected_brightness: number | null;
+    reference_brightness: number;
+    saved_steam_brightness: number | null;
+    override_active: boolean;
+    startup_recovered: boolean;
+  };
   home_display: HomeDisplay;
   game_display: GameDisplay;
   current_display: HomeDisplay | GameDisplay;
@@ -81,10 +101,12 @@ export interface Status {
   artwork_mode: ArtworkMode;
   artwork_manual_y: number;
   artwork_source: ArtworkSource;
+  artwork_vibrance: number;
   artwork_custom: boolean;
   artwork_default_mode: ArtworkMode;
   artwork_default_manual_y: number;
   artwork_default_source: ArtworkSource;
+  artwork_default_vibrance: number;
   launch_artwork_animation_enabled: boolean;
   launch_artwork_pattern: LaunchArtworkPattern;
   launch_artwork_colour_count: 2 | 3;
@@ -107,6 +129,26 @@ export interface Status {
   screen_sync_black_threshold: number;
   screen_sync_ignore_black_bars: boolean;
   screen_sync_screensaver_enabled: boolean;
+  audio_sync_style: "hifi-crest" | "velvet-relay" | "negative-bloom" | "stereo-lanterns"
+    | "constellation" | "slow-prism" | "spectrum" | "spatial" | "bass"
+    | "audio-pulse";
+  audio_sync_brightness: number;
+  audio_sync_reactivity: "calm" | "balanced" | "fast" | "punchy";
+  audio_sync_palette: "aurora" | "ember" | "magma" | "forest" | "ice" | "copper" | "solar" | "pearl" | "glacier" | "lagoon" | "lime" | "orchid" | "plasma" | "sunset" | "deep-sea" | "silver" | "candy" | "sapphire" | "coastline" | "screen-sync" | "artwork" | "custom";
+  audio_sync_home_style: Status["audio_sync_style"];
+  audio_sync_home_palette: Status["audio_sync_palette"];
+  audio_sync_game_style: Status["audio_sync_style"];
+  audio_sync_game_palette: Status["audio_sync_palette"];
+  audio_sync_lab_crest_strength: number;
+  audio_sync_lab_edge_reach: number;
+  audio_sync_lab_background: number;
+  audio_sync_hifi_lab_enabled: boolean;
+  audio_sync_home_colour_low: RGB;
+  audio_sync_home_colour_middle: RGB;
+  audio_sync_home_colour_high: RGB;
+  audio_sync_game_colour_low: RGB;
+  audio_sync_game_colour_middle: RGB;
+  audio_sync_game_colour_high: RGB;
   cool_temp_c: number;
   hot_temp_c: number;
   reverse_led_order: boolean;
@@ -152,6 +194,7 @@ export interface Status {
   weather_display: "off" | "home" | "game" | "everywhere";
   weather_location: WeatherLocation | null;
   weather_topbar_enabled: boolean;
+  weather_icon_style: WeatherIconStyle;
   weather_temperature_unit: "celsius" | "fahrenheit";
   weather_brightness: number;
   weather_shadow_cutoff: number;
@@ -168,6 +211,7 @@ export interface Status {
   stripmine_priority_game_launches: CompanionPriority;
   stripmine_priority_customization: CompanionPriority;
   stripmine_priority_screen_sync: CompanionPriority;
+  stripmine_priority_audio_sync: CompanionPriority;
   weather_clear_day_variant: number;
   weather_clear_night_variant: number;
   weather_rain_variant: number;
@@ -234,6 +278,9 @@ export interface Status {
     colors: RGB[];
   };
   customization: {
+    calibration_preview_active: boolean;
+    calibration_stage: "idle" | "colour-separation" | "white-balance" | "motion-contrast";
+    calibration_remaining_s: number;
     preview_active: boolean;
     colors: RGB[];
   };
@@ -270,6 +317,53 @@ export interface Status {
       screensaver_detail: string;
     };
   };
+  audio_sync: {
+    revision: string;
+    active: boolean;
+    phase: "off" | "capturing" | "error";
+    error: string;
+    runtime_dir: string;
+    capture_identity: string;
+    source: string;
+    sample_rate: number;
+    channels: number;
+    frame_age_s: number | null;
+    blocks_per_second: number;
+    capture_latency_ms: number;
+    analysis_window_ms: number;
+    analysis_hop_ms: number;
+    target_blocks_per_second: number;
+    led_request_interval_ms: number;
+    led_render_floor_ms: number;
+    buffered_ms: number;
+    queued_blocks: number;
+    dropped_blocks: number;
+    stderr_tail: string[];
+    preview_active: boolean;
+    preview_remaining_s: number;
+    colors: RGB[];
+    levels: number[];
+    left_level: number;
+    right_level: number;
+    screen_palette: RGB[];
+    palette_source: "selected" | "screen-sync" | "artwork" | "held-transition" | "sapphire-fallback";
+    hifi_metrics: {
+      impact: number;
+      attack: number;
+      texture: number;
+      stereo: number;
+      window_s: number;
+    };
+    response_timing: {
+      reactivity: "calm" | "balanced" | "fast" | "punchy";
+      level: { rise_ms: number; fall_ms: number };
+      impact: { rise_ms: number; fall_ms: number };
+      attack: { rise_ms: number; fall_ms: number };
+      texture: { rise_ms: number; fall_ms: number };
+      background: { rise_ms: number; fall_ms: number };
+      crest: { cooldown_ms: number; centre_to_edge_ms: number; lifetime_ms: number };
+    };
+  };
   countdown: {
     active: boolean;
     source: "" | "parental" | "free" | "preview";
@@ -295,8 +389,18 @@ export interface Status {
     guard_reason: string;
     steam_priority: boolean;
     steam_priority_reason: string;
+    guard_hard_priority: boolean;
+    guard_hard_reason: string;
+    native_priority_kind: "" | "effect" | "critical-red";
+    native_priority_reason: string;
+    ignored_native_takeovers: number;
+    steam_led_override_state: "waiting" | "blocked" | "download" | "inactive" | "unavailable" | "error" | string;
     steam_lease_remaining_s: number;
     launch_handoff_remaining_s: number;
+    context_transition_active: boolean;
+    context_transition_remaining_s: number;
+    context_transition_from: number;
+    context_transition_to: number;
     last_recovery_age_s: number | null;
     last_recovery_reason: string;
     reverse_led_order: boolean;

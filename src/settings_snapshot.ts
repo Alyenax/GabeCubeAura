@@ -18,7 +18,7 @@ const selectedLabel = (options: readonly { data: string; label: string }[], valu
 const artworkSource = { hero: "Library Hero", header: "Library Header", capsule: "Library Capsule" };
 const artworkRow = { auto: "Auto", center: "Centre", lower: "Lower", manual: "Manual" };
 const displayMode = {
-  artwork: "Artwork", performance: "Performance", customization: "Customization+", screen_sync: "Screen Sync", steam: "GabeCubeAura Off",
+  artwork: "Artwork", performance: "Performance", customization: "Customization+", screen_sync: "Screen Sync", audio_sync: "Audio Sync", steam: "GabeCubeAura Off", blackout: "Blackout",
   weather: "Weather", controller: "Controller status", events: "Signals only", disabled: "Disabled",
 };
 const response = { responsive: "Responsive", balanced: "Balanced", smooth: "Smooth" };
@@ -46,6 +46,7 @@ export function buildSettingsSnapshot(status: Status): SettingsSnapshotSection[]
       title: "Display",
       lines: [
         `Home ${displayMode[status.home_display]} · In game ${displayMode[status.game_display]} · Current ${displayMode[status.current_display]} · Master ${onOff(status.signalbar_enabled)}`,
+        `Light bar ${status.led_output_calibration_mode === "consistent" ? `Consistent output ${status.led_output_calibration.reference_brightness}/255` : `Follow Steam ${status.led_output_calibration.detected_brightness == null ? "waiting" : `${status.led_output_calibration.detected_brightness}/255`}`}`,
         gameRunning
           ? `Game ${status.game.title || "Running game"} · Override ${status.display_override === "inherit" ? "Use in-game default" : displayMode[status.display_override]}`
           : "Home · Game override applies when a game runs",
@@ -61,9 +62,9 @@ export function buildSettingsSnapshot(status: Status): SettingsSnapshotSection[]
     {
       title: "Artwork",
       lines: [
-        `Default ${source(status.artwork_default_source)} · ${row(status.artwork_default_mode)} · saved manual ${percent(status.artwork_default_manual_y)}`,
+        `Default ${source(status.artwork_default_source)} · ${row(status.artwork_default_mode)} · saved manual ${percent(status.artwork_default_manual_y)} · colour intensity ${status.artwork_default_vibrance}%`,
         gameRunning
-          ? `This game ${source(status.artwork_source)} · ${row(status.artwork_mode)} · manual ${percent(status.artwork_manual_y)} · profile ${status.artwork_custom ? "saved" : "default"}`
+          ? `This game ${source(status.artwork_source)} · ${row(status.artwork_mode)} · manual ${percent(status.artwork_manual_y)} · colour intensity ${status.artwork_vibrance}% · profile ${status.artwork_custom ? "saved" : "default"}`
           : "This game: none; defaults shown above",
       ],
     },
@@ -81,6 +82,17 @@ export function buildSettingsSnapshot(status: Status): SettingsSnapshotSection[]
         `Style ${status.screen_sync_style} · Reactivity ${status.screen_sync_reactivity} · Colours ${status.screen_sync_colour_intensity}`,
         `Brightness ${status.screen_sync_brightness}/255 · Black threshold ${status.screen_sync_black_threshold} · Ignore black bars ${onOff(status.screen_sync_ignore_black_bars)}`,
         `Steam screensaver ${onOff(status.screen_sync_screensaver_enabled)} · Activation ${status.screen_sync.activation.reason || "waiting"}`,
+      ],
+    },
+    {
+      title: "Audio Sync",
+      lines: [
+        `Home pattern ${status.audio_sync_home_style} · Palette ${status.audio_sync_home_palette}`,
+        `In-game pattern ${status.audio_sync_game_style} · Palette ${status.audio_sync_game_palette}`,
+        `Shared reactivity ${status.audio_sync_reactivity} · Brightness ${status.audio_sync_brightness}/255 · automatic level matching`,
+        `Hi-Fi Crest Lab ${onOff(status.audio_sync_hifi_lab_enabled)} · strength ${status.audio_sync_lab_crest_strength}% · edge reach ${status.audio_sync_lab_edge_reach}% · background ${status.audio_sync_lab_background}%`,
+        `Home custom colours ${rgbHex(status.audio_sync_home_colour_low)} / ${rgbHex(status.audio_sync_home_colour_middle)} / ${rgbHex(status.audio_sync_home_colour_high)}`,
+        `In-game custom colours ${rgbHex(status.audio_sync_game_colour_low)} / ${rgbHex(status.audio_sync_game_colour_middle)} / ${rgbHex(status.audio_sync_game_colour_high)}`,
       ],
     },
     {
@@ -125,7 +137,7 @@ export function buildSettingsSnapshot(status: Status): SettingsSnapshotSection[]
       title: "Weather",
       lines: [
         `City ${status.weather_location ? `${status.weather_location.name}, ${status.weather_location.country}` : "none"} · Display ${status.weather_display}`,
-        `SteamOS top bar ${onOff(status.weather_topbar_enabled)} · ${status.weather_temperature_unit === "fahrenheit" ? "Fahrenheit" : "Celsius"} · experimental`,
+        `SteamOS top bar ${onOff(status.weather_topbar_enabled)} · Icons ${status.weather_icon_style} · ${status.weather_temperature_unit === "fahrenheit" ? "Fahrenheit" : "Celsius"}`,
         `Weather LED brightness ${status.weather_brightness}% · Faint LED cutoff ${status.weather_shadow_cutoff} (linear RGB)`,
         ...(["clear_day", "clear_night", "rain", "cloud", "cloud_night", "breaks", "breaks_night", "snow", "storm"] as const).map((condition) =>
           `${condition.replace("_", " ")}: ${WEATHER_VARIANTS[condition][status[`weather_${condition}_variant`]]?.label ?? "unknown"}`),

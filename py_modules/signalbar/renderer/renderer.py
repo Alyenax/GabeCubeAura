@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import os
 import threading
 import time
 from typing import Optional
@@ -10,7 +12,8 @@ from signalbar.models import Frame, normalize_frame
 
 
 class Renderer:
-    def __init__(self, hardware, min_interval_s: float = 0.05, clock=time.monotonic):
+    def __init__(self, hardware, min_interval_s: float = 0.05, clock=time.monotonic,
+                 brightness_recovery_path: Optional[str] = None):
         self.hardware = hardware
         self.min_interval_s = max(0.05, float(min_interval_s))
         self._clock = clock
@@ -23,6 +26,12 @@ class Renderer:
         self._saved_state = None
         self._failed = False
         self._writes = 0
+        self._output_brightness_scale: Optional[int] = None
+        self._saved_brightness_scale: Optional[int] = None
+        self._brightness_override_active = False
+        self._brightness_recovery_path = brightness_recovery_path
+        self._startup_brightness_recovered = False
+        self._recover_interrupted_brightness_override()
 
     @property
     def failed(self):
@@ -48,10 +57,135 @@ class Renderer:
     def writes(self):
         return self._writes
 
-    def render(self, frame) -> bool:
+    @property
+    def output_brightness_scale(self):
+        return self._output_brightness_scale
+
+    def _read_brightness_scale(self):
+        reader = getattr(self.hardware, "read_brightness_scale", None)
+        if not callable(reader):
+            return None
+        return reader()
+
+    def _write_recovery(self, saved: int, reference: int):
+        if not self._brightness_recovery_path:
+            return
+        path = os.path.abspath(self._brightness_recovery_path)
+        folder = os.path.dirname(path)
+        os.makedirs(folder, exist_ok=True)
+        temporary = f"{path}.tmp"
+        with open(temporary, "w", encoding="utf-8") as handle:
+            json.dump({
+                "protocol": 1,
+                "saved_brightness_scale": int(saved),
+                "reference_brightness_scale": int(reference),
+            }, handle, sort_keys=True)
+            handle.write("\n")
+        os.replace(temporary, path)
+
+    def _clear_recovery(self):
+        if not self._brightness_recovery_path:
+            return
+        try:
+            os.unlink(self._brightness_recovery_path)
+        except FileNotFoundError:
+            pass
+
+    def _recover_interrupted_brightness_override(self):
+        path = self._brightness_recovery_path
+        if not path:
+            return
+        try:
+            with open(path, encoding="utf-8") as handle:
+                payload = json.load(handle)
+            if not isinstance(payload, dict) or payload.get("protocol") != 1:
+                self._clear_recovery()
+                return
+            saved = max(0, min(255, int(payload["saved_brightness_scale"])))
+            reference = max(0, min(255, int(payload["reference_brightness_scale"])))
+            current = self._read_brightness_scale()
+            restorer = getattr(self.hardware, "restore_brightness_scale_if", None)
+            if current == reference and callable(restorer):
+                self._startup_brightness_recovered = bool(restorer(reference, saved))
+            # A different current value means Steam or the user already took
+            # over. Never replace it with stale recovery data.
+            if current != reference or self._startup_brightness_recovered:
+                self._clear_recovery()
+        except (OSError, TypeError, ValueError, json.JSONDecodeError, KeyError):
+            # Keep a valid-looking recovery file for the next startup if the
+            # sysfs write itself failed. Malformed files are harmless because
+            # applying a reference always rewrites them atomically.
+            return
+
+    def set_output_brightness_scale(self, value: Optional[int]):
+        """Select a temporary global gain while this renderer owns the bar."""
+        clean = None if value is None else max(0, min(255, int(value)))
+        with self._lock:
+            if clean == self._output_brightness_scale:
+                return False
+            previous = self._output_brightness_scale
+            self._output_brightness_scale = clean
+            if previous is not None and clean is None:
+                self._release_brightness_override(previous)
+                if self._last_signature is not None:
+                    try:
+                        self._last_signature = self.hardware.read_signature()
+                    except OSError:
+                        self._failed = True
+            # Force the next frame through claim_manual_control so a newly
+            # selected reference is applied even if RGB did not change.
+            self._last_frame = None
+            return True
+
+    def _apply_brightness_override(self):
+        reference = self._output_brightness_scale
+        setter = getattr(self.hardware, "set_brightness_scale", None)
+        if reference is None or not callable(setter):
+            return
+        if not self._brightness_override_active:
+            current = self._read_brightness_scale()
+            if current is None:
+                return
+            self._saved_brightness_scale = current
+            self._write_recovery(current, reference)
+        if setter(reference):
+            self._brightness_override_active = True
+
+    def _release_brightness_override(self, expected: Optional[int] = None):
+        if not self._brightness_override_active and self._saved_brightness_scale is None:
+            return False
+        reference = self._output_brightness_scale if expected is None else expected
+        saved = self._saved_brightness_scale
+        current = self._read_brightness_scale()
+        restored = False
+        if reference is not None and saved is not None:
+            restorer = getattr(self.hardware, "restore_brightness_scale_if", None)
+            if callable(restorer):
+                restored = bool(restorer(reference, saved))
+        # If another actor already changed the gain, its value is authoritative
+        # and the stale recovery record must not overwrite it on next startup.
+        if restored or current is None or current != reference:
+            self._clear_recovery()
+        self._saved_brightness_scale = None
+        self._brightness_override_active = False
+        return restored
+
+    def calibration_status(self):
+        with self._lock:
+            current = self._read_brightness_scale()
+            return {
+                "supported": current is not None,
+                "detected_brightness": current,
+                "reference_brightness": self._output_brightness_scale,
+                "saved_steam_brightness": self._saved_brightness_scale,
+                "override_active": self._brightness_override_active,
+                "startup_recovered": self._startup_brightness_recovered,
+            }
+
+    def render(self, frame, *, force=False) -> bool:
         clean = normalize_frame(frame)
         with self._lock:
-            if self._failed or clean == self._last_frame:
+            if self._failed or clean == self._last_frame and not force:
                 return False
             now = self._clock()
             if self._last_write_at and now - self._last_write_at < self.min_interval_s:
@@ -64,9 +198,15 @@ class Renderer:
                         self._saved_frame = self._saved_state["frame"]
                     else:
                         self._saved_frame = self.hardware.read_frame()
-                    claim_manual_control = getattr(self.hardware, "claim_manual_control", None)
-                    if callable(claim_manual_control):
-                        claim_manual_control()
+                claim_manual_control = getattr(self.hardware, "claim_manual_control", None)
+                if callable(claim_manual_control) and (
+                    self._last_frame is None or self._saved_frame is not None and force
+                ):
+                    # Protected ownership must restore manual mode after a
+                    # competing Valve write, even when the desired RGB frame
+                    # itself has not changed.
+                    claim_manual_control()
+                self._apply_brightness_override()
                 self.hardware.write_frame(clean)
                 self._last_signature = self.hardware.read_signature()
             except OSError:
@@ -95,6 +235,13 @@ class Renderer:
                         restored = True
                 except OSError:
                     self._failed = True
+            if self._brightness_override_active or self._saved_brightness_scale is not None:
+                if restored:
+                    self._clear_recovery()
+                    self._saved_brightness_scale = None
+                    self._brightness_override_active = False
+                else:
+                    self._release_brightness_override()
             self._last_frame = None
             self._last_signature = None
             self._saved_frame = None

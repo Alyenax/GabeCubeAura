@@ -172,6 +172,21 @@ class WeatherTests(unittest.TestCase):
             self.assertEqual(saved["weather_temperature_unit"], "fahrenheit")
             self.assertEqual(SettingsStore(str(path)).all()["weather_rain_variant"], 1)
 
+    def test_topbar_icon_family_persists_and_invalid_values_fall_back(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "settings.json"
+            store = SettingsStore(str(path))
+            self.assertEqual(store.all()["weather_icon_style"], "phosphor-duotone")
+            for style in ("material-rounded", "phosphor-duotone", "current"):
+                self.assertEqual(
+                    store.update({"weather_icon_style": style})["weather_icon_style"], style,
+                )
+            self.assertEqual(
+                store.update({"weather_icon_style": "remote-font"})["weather_icon_style"],
+                "phosphor-duotone",
+            )
+            self.assertEqual(SettingsStore(str(path)).all()["weather_icon_style"], "phosphor-duotone")
+
     def test_service_parses_temperature_for_optional_top_bar_only(self):
         requested = []
         sample = fetch_current(CITY, lambda url: (
@@ -220,8 +235,10 @@ class WeatherTests(unittest.TestCase):
     def test_night_transpositions_match_mockup_palette_and_timing(self):
         night = [0, 8, 38]
         cloud = [35, 35, 35]
-        allowed = {tuple(night), tuple(cloud), (128, 128, 128),
-                   (192, 192, 192), (255, 255, 255)}
+        clear_night_allowed = {tuple(night), (112, 112, 112),
+                               (168, 168, 168), (224, 224, 224)}
+        other_night_allowed = {tuple(night), tuple(cloud), (128, 128, 128),
+                               (192, 192, 192), (255, 255, 255)}
         self.assertEqual(VARIANT_NAMES["clear_night"], ("Breathing moon", "Lunar bloom"))
         self.assertEqual(VARIANT_NAMES["cloud_night"], (
             "Night passing shadow", "Night passing shadows",
@@ -234,10 +251,10 @@ class WeatherTests(unittest.TestCase):
         self.assertEqual(weather_loop_seconds("cloud_night", 3), 48)
 
         start = weather_sequence("clear_night", 0, 0)
-        self.assertEqual(start[8:10], [[192, 192, 192], [192, 192, 192]])
+        self.assertEqual(start[8:10], [[168, 168, 168], [168, 168, 168]])
         self.assertTrue(all(pixel == night for pixel in start[:8] + start[10:]))
         full = weather_sequence("clear_night", 0, 3)
-        self.assertEqual(full[7:11], [[255, 255, 255]] * 4)
+        self.assertEqual(full[7:11], [[224, 224, 224]] * 4)
         self.assertTrue(all(pixel == night for pixel in weather_sequence("cloud_night", 0, 0)))
         one_cloud = weather_sequence("cloud_night", 0, 4)
         self.assertIn(cloud, one_cloud)
@@ -251,9 +268,10 @@ class WeatherTests(unittest.TestCase):
         self.assertGreater(second_pass[9:].count(cloud), second_pass[:9].count(cloud))
         fading = weather_sequence("breaks_night", 1, 3)
         self.assertEqual(fading[0], night)
-        self.assertIn(tuple(fading[8]), allowed)
+        self.assertIn(tuple(fading[8]), other_night_allowed)
 
         for condition in ("clear_night", "cloud_night", "breaks_night"):
+            allowed = clear_night_allowed if condition == "clear_night" else other_night_allowed
             for variant in range(len(VARIANT_NAMES[condition])):
                 duration = weather_loop_seconds(condition, variant)
                 for tick in range(round(duration * 5)):
@@ -292,7 +310,7 @@ class WeatherTests(unittest.TestCase):
             provider.stop_preview()
             self.assertFalse(provider.status(values)["preview_active"])
             self.assertIsNone(provider.status(values)["temperature_c"])
-            self.assertFalse(values["weather_topbar_enabled"])
+            self.assertTrue(values["weather_topbar_enabled"])
             store.update({"controller_battery_display": "game"})
             self.assertEqual(store.all()["weather_display"], "home")
             store.update({"weather_topbar_enabled": True})
@@ -300,7 +318,7 @@ class WeatherTests(unittest.TestCase):
             self.assertEqual(store.all()["weather_display"], "home")
             self.assertTrue(Engine(store, str(Path(folder) / "cache")).status()["weather_topbar_enabled"])
             store.update({"weather_location": None})
-            self.assertFalse(store.all()["weather_topbar_enabled"])
+            self.assertTrue(store.all()["weather_topbar_enabled"])
 
     def test_topbar_fetches_when_led_weather_is_off_and_expires(self):
         now = [100.0]
@@ -319,11 +337,12 @@ class WeatherTests(unittest.TestCase):
         finally:
             provider.stop()
 
-    def test_topbar_requires_city_and_starts_without_opening_decky_settings(self):
+    def test_topbar_can_wait_for_city_and_starts_without_opening_decky_settings(self):
         with tempfile.TemporaryDirectory() as folder:
             settings = SettingsStore(str(Path(folder) / "settings.json"))
-            with self.assertRaisesRegex(ValueError, "city"):
-                settings.update({"weather_topbar_enabled": True})
+            settings.update({"weather_topbar_enabled": True})
+            self.assertTrue(settings.all()["weather_topbar_enabled"])
+            self.assertIsNone(settings.all()["weather_location"])
             settings.update({"weather_location": CITY, "weather_topbar_enabled": True})
             self.assertEqual(settings.all()["weather_display"], "off")
             engine = Engine(settings, str(Path(folder) / "artwork.json"))

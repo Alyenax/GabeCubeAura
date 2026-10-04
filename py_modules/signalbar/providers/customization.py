@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import threading
 import time
 
@@ -101,6 +102,51 @@ def customization_frame(pattern, colours, elapsed_seconds, brightness=128,
     return normalize_frame(frame)
 
 
+def calibration_frame(elapsed_seconds, brightness=160):
+    """Ten-second optical check for colour, white balance and moving contrast."""
+    elapsed = max(0.0, float(elapsed_seconds))
+    brightness = max(34, min(255, int(brightness)))
+    if elapsed < 3.2:
+        anchors = ((0, 170, 255), (112, 42, 255), (255, 48, 140))
+        frame = []
+        for index in range(LED_COUNT):
+            distance = abs(index - 8)
+            colour = anchors[2] if distance <= 2 else anchors[1] if distance <= 5 else anchors[0]
+            frame.append(_scale(colour, brightness))
+        return normalize_frame(frame)
+    if elapsed < 6.4:
+        anchors = ((118, 150, 216), (201, 232, 255), (255, 255, 255))
+        frame = []
+        for index in range(LED_COUNT):
+            distance = abs(index - 8)
+            colour = anchors[2] if distance <= 1 else anchors[1] if distance <= 4 else anchors[0]
+            level = 0.72 if distance <= 1 else 0.56 if distance <= 4 else 0.38
+            frame.append(_scale(colour, round(brightness * level)))
+        return normalize_frame(frame)
+
+    # A synthetic centre-out crest makes the hardware gain test independent
+    # from programme audio while retaining the geometry used by Hi-Fi Crest.
+    phase = ((elapsed - 6.4) % 1.20) / 1.20
+    palette = ((0, 170, 255), (112, 42, 255), (255, 48, 140))
+    frame = []
+    for index in range(LED_COUNT):
+        distance = abs(index - 8) / 8.0
+        colour = palette[2] if distance <= .24 else palette[1] if distance <= .66 else palette[0]
+        ring = math.exp(-(((distance - phase) / .15) ** 2))
+        level = min(1.0, .10 + ring * .82)
+        frame.append(_scale(colour, round(brightness * level)))
+    return normalize_frame(frame)
+
+
+def calibration_stage(elapsed_seconds):
+    elapsed = max(0.0, float(elapsed_seconds))
+    if elapsed < 3.2:
+        return "colour-separation"
+    if elapsed < 6.4:
+        return "white-balance"
+    return "motion-contrast"
+
+
 class CustomizationProvider:
     name = "customization"
 
@@ -108,19 +154,40 @@ class CustomizationProvider:
         self.clock = clock
         self._lock = threading.RLock()
         self._preview_until = 0.0
+        self._calibration_started_at = 0.0
+        self._calibration_until = 0.0
 
     def preview(self, seconds=8.0):
         with self._lock:
             self._preview_until = self.clock() + max(1.0, min(30.0, float(seconds)))
         return True
 
+    def preview_calibration(self, seconds=10.0):
+        with self._lock:
+            now = self.clock()
+            duration = max(9.6, min(30.0, float(seconds)))
+            self._calibration_started_at = now
+            self._calibration_until = now + duration
+        return True
+
     def stop_preview(self):
         with self._lock:
             self._preview_until = 0.0
+            self._calibration_started_at = 0.0
+            self._calibration_until = 0.0
 
     def output(self, values, enabled=False):
         with self._lock:
-            preview = self.clock() < self._preview_until
+            now = self.clock()
+            preview = now < self._preview_until
+            calibration = now < self._calibration_until
+            calibration_elapsed = max(0.0, now - self._calibration_started_at)
+        if calibration:
+            return ProviderOutput(
+                "customization:calibration",
+                calibration_frame(calibration_elapsed, values.get("audio_sync_brightness", 160)),
+                "Light bar calibration preview",
+            )
         if not enabled and not preview:
             return ProviderOutput(self.name, None, "Customization+ is not selected here")
         count = max(1, min(3, int(values.get("customization_colour_count", 1))))
@@ -136,15 +203,25 @@ class CustomizationProvider:
 
     def status(self, values):
         with self._lock:
-            preview = self.clock() < self._preview_until
+            now = self.clock()
+            preview = now < self._preview_until
+            calibration = now < self._calibration_until
+            calibration_elapsed = max(0.0, now - self._calibration_started_at)
         count = max(1, min(3, int(values.get("customization_colour_count", 1))))
         colours = [values[f"customization_colour_{index}"] for index in range(1, count + 1)]
-        return {
-            "preview_active": preview,
-            "colors": [list(pixel) for pixel in customization_frame(
+        status_frame = (
+            calibration_frame(calibration_elapsed, values.get("audio_sync_brightness", 160))
+            if calibration else customization_frame(
                 values.get("customization_pattern", "steady"), colours, self.clock(),
                 values.get("customization_brightness", 128),
                 values.get("customization_speed", 50),
                 values.get("customization_direction", "forward"),
-            )],
+            )
+        )
+        return {
+            "preview_active": preview,
+            "calibration_preview_active": calibration,
+            "calibration_stage": calibration_stage(calibration_elapsed) if calibration else "idle",
+            "calibration_remaining_s": max(0.0, self._calibration_until - now),
+            "colors": [list(pixel) for pixel in status_frame],
         }

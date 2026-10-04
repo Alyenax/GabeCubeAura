@@ -21,6 +21,7 @@ from signalbar.providers import (
     performance_frame,
     temperature_color,
 )
+from signalbar.providers.artwork import artwork_vibrance
 from signalbar.renderer import Renderer
 from signalbar.settings import SettingsStore
 from signalbar.steam import find_library_artwork, get_library_artwork
@@ -37,6 +38,7 @@ class FakeHardware:
     def __init__(self):
         self.frame = BLACK
         self.write_calls = []
+        self.claim_calls = 0
 
     def read_frame(self):
         return self.frame
@@ -47,6 +49,9 @@ class FakeHardware:
     def write_frame(self, frame):
         self.frame = normalize_frame(frame)
         self.write_calls.append(self.frame)
+
+    def claim_manual_control(self):
+        self.claim_calls += 1
 
     def try_restore(self, frame):
         self.write_frame(frame)
@@ -62,6 +67,7 @@ class CoreTests(unittest.TestCase):
             "stripmine_priority_light_events": "signalbar",
             "stripmine_priority_game_launches": "stripmine",
             "stripmine_priority_screen_sync": "signalbar",
+            "stripmine_priority_audio_sync": "signalbar",
         }
         self.assertEqual(Engine._stripmine_priority("artwork:hero", values), "stripmine")
         self.assertEqual(Engine._stripmine_priority("performance", values), "signalbar")
@@ -70,6 +76,7 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(Engine._stripmine_priority("event:achievement", values), "signalbar")
         self.assertEqual(Engine._stripmine_priority("launch-artwork:ripple", values), "stripmine")
         self.assertEqual(Engine._stripmine_priority("screen-sync", values), "signalbar")
+        self.assertEqual(Engine._stripmine_priority("audio-sync:spectrum", values), "signalbar")
         self.assertEqual(Engine._stripmine_priority("countdown", values), "signalbar")
         self.assertEqual(Engine._stripmine_priority("none", values), "stripmine")
         self.assertEqual(Engine._stripmine_priority("valve", values), "stripmine")
@@ -80,15 +87,88 @@ class CoreTests(unittest.TestCase):
             tuple(("255 0 0", "255") for _ in range(17)),
         )
         self.assertEqual(
-            Engine._native_priority_reason(
+            Engine._native_priority_state(
                 ValveLedHardware, red_signature, red_signature,
             ),
-            "",
+            ("", ""),
         )
         self.assertEqual(
-            Engine._native_priority_reason(ValveLedHardware, red_signature, None),
-            "Valve critical red hardware signal",
+            Engine._native_priority_state(ValveLedHardware, red_signature, None),
+            ("critical-red", "Valve critical red hardware signal"),
         )
+
+    def test_native_priority_state_distinguishes_effect_and_critical_red(self):
+        effect = (("rainbow", "1", "255"), tuple(("0 0 0", "255") for _ in range(17)))
+        critical = (("manual", "1", "255"), tuple(("255 8 4", "255") for _ in range(17)))
+        ordinary = (("manual", "1", "255"), tuple(("0 64 255", "255") for _ in range(17)))
+        self.assertEqual(ValveLedHardware.native_priority_state(effect)[0], "effect")
+        self.assertEqual(ValveLedHardware.native_priority_state(critical)[0], "critical-red")
+        self.assertEqual(ValveLedHardware.native_priority_state(ordinary), ("", ""))
+
+    def test_ownership_policies_preserve_only_the_requested_valve_layers(self):
+        resolve = Engine._resolve_ownership_policy
+        self.assertEqual(resolve(
+            "cooperative", download_active=False, native_kind="",
+            guard_allows=False, guard_hard_priority=True,
+        ), (False, True))
+        self.assertEqual(resolve(
+            "downloads", download_active=False, native_kind="effect",
+            guard_allows=False, guard_hard_priority=True,
+        ), (True, False))
+        self.assertEqual(resolve(
+            "downloads", download_active=True, native_kind="",
+            guard_allows=False, guard_hard_priority=False,
+        ), (True, True))
+        self.assertEqual(resolve(
+            "critical", download_active=True, native_kind="",
+            guard_allows=False, guard_hard_priority=True,
+        ), (True, False))
+        self.assertEqual(resolve(
+            "critical", download_active=False, native_kind="critical-red",
+            guard_allows=False, guard_hard_priority=False,
+        ), (True, True))
+
+    def test_download_handoff_restores_native_hardware_mode_if_still_owned(self):
+        restore = Engine._restore_before_valve_handoff
+        self.assertTrue(restore(
+            externally_blocked=True,
+            event_preempted_valve=False,
+            semantic_download_priority=True,
+        ))
+        self.assertFalse(restore(
+            externally_blocked=True,
+            event_preempted_valve=False,
+            semantic_download_priority=False,
+        ))
+        self.assertTrue(restore(
+            externally_blocked=True,
+            event_preempted_valve=True,
+            semantic_download_priority=False,
+        ))
+
+    def test_safety_only_requests_download_mode_suppression(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = SettingsStore(str(Path(directory) / "config.json"))
+            engine = Engine(store, str(Path(directory) / "art.json"))
+
+            store.update({"valve_ownership_policy": "critical"})
+            decision = engine.set_steam_activity(True, "Steam download activity")
+            self.assertEqual(decision["ownership_policy"], "critical")
+            self.assertTrue(decision["suppress_download_animation"])
+            self.assertFalse(decision["restore_download_animation"])
+
+            engine._native_priority_kind = "critical-red"
+            critical = engine.set_steam_activity(True)
+            self.assertFalse(critical["suppress_download_animation"])
+            self.assertFalse(critical["restore_download_animation"])
+            engine._native_priority_kind = ""
+            store.update({"valve_ownership_policy": "downloads"})
+            downloads = engine.set_steam_activity(True)
+            self.assertFalse(downloads["suppress_download_animation"])
+            self.assertTrue(downloads["restore_download_animation"])
+            inactive = engine.set_steam_activity(False)
+            self.assertFalse(inactive["suppress_download_animation"])
+            self.assertFalse(inactive["restore_download_animation"])
 
     def test_performance_mapping_zero_to_seventeen(self):
         self.assertEqual(sum(pixel != (0, 0, 0) for pixel in performance_frame(0, 60)), 0)
@@ -340,6 +420,18 @@ class CoreTests(unittest.TestCase):
         self.assertTrue(renderer.render(BLUE))
         self.assertEqual(len(hardware.write_calls), 2)
 
+    def test_renderer_force_reasserts_same_frame_and_manual_control(self):
+        clock = ManualClock(100)
+        hardware = FakeHardware()
+        renderer = Renderer(hardware, min_interval_s=0.05, clock=clock)
+        self.assertTrue(renderer.render(RED))
+        self.assertEqual(hardware.claim_calls, 1)
+        hardware.frame = BLUE
+        clock.advance(0.051)
+        self.assertTrue(renderer.render(RED, force=True))
+        self.assertEqual(hardware.frame, RED)
+        self.assertEqual(hardware.claim_calls, 2)
+
     def test_renderer_restores_only_while_still_owner(self):
         clock = ManualClock(100)
         hardware = FakeHardware()
@@ -438,22 +530,166 @@ class CoreTests(unittest.TestCase):
         unavailable = ProviderOutput("performance", None, "missing")
         self.assertEqual(arbiter.choose(mode="artwork", guard_allows=True, game=game, performance=unavailable, artwork=artwork, idle=idle).provider, "artwork")
         self.assertIsNone(arbiter.choose(mode="disabled", guard_allows=True, game=game, performance=performance, artwork=artwork, idle=idle).frame)
+        blackout = arbiter.choose(
+            mode="blackout", guard_allows=True, game=game,
+            performance=performance, artwork=artwork, idle=idle,
+        )
+        self.assertEqual(blackout.provider, "blackout")
+        self.assertEqual(blackout.frame, BLACK)
 
 
 class PersistenceTests(unittest.TestCase):
+    def test_display_presets_apply_restore_and_become_custom_after_edits(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = str(Path(directory) / "config.json")
+            store = SettingsStore(path)
+            store.update({
+                "controller_alerts_enabled": True,
+                "controller_alert_context": "game",
+                "controller_connect_enabled": False,
+                "controller_low_enabled": True,
+                "controller_charging_mode": "continuous-everywhere",
+                "audio_sync_style": "stereo-lanterns",
+                "audio_sync_palette": "forest",
+            })
+            original = {
+                "home_display": store.all()["home_display"],
+                "game_display": store.all()["game_display"],
+                "valve_ownership_policy": store.all()["valve_ownership_policy"],
+                "events_enabled": store.all()["events_enabled"],
+                "controller_alerts_enabled": store.all()["controller_alerts_enabled"],
+                "controller_alert_context": store.all()["controller_alert_context"],
+                "controller_connect_enabled": store.all()["controller_connect_enabled"],
+                "controller_low_enabled": store.all()["controller_low_enabled"],
+                "controller_charging_mode": store.all()["controller_charging_mode"],
+                "audio_sync_style": store.all()["audio_sync_style"],
+                "audio_sync_palette": store.all()["audio_sync_palette"],
+                "audio_sync_home_style": store.all()["audio_sync_home_style"],
+                "audio_sync_home_palette": store.all()["audio_sync_home_palette"],
+                "audio_sync_game_style": store.all()["audio_sync_game_style"],
+                "audio_sync_game_palette": store.all()["audio_sync_game_palette"],
+                "audio_sync_brightness": store.all()["audio_sync_brightness"],
+                "audio_sync_reactivity": store.all()["audio_sync_reactivity"],
+            }
+            expected = {
+                "lights-out": ("blackout", "blackout", False, False, False, "off", "off", False, False, False, "critical"),
+                "focus": ("customization", "customization", False, False, False, "off", "off", False, False, False, "critical"),
+                "essential": ("blackout", "blackout", False, False, False, "off", "off", False, False, False, "downloads"),
+                "moderate": ("customization", "artwork", True, True, True, "both", "brief", True, True, True, "downloads"),
+                "atmosphere": ("audio_sync", "artwork", True, True, True, "both", "brief", True, True, True, "downloads"),
+                "signals": ("controller", "performance", True, True, True, "both", "continuous-home", True, True, True, "downloads"),
+                "immersive": ("audio_sync", "screen_sync", True, True, True, "both", "brief", True, True, True, "downloads"),
+                "immersive-plus": ("audio_sync", "audio_sync", True, True, True, "both", "brief", True, True, True, "downloads"),
+                "festive": ("audio_sync", "audio_sync", True, True, True, "both", "brief", True, True, True, "downloads"),
+            }
+            for preset, values in expected.items():
+                result = store.update({"display_preset": preset})
+                self.assertEqual(result["display_preset"], preset)
+                self.assertEqual(
+                    (
+                        result["home_display"], result["game_display"],
+                        result["launch_artwork_animation_enabled"], result["events_enabled"],
+                        result["controller_alerts_enabled"], result["controller_alert_context"],
+                        result["controller_charging_mode"], result["controller_connect_enabled"],
+                        result["controller_low_enabled"], result["screen_sync_screensaver_enabled"],
+                        result["valve_ownership_policy"],
+                    ),
+                    values,
+                    preset,
+                )
+                self.assertTrue(result["parental_countdown_enabled"], preset)
+                self.assertTrue(result["weather_topbar_enabled"], preset)
+                if preset == "immersive":
+                    self.assertTrue(result["event_notifications_enabled"])
+                    self.assertTrue(result["event_achievements_enabled"])
+                    self.assertTrue(result["event_screenshots_enabled"])
+                    self.assertTrue(result["event_recording_enabled"])
+                    self.assertEqual(result["audio_sync_home_style"], "slow-prism")
+                    self.assertEqual(result["audio_sync_home_palette"], "sapphire")
+                    self.assertEqual(result["audio_sync_game_style"], "slow-prism")
+                    self.assertEqual(result["audio_sync_game_palette"], "screen-sync")
+                    self.assertEqual(result["audio_sync_brightness"], 180)
+                    self.assertEqual(result["audio_sync_reactivity"], "fast")
+                if preset == "immersive-plus":
+                    self.assertEqual(result["audio_sync_home_style"], "slow-prism")
+                    self.assertEqual(result["audio_sync_home_palette"], "screen-sync")
+                    self.assertEqual(result["audio_sync_game_style"], "slow-prism")
+                    self.assertEqual(result["audio_sync_game_palette"], "screen-sync")
+                    self.assertEqual(result["audio_sync_brightness"], 180)
+                    self.assertEqual(result["audio_sync_reactivity"], "fast")
+                if preset == "atmosphere":
+                    self.assertEqual(result["audio_sync_style"], "slow-prism")
+                    self.assertEqual(result["audio_sync_palette"], "screen-sync")
+                    self.assertEqual(result["audio_sync_home_style"], "slow-prism")
+                    self.assertEqual(result["audio_sync_home_palette"], "screen-sync")
+                    self.assertEqual(result["audio_sync_game_style"], original["audio_sync_game_style"])
+                    self.assertEqual(result["audio_sync_game_palette"], original["audio_sync_game_palette"])
+                    self.assertEqual(result["audio_sync_brightness"], 180)
+                    self.assertEqual(result["audio_sync_reactivity"], "fast")
+                elif preset == "festive":
+                    self.assertEqual(result["audio_sync_style"], "slow-prism")
+                    self.assertEqual(result["audio_sync_palette"], "screen-sync")
+                    self.assertEqual(result["audio_sync_home_style"], "slow-prism")
+                    self.assertEqual(result["audio_sync_home_palette"], "screen-sync")
+                    self.assertEqual(result["audio_sync_game_style"], "slow-prism")
+                    self.assertEqual(result["audio_sync_game_palette"], "aurora")
+                    self.assertEqual(result["audio_sync_brightness"], 180)
+                    self.assertEqual(result["audio_sync_reactivity"], "fast")
+            restored = store.update({"display_preset": "custom"})
+            self.assertEqual(restored["display_preset"], "custom")
+            for key, value in original.items():
+                self.assertEqual(restored[key], value, key)
+
+            store.update({"display_preset": "focus"})
+            edited = store.update({"events_enabled": True})
+            self.assertEqual(edited["display_preset"], "custom")
+            self.assertEqual(edited["display_preset_restore"], {})
+
+            store.update({"display_preset": "moderate"})
+            store.update_display(42, "screen_sync")
+            self.assertEqual(store.all()["display_preset"], "custom")
+            self.assertEqual(store.display_for(42)["selected"], "screen_sync")
+
+    def test_immersive_preset_does_not_require_a_weather_city(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = SettingsStore(str(Path(directory) / "config.json"))
+            values = store.update({"display_preset": "immersive"})
+            self.assertEqual(values["display_preset"], "immersive")
+            self.assertEqual(values["home_display"], "audio_sync")
+            self.assertEqual(values["game_display"], "screen_sync")
+
+    def test_blackout_and_ownership_values_are_validated(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = SettingsStore(str(Path(directory) / "config.json"))
+            values = store.update({
+                "home_display": "blackout",
+                "game_display": "blackout",
+                "valve_ownership_policy": "critical",
+            })
+            self.assertEqual(store.display_for(0)["mode"], "blackout")
+            self.assertEqual(values["valve_ownership_policy"], "critical")
+            values = store.update({"valve_ownership_policy": "invalid"})
+            self.assertEqual(values["valve_ownership_policy"], "downloads")
+
     def test_fresh_install_defaults_match_approved_configuration(self):
         with tempfile.TemporaryDirectory() as directory:
             path = str(Path(directory) / "config.json")
             store = SettingsStore(path)
             expected = {
-                "mode": "performance", "signalbar_enabled": True,
-                "home_display": "controller", "game_display": "performance",
+                "mode": "audio_sync", "signalbar_enabled": True,
+                "home_display": "audio_sync", "game_display": "audio_sync",
+                "display_preset": "custom",
+                "valve_ownership_policy": "downloads",
+                "led_output_calibration_mode": "consistent",
+                "screen_sync_screensaver_enabled": True,
                 "performance_metric": "mixed",
                 "performance_smoothing": "responsive", "performance_always": False,
                 "mixed_direction": "mirrored", "temperature_palette": "classic",
                 "cool_temp_c": 45.0, "hot_temp_c": 78.0,
                 "artwork_source": "hero", "artwork_mode": "auto", "artwork_manual_y": .34,
                 "launch_artwork_source": "hero",
+                "launch_artwork_animation_enabled": True,
+                "launch_artwork_duration_seconds": 5,
                 "parental_countdown_enabled": True, "countdown_colour": "white",
                 "countdown_full_bar_minutes": 0, "free_timer_minutes": 60,
                 "events_enabled": True, "event_notifications_enabled": True,
@@ -462,8 +698,8 @@ class PersistenceTests(unittest.TestCase):
                 "event_notification_variant": "notification-beacon",
                 "event_achievement_variant": "achievement-constellation",
                 "event_screenshot_variant": "screenshot-bloom",
-                "controller_battery_display": "home", "controller_alerts_enabled": True,
-                "controller_alert_context": "both", "controller_charging_mode": "continuous-home",
+                "controller_battery_display": "off", "controller_alerts_enabled": True,
+                "controller_alert_context": "both", "controller_charging_mode": "brief",
                 "controller_low_threshold": 20, "controller_connect_enabled": True,
                 "controller_low_enabled": True, "controller_connect_variant": "welcome",
                 "controller_persistent_variant": "tip", "controller_low_variant": "beacon",
@@ -471,10 +707,27 @@ class PersistenceTests(unittest.TestCase):
                 "controller_colour_preset": "automatic",
                 "controller_colour_mode": "battery", "controller_gauge_brightness": 65,
                 "reverse_led_order": True, "countdown_dark_edge_compensation": 2,
-                "weather_topbar_enabled": False, "weather_temperature_unit": "celsius",
+                "weather_topbar_enabled": True, "weather_icon_style": "phosphor-duotone",
+                "weather_temperature_unit": "celsius",
                 "weather_brightness": 100, "weather_shadow_cutoff": 0,
                 "weather_cloud_variant": 3, "weather_snow_variant": 1,
                 "tw3_steamrgb_integration_enabled": True,
+                "audio_sync_style": "slow-prism", "audio_sync_brightness": 180,
+                "audio_sync_sensitivity": 100, "audio_sync_reactivity": "fast",
+                "audio_sync_palette": "screen-sync",
+                "audio_sync_home_style": "slow-prism",
+                "audio_sync_home_palette": "screen-sync",
+                "audio_sync_game_style": "slow-prism",
+                "audio_sync_game_palette": "screen-sync",
+                "audio_sync_hifi_lab_enabled": False,
+                "audio_sync_lab_crest_strength": 100,
+                "audio_sync_lab_edge_reach": 100,
+                "audio_sync_lab_background": 100,
+                "customization_pattern": "steady",
+                "customization_colour_count": 1,
+                "customization_brightness": 60,
+                "updates_channel": "stable",
+                "updates_check_interval_minutes": 1440,
             }
             for key, value in expected.items():
                 self.assertEqual(store.all()[key], value, key)
@@ -490,8 +743,24 @@ class PersistenceTests(unittest.TestCase):
                 "controller_player_colour_2": [255, 167, 26],
                 "controller_player_colour_3": [106, 26, 255],
                 "controller_player_colour_4": [70, 210, 136],
+                "customization_colour_1": [255, 153, 10],
+                "customization_colour_2": [0, 200, 255],
+                "customization_colour_3": [180, 48, 255],
+                "audio_sync_colour_low": [11, 94, 142],
+                "audio_sync_colour_middle": [8, 127, 191],
+                "audio_sync_colour_high": [26, 159, 255],
+                "audio_sync_home_colour_low": [11, 94, 142],
+                "audio_sync_home_colour_middle": [8, 127, 191],
+                "audio_sync_home_colour_high": [6, 148, 249],
+                "audio_sync_game_colour_low": [11, 94, 142],
+                "audio_sync_game_colour_middle": [8, 127, 191],
+                "audio_sync_game_colour_high": [26, 159, 255],
             }.items():
                 self.assertEqual(store.all()[key], color, key)
+            self.assertEqual(store.all()["artwork_profiles"], {
+                "1030300": {"manual_y": 0.34, "mode": "auto", "source": "hero", "vibrance": 100},
+                "977880": {"manual_y": 0.34, "mode": "auto", "source": "hero", "vibrance": 100},
+            })
             store.update({"mode": "artwork", "controller_battery_display": "off"})
             upgraded = SettingsStore(path).all()
             self.assertEqual(upgraded["mode"], "artwork")
@@ -568,6 +837,32 @@ class PersistenceTests(unittest.TestCase):
             self.assertEqual(reloaded.output(42).frame, RED)
             self.assertFalse(reloaded.activate_cached(42, "changed", "auto", 0.72))
 
+    def test_artwork_vibrance_is_perceptual_instant_and_cache_neutral(self):
+        muted = (126, 104, 92)
+        neutral = artwork_vibrance(muted, 100)
+        vivid = artwork_vibrance(muted, 200)
+        grey = artwork_vibrance(muted, 0)
+        self.assertEqual(neutral, muted)
+        self.assertGreater(max(vivid) - min(vivid), max(muted) - min(muted))
+        self.assertLessEqual(max(grey) - min(grey), 1)
+        self.assertTrue(all(0 <= channel <= 255 for channel in artwork_vibrance((255, 20, 8), 200)))
+
+        with tempfile.TemporaryDirectory() as directory:
+            provider = ArtworkProvider(str(Path(directory) / "art.json"))
+            frame = normalize_frame([muted] * 17)
+            provider.submit(42, "fingerprint", "auto", 0.5, frame, 0.5,
+                            "library_hero.jpg", "hero", {
+                                "2": [muted, (92, 112, 132)],
+                                "3": [muted, (92, 112, 132), (110, 122, 88)],
+                            })
+            self.assertEqual(provider.output(42, 100).frame, frame)
+            self.assertNotEqual(provider.output(42, 150).frame, frame)
+            self.assertEqual(provider.output(42, 100).frame, frame)
+            self.assertNotEqual(
+                provider.dominant_palettes(42, 150),
+                provider.dominant_palettes(42, 100),
+            )
+
     def test_settings_persist_and_validate(self):
         with tempfile.TemporaryDirectory() as directory:
             path = str(Path(directory) / "config.json")
@@ -639,16 +934,22 @@ class PersistenceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = str(Path(directory) / "config.json")
             store = SettingsStore(path)
-            store.update_artwork(2379780, {"mode": "manual", "manual_y": 0.83, "source": "header"})
+            store.update_artwork(2379780, {
+                "mode": "manual", "manual_y": 0.83, "source": "header",
+                "vibrance": 145,
+            })
             self.assertEqual(store.artwork_for(2379780)["manual_y"], 0.83)
             self.assertTrue(store.artwork_for(2379780)["custom"])
             self.assertEqual(store.artwork_for(2379780)["source"], "header")
+            self.assertEqual(store.artwork_for(2379780)["vibrance"], 145)
             self.assertEqual(store.artwork_for(620)["mode"], "auto")
+            self.assertEqual(store.artwork_for(620)["vibrance"], 100)
             self.assertFalse(store.artwork_for(620)["custom"])
 
             reloaded = SettingsStore(path)
             self.assertEqual(reloaded.artwork_for(2379780)["mode"], "manual")
             self.assertEqual(reloaded.artwork_for(2379780)["manual_y"], 0.83)
+            self.assertEqual(reloaded.artwork_for(2379780)["vibrance"], 145)
 
     def test_automatic_settings_migrate_to_an_explicit_mode(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -775,6 +1076,98 @@ class PersistenceTests(unittest.TestCase):
             self.assertEqual((first / "effect").read_text(), "normal")
             self.assertEqual((first / "enabled").read_text(), "1")
             self.assertEqual((first / "brightness_scale").read_text(), "56")
+
+    def test_calibrated_output_applies_reference_and_restores_steam_gain(self):
+        with tempfile.TemporaryDirectory() as directory:
+            paths = []
+            for index in range(17):
+                path = Path(directory) / f"valve-leds[{index}]"
+                path.mkdir()
+                (path / "multi_intensity").write_text("0 0 0")
+                (path / "brightness").write_text("255")
+                paths.append(str(path))
+            first = Path(paths[0])
+            (first / "effect").write_text("normal")
+            (first / "enabled").write_text("1")
+            (first / "brightness_scale").write_text("91")
+            recovery = Path(directory) / "brightness-recovery.json"
+
+            hardware = ValveLedHardware(paths)
+            clock = ManualClock(100)
+            renderer = Renderer(
+                hardware, brightness_recovery_path=str(recovery), clock=clock,
+            )
+            renderer.set_output_brightness_scale(34)
+            self.assertTrue(renderer.render(BLUE))
+            self.assertEqual((first / "brightness_scale").read_text(), "34")
+            self.assertTrue(recovery.is_file())
+            self.assertEqual(renderer.calibration_status()["saved_steam_brightness"], 91)
+
+            renderer.set_output_brightness_scale(None)
+            self.assertEqual((first / "brightness_scale").read_text(), "91")
+            self.assertEqual(renderer.last_signature, hardware.read_signature())
+            renderer.set_output_brightness_scale(34)
+            clock.advance(.051)
+            self.assertTrue(renderer.render(BLUE))
+
+            self.assertTrue(renderer.relinquish(True))
+            self.assertEqual((first / "brightness_scale").read_text(), "91")
+            self.assertFalse(recovery.exists())
+
+    def test_calibrated_output_never_overwrites_a_new_external_gain(self):
+        with tempfile.TemporaryDirectory() as directory:
+            paths = []
+            for index in range(17):
+                path = Path(directory) / f"valve-leds[{index}]"
+                path.mkdir()
+                (path / "multi_intensity").write_text("0 0 0")
+                (path / "brightness").write_text("255")
+                paths.append(str(path))
+            first = Path(paths[0])
+            (first / "effect").write_text("normal")
+            (first / "enabled").write_text("1")
+            (first / "brightness_scale").write_text("91")
+            recovery = Path(directory) / "brightness-recovery.json"
+
+            renderer = Renderer(
+                ValveLedHardware(paths), brightness_recovery_path=str(recovery),
+            )
+            renderer.set_output_brightness_scale(34)
+            renderer.render(BLUE)
+            (first / "brightness_scale").write_text("72")
+            (first / "effect").write_text("patrol")
+            self.assertFalse(renderer.relinquish(True))
+            self.assertEqual((first / "brightness_scale").read_text(), "72")
+            self.assertFalse(recovery.exists())
+
+    def test_calibrated_output_recovers_after_an_interrupted_renderer(self):
+        with tempfile.TemporaryDirectory() as directory:
+            paths = []
+            for index in range(17):
+                path = Path(directory) / f"valve-leds[{index}]"
+                path.mkdir()
+                (path / "multi_intensity").write_text("0 0 0")
+                (path / "brightness").write_text("255")
+                paths.append(str(path))
+            first = Path(paths[0])
+            (first / "effect").write_text("normal")
+            (first / "enabled").write_text("1")
+            (first / "brightness_scale").write_text("88")
+            recovery = Path(directory) / "brightness-recovery.json"
+
+            interrupted = Renderer(
+                ValveLedHardware(paths), brightness_recovery_path=str(recovery),
+            )
+            interrupted.set_output_brightness_scale(34)
+            interrupted.render(BLUE)
+            self.assertEqual((first / "brightness_scale").read_text(), "34")
+
+            restarted = Renderer(
+                ValveLedHardware(paths), brightness_recovery_path=str(recovery),
+            )
+            self.assertEqual((first / "brightness_scale").read_text(), "88")
+            self.assertTrue(restarted.calibration_status()["startup_recovered"])
+            self.assertFalse(recovery.exists())
 
     def test_native_valve_animation_and_critical_red_keep_hard_priority(self):
         normal = (

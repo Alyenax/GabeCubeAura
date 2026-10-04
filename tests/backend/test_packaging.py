@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 import unittest
 
 
@@ -8,35 +9,50 @@ class PackagingTests(unittest.TestCase):
         for relative in (
             "main.py", "plugin.json", "package.json", "LICENSE",
             "THIRD_PARTY_NOTICES.md", "scripts/package_plugin.py",
+            "licenses/Material-Symbols-Apache-2.0.txt",
+            "licenses/Phosphor-Icons-MIT.txt",
             "docs/SCREEN_SYNC.md", "docs/SCREEN_SYNC_INTEGRATION_PLAN.md",
             "docs/BETA_TEST_PLAN_1.2.1-beta.1.md",
-            "docs/RELEASE_NOTES_1.2.1-beta.1.md",
-            "docs/RELEASE_NOTES_1.2.1.md",
+            "docs/RELEASE_NOTES_1.2.1-beta.1.md", "docs/AUDIO_SYNC.md",
+            "docs/RELEASE_NOTES_1.3.0.md", "docs/RELEASE_NOTES_1.3.1.md",
+            "docs/RELEASE_NOTES_1.3.2.md",
+            "docs/PRIVATE_LAB_UPDATES.md",
         ):
             self.assertTrue((root / relative).is_file(), relative)
         self.assertTrue((root / "py_modules/signalbar/backend/engine.py").is_file())
         from scripts.package_plugin import iter_files
         packaged = {str(path.relative_to(root)) for path in iter_files(require_build=False)}
         self.assertIn("THIRD_PARTY_NOTICES.md", packaged)
+        self.assertIn("licenses/Material-Symbols-Apache-2.0.txt", packaged)
+        self.assertIn("licenses/Phosphor-Icons-MIT.txt", packaged)
+        self.assertNotIn("licenses/Meteocons-MIT.txt", packaged)
         self.assertIn("py_modules/signalbar/backend/engine.py", packaged)
         self.assertIn("py_modules/signalbar/updates.py", packaged)
         self.assertIn("py_modules/signalbar/update_helper.py", packaged)
         self.assertFalse(any("witcher" in path.lower() for path in packaged))
         self.assertFalse(any(path.startswith("assets/") for path in packaged))
         self.assertFalse(any(path.startswith("docs/") for path in packaged))
+        self.assertFalse(any("private-auth" in path.lower() for path in packaged))
+        self.assertFalse(any("token" in Path(path).name.lower() for path in packaged))
+        updater = (root / "py_modules/signalbar/updates.py").read_text(encoding="utf-8")
+        self.assertIn('PRIVATE_GITHUB_CLIENT_ID = "Iv23lizXKqIqTbVNKuUD"', updater)
+        self.assertNotIn("PRIVATE_GITHUB_CLIENT_SECRET", updater)
 
     def test_gabecubeaura_settings_screen_sync_updates_and_lifecycle_guards(self):
         root = Path(__file__).resolve().parents[2]
         panel = (root / "src/index.tsx").read_text(encoding="utf-8")
+        engine = (root / "py_modules/signalbar/backend/engine.py").read_text(encoding="utf-8")
         customization_catalog = (root / "src/customization_catalog.ts").read_text(encoding="utf-8")
         manifest = (root / "plugin.json").read_text(encoding="utf-8")
         package = (root / "package.json").read_text(encoding="utf-8")
+        package_data = json.loads(package)
+        from signalbar import __version__ as backend_version
         self.assertIn('"name": "GabeCubeAura"', manifest)
-        self.assertIn('"version": "1.2.1"', package)
+        self.assertEqual(package_data["version"], backend_version)
         self.assertIn('"author": "Alyenax"', manifest)
         self.assertIn('"author": "Alyenax"', package)
-        self.assertIn('label="Colour meaning"', panel)
         self.assertIn('label="Colour preset"', panel)
+        self.assertIn('label="Colour meaning"', panel)
         self.assertIn('label="Yield to TW3-SteamRGB HUD"', panel)
         self.assertIn('label="Controllers in preview"', panel)
         self.assertIn('label="Preview controller"', panel)
@@ -48,9 +64,51 @@ class PackagingTests(unittest.TestCase):
         self.assertIn('return <SidebarNavigation title="GabeCubeAura settings"', panel)
         self.assertIn('route: "/gabecubeaura/settings/customization"', panel)
         self.assertIn('route: "/gabecubeaura/settings/screen-sync"', panel)
+        self.assertIn('route: "/gabecubeaura/settings/audio-sync"', panel)
         self.assertIn('route: "/gabecubeaura/settings/launches"', panel)
         self.assertNotIn('Content page="settings"', panel)
         self.assertIn('{ data: "steam", label: "GabeCubeAura Off" }', panel)
+        self.assertIn('{ data: "blackout", label: "Blackout (held off)" }', panel)
+        self.assertIn('label="Lighting preset"', panel)
+        self.assertIn('label="Steam ownership"', panel)
+        self.assertIn('title="Light bar calibration · Lab"', panel)
+        self.assertIn('label="Output mode"', panel)
+        self.assertIn('Consistent output (Recommended)', panel)
+        self.assertIn('previewLightCalibration', panel)
+        self.assertEqual(panel.count('<LightBarCalibration status={status} setStatus={setStatus} />'), 1)
+        self.assertNotIn('Open light bar calibration', panel)
+        self.assertNotIn('Use consistent output', panel)
+        self.assertIn('LED_OUTPUT_REFERENCE_BRIGHTNESS = 9', engine)
+        self.assertIn('status.audio_sync_style === "hifi-crest"', panel)
+        self.assertIn('context="home"', panel)
+        self.assertIn('context="game"', panel)
+        self.assertIn('audio_sync_home_palette', panel)
+        self.assertIn('audio_sync_game_palette', panel)
+        self.assertEqual(panel.count('label="Show live diagnostics"'), 3)
+        self.assertIn('showLiveDiagnostics ? <AudioTimingReadout', panel)
+        self.assertIn('{ data: "velvet-relay", label: "Velvet Relay" }', panel)
+        self.assertIn('{ data: "negative-bloom", label: "Negative Bloom" }', panel)
+        self.assertIn('{ data: "stereo-lanterns", label: "Stereo Lanterns" }', panel)
+        self.assertIn('{ data: "constellation", label: "Constellation" }', panel)
+        self.assertIn('{ data: "slow-prism", label: "Slow Prism" }', panel)
+        self.assertIn('{ data: "audio-pulse", label: "Audio pulse" }', panel)
+        self.assertNotIn('Screen colours + audio pulse', panel)
+        self.assertNotIn('Screen colours + stereo field', panel)
+        for constant, labels in {
+            "AUDIO_SYNC_STYLE_OPTIONS": ["17-band spectrum", "Audio pulse", "Bass pulse", "Constellation", "Hi-Fi Crest", "Negative Bloom", "Slow Prism", "Stereo field", "Stereo Lanterns", "Velvet Relay"],
+            "AUDIO_SYNC_PALETTE_OPTIONS": ["Artwork", "Aurora", "Candy", "Coastline", "Copper", "Custom colours", "Deep Sea", "Ember", "Forest", "Glacier", "Ice", "Lagoon", "Lime", "Magma", "Orchid", "Pearl", "Plasma", "Sapphire", "Screen Sync", "Silver", "Solar", "Sunset"],
+        }.items():
+            start = panel.index(f"const {constant}")
+            end = panel.index("];", start)
+            block = panel[start:end]
+            positions = [block.index(f'label: "{label}"') for label in labels]
+            self.assertEqual(positions, sorted(positions), constant)
+        self.assertIn('<HifiCrestLab status={status} setStatus={setStatus} quick />', panel)
+        self.assertIn('label="Show Hi-Fi Crest Lab"', panel)
+        self.assertIn('status.audio_sync_hifi_lab_enabled && status.audio_sync_style === "hifi-crest"', panel)
+        self.assertIn('label="Crest strength"', panel)
+        self.assertIn('label="Edge reach"', panel)
+        self.assertIn('label="Background level"', panel)
         self.assertIn('{ data: "customization", label: "Customization+" }', panel)
         self.assertIn('<CustomizationPanel status={status}', panel)
         self.assertIn('label="Brightness"', panel)
@@ -58,9 +116,9 @@ class PackagingTests(unittest.TestCase):
         self.assertIn('label="Speed"', panel)
         self.assertIn('setSetting("customization_speed", value)', panel)
         self.assertIn('label="Hex"', panel)
-        self.assertIn('label="Red"', panel)
-        self.assertIn('label="Green"', panel)
-        self.assertIn('label="Blue"', panel)
+        self.assertNotIn('label="Red"', panel)
+        self.assertNotIn('label="Green"', panel)
+        self.assertNotIn('label="Blue"', panel)
         self.assertIn('OpaqueColorPickerModal', panel)
         self.assertNotIn('ColorPickerModal', panel.replace('OpaqueColorPickerModal', ''))
         self.assertNotIn('label="Alpha"', panel)
@@ -88,8 +146,8 @@ class PackagingTests(unittest.TestCase):
         self.assertEqual(panel.count("void runLaunchPreview()"), 2)
         self.assertNotIn('<PalettePreview colors={status.launch_artwork.dominant_colors ?? []} />', panel)
         self.assertNotIn("Live 17-LED launch preview", panel[artwork:second_preview])
-        self.assertIn('page === "compatibility" || page === "launches" ? 100', panel)
-        self.assertIn('page === "screen-sync" ? 250 : 1000', panel)
+        self.assertIn('|| page === "launches" ? 100', panel)
+        self.assertIn('page === "screen-sync" || page === "audio-sync" ? 250 : 1000', panel)
         self.assertIn('<Focusable style={{ width: "100%", paddingBottom: 28, scrollMarginBottom: 24 }} aria-label="Launch artwork preview">', panel)
         self.assertIn('label="Palette source"', panel)
         self.assertIn('label="Number of colours"', panel)
@@ -99,20 +157,58 @@ class PackagingTests(unittest.TestCase):
         self.assertIn('label="Check for updates"', panel)
         self.assertIn('label="Automatically check for updates"', panel)
         self.assertIn('label="Notify me when an update is available"', panel)
+        self.assertIn('{ data: "private", label: "Private Lab" }', panel)
+        self.assertIn('<PanelSection title="Private Lab access">', panel)
+        self.assertIn('Detection is automatic. Use this to check immediately.', panel)
         self.assertIn('Update lab · TEST BUILD', panel)
         self.assertIn('stripmine_priority_screen_sync', panel)
+        self.assertIn('stripmine_priority_audio_sync', panel)
         self.assertNotIn('stripmine_priority_witcher', panel)
         self.assertNotIn('installWitcherTelemetryMod', panel)
         self.assertNotIn('route: "/gabecubeaura/settings/witcher"', panel)
         self.assertIn('{ data: "screen_sync", label: "Screen Sync" }', panel)
         self.assertIn('<ScreenSyncPanel status={status}', panel)
-        self.assertIn('label="Refresh capture status"', panel)
+        self.assertIn('<AudioSyncPanel status={status}', panel)
+        self.assertIn('label="Preview Audio Sync"', panel)
+        self.assertIn('label="Let Steam screensaver take over"', panel)
+        self.assertIn('Screensaver Screen Sync pauses Audio Sync', panel)
+        self.assertNotIn('label="Refresh capture status"', panel)
         self.assertIn('label="Use during Steam screensaver"', panel)
         self.assertIn('label="Preview Screen Sync"', panel)
         self.assertIn('<PanelSection title="Capture fallback">', panel)
         self.assertIn('function SettingsPageEnd', panel)
-        self.assertIn('page !== "quick" ? <SettingsPageEnd page={page} setStatus={setStatus} />', panel)
+        self.assertIn('page !== "quick" && page !== "audio-sync" ? <SettingsPageEnd page={page} setStatus={setStatus} />', panel)
         self.assertIn('label={`End of ${PAGE_END_LABELS[page]} settings`}', panel)
+        self.assertNotIn('label="Sound level"', panel)
+        self.assertNotIn('label="Red"', panel)
+        self.assertNotIn('label="Green"', panel)
+        self.assertNotIn('label="Blue"', panel)
+        self.assertIn('label="Hex"', panel)
+        self.assertIn('{ data: "sapphire", label: "Sapphire" }', panel)
+        self.assertIn('{ data: "coastline", label: "Coastline" }', panel)
+        self.assertNotIn('<PanelSection title="Temporary layers">', panel)
+        self.assertNotIn('<div>Preset: <b>', panel)
+        self.assertNotIn('<div>Steam ownership: <b>', panel)
+        self.assertNotIn('<div>Home: <b>', panel)
+        self.assertNotIn('<div>In game: <b>', panel)
+        self.assertNotIn('<div>Current: <b>', panel)
+        self.assertNotIn('Family countdown takes priority.', panel)
+        self.assertNotIn('Short alerts temporarily replace the selected permanent display', panel)
+        self.assertEqual(
+            panel.count('Turns off every GabeCubeAura light without deleting display routes, launch effects, or per-game choices.'),
+            1,
+        )
+        self.assertEqual(panel.count('label="Enable GabeCubeAura"'), 2)
+        self.assertNotIn('Enable GabeCubeAura outputs', panel)
+        self.assertIn('label="SteamOS top-bar weather"', panel)
+        self.assertNotIn('SteamOS top-bar weather (experimental)', panel)
+        self.assertNotIn('Meteocons Fill', panel)
+        self.assertIn('{ data: "immersive-plus", label: "Immersive+" }', panel)
+        self.assertIn('{showPage("advanced") ? <CompatibilityPanel', panel)
+        self.assertNotIn('setPage("compatibility")', panel)
+        self.assertLess(panel.index('route: "/gabecubeaura/settings/screen-sync"'), panel.index('route: "/gabecubeaura/settings/audio-sync"'))
+        self.assertLess(panel.index('route: "/gabecubeaura/settings/audio-sync"'), panel.index('route: "/gabecubeaura/settings/updates"'))
+        self.assertLess(panel.index('route: "/gabecubeaura/settings/updates"'), panel.index('route: "/gabecubeaura/settings/advanced"'))
 
         runtime = (root / "src/runtime.ts").read_text(encoding="utf-8")
         self.assertIn('this.session.seed(runningApp())', runtime)
@@ -121,6 +217,9 @@ class PackagingTests(unittest.TestCase):
         self.assertIn("RegisterForAppLifetimeNotifications", runtime)
         self.assertIn("RegisterForOnResumeFromSuspend", runtime)
         self.assertIn("RegisterForParentalPlaytimeWarnings", runtime)
+        self.assertIn("RegisterForDownloadItems", runtime)
+        self.assertIn('downloadItemsActive(downloadItems), "items"', runtime)
+        self.assertNotIn("downloadItemsActive(isDownloading)", runtime)
         self.assertIn("isSteamScreensaverService", runtime)
         self.assertIn('setScreenSyncContext("steam-screensaver"', runtime)
         self.assertIn("const runtime = startGabeCubeAuraRuntime()", panel)

@@ -1,13 +1,5 @@
 # GabeCubeAura 1.1.0
 
-## Update notice
-
-The updater in this release can download and verify a new package, but may fail
-with `Could not start the independent update helper` when installation begins.
-Install [GabeCubeAura 1.1.2](https://github.com/Alyenax/GabeCubeAura/releases/tag/v1.1.2)
-once through Decky Developer settings. Updates after 1.1.2 can use the repaired
-in-plugin flow.
-
 GabeCubeAura can now check, download and install future stable releases from
 inside the plugin. Version 1.0.0 users still install this release once through
 Decky Developer settings. After that bootstrap, the new Updates page handles

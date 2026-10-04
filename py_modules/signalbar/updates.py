@@ -16,7 +16,7 @@ import sys
 import threading
 import time
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlparse
+from urllib.parse import urlencode, urlparse
 from urllib.request import HTTPSHandler, Request, build_opener, HTTPRedirectHandler
 from zipfile import BadZipFile, ZipFile
 
@@ -26,6 +26,17 @@ REPOSITORY = "GabeCubeAura"
 API_URL = f"https://api.github.com/repos/{OWNER}/{REPOSITORY}/releases/latest"
 RELEASES_API_URL = f"https://api.github.com/repos/{OWNER}/{REPOSITORY}/releases?per_page=50"
 TEST_RELEASE_API_URL = f"https://api.github.com/repos/{OWNER}/{REPOSITORY}/releases/tags/v1.1.0"
+PRIVATE_OWNER = "Alyenax"
+PRIVATE_REPOSITORY = "GabeCubeAura-Lab"
+PRIVATE_REPOSITORY_ID = 1402255604
+# Public identifier for the read-only GitHub App. It is filled after the app is
+# registered and is not a secret. No client secret is embedded in the plugin.
+PRIVATE_GITHUB_CLIENT_ID = "Iv23lizXKqIqTbVNKuUD"
+PRIVATE_RELEASES_API_URL = (
+    f"https://api.github.com/repos/{PRIVATE_OWNER}/{PRIVATE_REPOSITORY}/releases?per_page=50"
+)
+DEVICE_CODE_URL = "https://github.com/login/device/code"
+ACCESS_TOKEN_URL = "https://github.com/login/oauth/access_token"
 EXPECTED_ROOT = "GabeCubeAura"
 CHECK_INTERVAL_MINUTES = {15, 60, 180, 360, 720, 1440}
 STARTUP_DELAY_SECONDS = 20
@@ -71,9 +82,13 @@ TEST_VERSION = re.compile(
     r"^(?:v)?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)-test\.(0|[1-9]\d*)$"
 )
 BETA_VERSION = re.compile(
-    r"^(?:v)?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)-beta\.(0|[1-9]\d*)$"
+    r"^(?:v)?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)-beta\.?(0|[1-9]\d*)$"
+)
+LAB_VERSION = re.compile(
+    r"^(?:v)?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)-lab\.?(0|[1-9]\d*)$"
 )
 HEX_DIGEST = re.compile(r"^[0-9a-f]{64}$")
+OAUTH_TOKEN = re.compile(r"^gh[ur]_[A-Za-z0-9_]{16,512}$")
 
 
 class UpdateError(RuntimeError):
@@ -98,6 +113,10 @@ def _version_tuple(value: str, *, allow_test=False):
         if beta:
             major, minor, patch, iteration = (int(part) for part in beta.groups())
             return major, minor, patch, -2, iteration
+        lab = LAB_VERSION.fullmatch(text)
+        if lab:
+            major, minor, patch, iteration = (int(part) for part in lab.groups())
+            return major, minor, patch, -1, iteration
     raise UpdateError("invalid_version", "The release version is not a stable semantic version")
 
 
@@ -138,7 +157,13 @@ class _RestrictedRedirectHandler(HTTPRedirectHandler):
         parsed = urlparse(newurl)
         if parsed.scheme != "https" or parsed.hostname not in ALLOWED_HTTPS_HOSTS:
             raise UpdateError("unsafe_redirect", "GitHub redirected the update to an untrusted host")
-        return super().redirect_request(request, fp, code, msg, headers, newurl)
+        redirected = super().redirect_request(request, fp, code, msg, headers, newurl)
+        if redirected is not None and urlparse(request.full_url).hostname != parsed.hostname:
+            # GitHub release assets use a signed redirect. The signed URL does
+            # not need the user token, and forwarding it to another host would
+            # unnecessarily expose a private credential.
+            redirected.remove_header("Authorization")
+        return redirected
 
 
 def _verified_open(request: Request, timeout=10):
@@ -168,24 +193,258 @@ def _bounded_read(response, maximum: int):
     return payload
 
 
+class GitHubDeviceAuth:
+    """Persist one least-privilege GitHub App device authorization."""
+
+    def __init__(self, path: Path, *, client_id=PRIVATE_GITHUB_CLIENT_ID,
+                 repository_id=PRIVATE_REPOSITORY_ID, opener=_verified_open,
+                 clock=time.time):
+        self.path = Path(path)
+        self.client_id = str(client_id or "")
+        self.repository_id = int(repository_id or 0)
+        self._open = opener
+        self.clock = clock
+        self._lock = threading.RLock()
+        self._state = _safe_read_json(self.path, {})
+
+    @property
+    def configured(self):
+        return bool(re.fullmatch(r"[A-Za-z0-9_.-]{10,100}", self.client_id)) \
+            and self.repository_id > 0
+
+    def _save(self):
+        _atomic_json(self.path, self._state)
+
+    def _post(self, url: str, values: dict):
+        if url not in {DEVICE_CODE_URL, ACCESS_TOKEN_URL}:
+            raise UpdateError("private_auth", "GitHub authorization URL is not trusted")
+        request = Request(
+            url,
+            data=urlencode(values).encode("ascii"),
+            headers={
+                "Accept": "application/json",
+                "Content-Type": "application/x-www-form-urlencoded",
+                "User-Agent": "GabeCubeAura private updater",
+            },
+            method="POST",
+        )
+        try:
+            response = self._open(request, timeout=15)
+            with response:
+                payload = _bounded_read(response, 64 * 1024)
+            decoded = json.loads(payload)
+        except UpdateError:
+            raise
+        except (HTTPError, URLError, TimeoutError, OSError, ValueError, TypeError) as error:
+            raise UpdateError("private_auth_network", "Could not reach GitHub authorization") from error
+        if not isinstance(decoded, dict):
+            raise UpdateError("private_auth", "GitHub returned invalid authorization data")
+        return decoded
+
+    def _public_status(self):
+        now = int(self.clock())
+        phase = str(self._state.get("phase", "disconnected"))
+        if phase == "pending" and now >= int(self._state.get("device_expires_at", 0) or 0):
+            phase = "expired"
+        access = str(self._state.get("access_token", ""))
+        refresh = str(self._state.get("refresh_token", ""))
+        access_expires = int(self._state.get("access_expires_at", 0) or 0)
+        refresh_expires = int(self._state.get("refresh_expires_at", 0) or 0)
+        connected = bool(
+            OAUTH_TOKEN.fullmatch(access)
+            and (access_expires == 0 or access_expires > now + 30)
+        ) or bool(
+            OAUTH_TOKEN.fullmatch(refresh)
+            and (refresh_expires == 0 or refresh_expires > now + 30)
+        )
+        if connected:
+            phase = "connected"
+        return {
+            "private_auth_configured": self.configured,
+            "private_auth_state": phase,
+            "private_user_code": str(self._state.get("user_code", "")) if phase == "pending" else "",
+            "private_verification_uri": (
+                str(self._state.get("verification_uri", "")) if phase == "pending" else ""
+            ),
+            "private_auth_expires_at": (
+                int(self._state.get("device_expires_at", 0) or 0) if phase == "pending" else 0
+            ),
+            "private_repository": f"{PRIVATE_OWNER}/{PRIVATE_REPOSITORY}",
+        }
+
+    def status(self):
+        with self._lock:
+            return self._public_status()
+
+    def start(self):
+        if not self.configured:
+            raise UpdateError("private_auth_config", "Private Lab authorization is not configured")
+        decoded = self._post(DEVICE_CODE_URL, {"client_id": self.client_id})
+        device_code = str(decoded.get("device_code", ""))
+        user_code = str(decoded.get("user_code", ""))
+        verification_uri = str(decoded.get("verification_uri", ""))
+        try:
+            expires_in = max(60, min(1800, int(decoded.get("expires_in", 900))))
+            interval = max(5, min(30, int(decoded.get("interval", 5))))
+        except (TypeError, ValueError, OverflowError) as error:
+            raise UpdateError("private_auth", "GitHub returned invalid device timing") from error
+        if (not device_code or len(device_code) > 256
+                or not re.fullmatch(r"[A-Z0-9-]{4,32}", user_code)
+                or verification_uri != "https://github.com/login/device"):
+            raise UpdateError("private_auth", "GitHub returned invalid device authorization data")
+        now = int(self.clock())
+        with self._lock:
+            self._state = {
+                "schema": 1,
+                "phase": "pending",
+                "device_code": device_code,
+                "user_code": user_code,
+                "verification_uri": verification_uri,
+                "device_expires_at": now + expires_in,
+                "poll_interval": interval,
+                "next_poll_at": now,
+                "error": "",
+            }
+            self._save()
+            return self._public_status()
+
+    def _adopt_token(self, decoded: dict):
+        access = str(decoded.get("access_token", ""))
+        refresh = str(decoded.get("refresh_token", ""))
+        if not OAUTH_TOKEN.fullmatch(access):
+            raise UpdateError("private_auth", "GitHub returned an invalid access token")
+        if refresh and not OAUTH_TOKEN.fullmatch(refresh):
+            raise UpdateError("private_auth", "GitHub returned an invalid refresh token")
+        try:
+            expires_in = int(decoded.get("expires_in", 0) or 0)
+            refresh_expires_in = int(decoded.get("refresh_token_expires_in", 0) or 0)
+        except (TypeError, ValueError, OverflowError) as error:
+            raise UpdateError("private_auth", "GitHub returned invalid token timing") from error
+        now = int(self.clock())
+        self._state = {
+            "schema": 1,
+            "phase": "connected",
+            "access_token": access,
+            "access_expires_at": now + expires_in if expires_in > 0 else 0,
+            "refresh_token": refresh,
+            "refresh_expires_at": now + refresh_expires_in if refresh_expires_in > 0 else 0,
+            "error": "",
+        }
+        self._save()
+
+    def poll(self):
+        with self._lock:
+            now = int(self.clock())
+            if self._state.get("phase") != "pending":
+                return self._public_status()
+            if now >= int(self._state.get("device_expires_at", 0) or 0):
+                self._state.update(
+                    phase="expired", device_code="", user_code="", verification_uri="",
+                    error="The GitHub code expired",
+                )
+                self._save()
+                return self._public_status()
+            if now < int(self._state.get("next_poll_at", 0) or 0):
+                return self._public_status()
+            interval = int(self._state.get("poll_interval", 5) or 5)
+            device_code = str(self._state.get("device_code", ""))
+            self._state["next_poll_at"] = now + interval
+            self._save()
+        decoded = self._post(ACCESS_TOKEN_URL, {
+            "client_id": self.client_id,
+            "device_code": device_code,
+            "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+            "repository_id": str(self.repository_id),
+        })
+        error = str(decoded.get("error", ""))
+        with self._lock:
+            if not error:
+                self._adopt_token(decoded)
+            elif error == "authorization_pending":
+                pass
+            elif error == "slow_down":
+                self._state["poll_interval"] = min(60, int(self._state.get("poll_interval", 5)) + 5)
+            elif error in {"expired_token", "access_denied"}:
+                self._state.update(
+                    phase="expired", device_code="", user_code="", verification_uri="",
+                    error=error,
+                )
+            else:
+                self._state.update(
+                    phase="error", device_code="", user_code="", verification_uri="",
+                    error=error[:80],
+                )
+            self._save()
+            return self._public_status()
+
+    def access_token(self):
+        if not self.configured:
+            raise UpdateError("private_auth_config", "Private Lab authorization is not configured")
+        with self._lock:
+            now = int(self.clock())
+            access = str(self._state.get("access_token", ""))
+            access_expires = int(self._state.get("access_expires_at", 0) or 0)
+            if OAUTH_TOKEN.fullmatch(access) and (access_expires == 0 or access_expires > now + 60):
+                return access
+            refresh = str(self._state.get("refresh_token", ""))
+            refresh_expires = int(self._state.get("refresh_expires_at", 0) or 0)
+            if not OAUTH_TOKEN.fullmatch(refresh) or (refresh_expires and refresh_expires <= now + 60):
+                raise UpdateError("private_auth_required", "Connect GitHub to use Private Lab updates")
+        decoded = self._post(ACCESS_TOKEN_URL, {
+            "client_id": self.client_id,
+            "grant_type": "refresh_token",
+            "refresh_token": refresh,
+        })
+        if decoded.get("error"):
+            with self._lock:
+                self._state.update(phase="expired", access_token="", refresh_token="")
+                self._save()
+            raise UpdateError("private_auth_required", "Reconnect GitHub to use Private Lab updates")
+        with self._lock:
+            self._adopt_token(decoded)
+            return str(self._state["access_token"])
+
+    def disconnect(self):
+        with self._lock:
+            self._state = {"schema": 1, "phase": "disconnected"}
+            self.path.unlink(missing_ok=True)
+            return self._public_status()
+
+
 class GitHubReleaseClient:
     """Read only access to one fixed GitHub repository."""
 
-    def __init__(self, opener=_verified_open, api_url=API_URL, *, allow_prerelease=False):
+    def __init__(self, opener=_verified_open, api_url=API_URL, *, allow_prerelease=False,
+                 prerelease_kind="beta", include_stable=True, owner=OWNER,
+                 repository=REPOSITORY, token="", private_assets=False):
         self._open = opener
         self.api_url = api_url
         self.allow_prerelease = allow_prerelease
+        self.prerelease_kind = prerelease_kind
+        self.include_stable = bool(include_stable)
+        self.owner = str(owner)
+        self.repository = str(repository)
+        self.token = str(token)
+        self.private_assets = bool(private_assets)
 
-    @staticmethod
-    def _request(url, version, *, etag=""):
+    def _request(self, url, version, *, etag=""):
         parsed = urlparse(url)
         if parsed.scheme != "https" or parsed.hostname not in ALLOWED_HTTPS_HOSTS:
             raise UpdateError("unsafe_url", "The update source is not an approved GitHub URL")
+        asset_prefix = f"https://api.github.com/repos/{self.owner}/{self.repository}/releases/assets/"
         headers = {
-            "Accept": "application/vnd.github+json",
+            "Accept": (
+                "application/octet-stream"
+                if self.private_assets and url.startswith(asset_prefix)
+                else "application/vnd.github+json"
+            ),
             "User-Agent": f"GabeCubeAura/{version} updater",
             "X-GitHub-Api-Version": "2022-11-28",
         }
+        if self.token:
+            if not OAUTH_TOKEN.fullmatch(self.token):
+                raise UpdateError("private_auth", "The private update token is invalid")
+            headers["Authorization"] = f"Bearer {self.token}"
         if etag:
             headers["If-None-Match"] = etag[:256]
         return Request(url, headers=headers)
@@ -218,10 +477,16 @@ class GitHubReleaseClient:
                     continue
                 candidate_version = str(candidate.get("tag_name", "")).removeprefix("v")
                 stable = bool(STABLE_VERSION.fullmatch(candidate_version))
-                beta = bool(BETA_VERSION.fullmatch(candidate_version))
-                if stable and not candidate.get("prerelease"):
+                selected_prerelease = bool(
+                    BETA_VERSION.fullmatch(candidate_version)
+                    if self.prerelease_kind == "beta"
+                    else LAB_VERSION.fullmatch(candidate_version)
+                    if self.prerelease_kind == "lab"
+                    else False
+                )
+                if self.include_stable and stable and not candidate.get("prerelease"):
                     releases.append(candidate)
-                elif self.allow_prerelease and beta and candidate.get("prerelease"):
+                elif self.allow_prerelease and selected_prerelease and candidate.get("prerelease"):
                     releases.append(candidate)
             if not releases:
                 raise UpdateError("metadata", "GitHub did not return a published release for this channel")
@@ -233,18 +498,29 @@ class GitHubReleaseClient:
             )
         else:
             release = decoded
-        if (not isinstance(release, dict) or release.get("draft")
-                or release.get("prerelease") and not self.allow_prerelease):
+        if not isinstance(release, dict) or release.get("draft"):
             raise UpdateError("metadata", "GitHub did not return a published release for this channel")
         version = str(release.get("tag_name", "")).removeprefix("v")
         _version_tuple(version, allow_test=self.allow_prerelease)
-        if STABLE_VERSION.fullmatch(version) and release.get("prerelease"):
+        stable = bool(STABLE_VERSION.fullmatch(version))
+        selected_prerelease = bool(
+            BETA_VERSION.fullmatch(version)
+            if self.prerelease_kind == "beta"
+            else LAB_VERSION.fullmatch(version)
+            if self.prerelease_kind == "lab"
+            else False
+        )
+        if stable and (release.get("prerelease") or not self.include_stable):
             raise UpdateError("metadata", "A stable tag cannot be published as a prerelease")
-        if BETA_VERSION.fullmatch(version) and not release.get("prerelease"):
-            raise UpdateError("metadata", "A beta tag must be published as a prerelease")
+        if selected_prerelease and not release.get("prerelease"):
+            raise UpdateError("metadata", "A prerelease tag must be published as a prerelease")
+        if not stable and not (self.allow_prerelease and selected_prerelease and release.get("prerelease")):
+            raise UpdateError("metadata", "GitHub returned a release outside the selected channel")
         html_url = str(release.get("html_url", ""))
-        if not html_url.startswith(f"https://github.com/{OWNER}/{REPOSITORY}/releases/tag/"):
-            raise UpdateError("metadata", "The release page does not belong to the official repository")
+        if not html_url.startswith(
+            f"https://github.com/{self.owner}/{self.repository}/releases/tag/"
+        ):
+            raise UpdateError("metadata", "The release page does not belong to the selected repository")
         expected_archive = f"GabeCubeAura-v{version}.zip"
         assets = release.get("assets")
         if not isinstance(assets, list):
@@ -268,22 +544,27 @@ class GitHubReleaseClient:
             "notes": str(release.get("body", ""))[:12000],
             "html_url": html_url,
             "archive_name": expected_archive,
-            "archive_url": archive["browser_download_url"],
+            "archive_url": archive["download_url"],
             "archive_size": int(archive["size"]),
             "archive_digest": digest[7:].lower() if digest else "",
-            "checksums_url": checksums["browser_download_url"],
+            "checksums_url": checksums["download_url"],
             "etag": response_etag,
         }
 
-    @staticmethod
-    def _validated_asset(asset, expected_name):
+    def _validated_asset(self, asset, expected_name):
         if not isinstance(asset, dict) or asset.get("name") != expected_name:
             raise UpdateError("missing_asset", f"The release is missing {expected_name}")
-        url = str(asset.get("browser_download_url", ""))
-        prefix = f"https://github.com/{OWNER}/{REPOSITORY}/releases/download/"
-        if not url.startswith(prefix) or urlparse(url).hostname != "github.com":
-            raise UpdateError("unsafe_url", f"The {expected_name} download URL is not trusted")
-        return asset
+        if self.private_assets:
+            url = str(asset.get("url", ""))
+            prefix = f"https://api.github.com/repos/{self.owner}/{self.repository}/releases/assets/"
+            if not url.startswith(prefix) or urlparse(url).hostname != "api.github.com":
+                raise UpdateError("unsafe_url", f"The {expected_name} API asset URL is not trusted")
+        else:
+            url = str(asset.get("browser_download_url", ""))
+            prefix = f"https://github.com/{self.owner}/{self.repository}/releases/download/"
+            if not url.startswith(prefix) or urlparse(url).hostname != "github.com":
+                raise UpdateError("unsafe_url", f"The {expected_name} download URL is not trusted")
+        return {**asset, "download_url": url}
 
     def read_checksum(self, release: dict, installed_version: str):
         request = self._request(release["checksums_url"], installed_version)
@@ -421,7 +702,8 @@ class UpdateManager:
     """Own release state, background checks and transaction preparation."""
 
     def __init__(self, installed_version: str, settings, runtime_dir: str, plugin_dir: str,
-                 logger, client=None, clock=time.time, monotonic=time.monotonic):
+                 logger, client=None, private_auth=None, clock=time.time,
+                 monotonic=time.monotonic):
         self.installed_version = installed_version
         self.settings = settings
         self.runtime_dir = Path(runtime_dir).resolve()
@@ -432,6 +714,9 @@ class UpdateManager:
         self.monotonic = monotonic
         self.root = self.runtime_dir / "updates"
         self.state_path = self.root / "update-state.json"
+        self.private_auth = private_auth or GitHubDeviceAuth(
+            self.root / "private-auth.json", clock=clock,
+        )
         self._lock = threading.RLock()
         self._operation_lock = threading.Lock()
         self._wake = threading.Event()
@@ -674,7 +959,7 @@ class UpdateManager:
 
     def _configured_channel(self):
         channel = self.settings.all().get("updates_channel", "stable")
-        return channel if channel in {"stable", "beta"} else "stable"
+        return channel if channel in {"stable", "beta", "private"} else "stable"
 
     def _release_client(self, channel=None):
         if self.client is not None:
@@ -682,6 +967,17 @@ class UpdateManager:
         if "-test." in self.installed_version:
             return GitHubReleaseClient(api_url=TEST_RELEASE_API_URL, allow_prerelease=True)
         channel = channel or self._configured_channel()
+        if channel == "private":
+            return GitHubReleaseClient(
+                api_url=PRIVATE_RELEASES_API_URL,
+                allow_prerelease=True,
+                prerelease_kind="lab",
+                include_stable=False,
+                owner=PRIVATE_OWNER,
+                repository=PRIVATE_REPOSITORY,
+                token=self.private_auth.access_token(),
+                private_assets=True,
+            )
         return GitHubReleaseClient(
             api_url=RELEASES_API_URL if channel == "beta" else API_URL,
             allow_prerelease=channel == "beta",
@@ -719,6 +1015,7 @@ class UpdateManager:
                 "channel": values.get("updates_channel", "stable"),
                 "test_build": "-test." in self.installed_version,
             })
+            result.update(self.private_auth.status())
             result.pop("etag", None)
             result.pop("pending_token", None)
             result.pop("completed_token", None)
@@ -770,7 +1067,12 @@ class UpdateManager:
         except UpdateError as error:
             now = int(self.clock())
             retry = 60 * 60 if error.category == "rate_limited" else 15 * 60
-            self._set(phase="error", last_checked_at=now, next_check_at=now + retry,
+            phase = (
+                "authorization_required"
+                if error.category in {"private_auth_required", "private_auth_config"}
+                else "error"
+            )
+            self._set(phase=phase, last_checked_at=now, next_check_at=now + retry,
                       error_category=error.category, error=str(error)[:180])
         finally:
             self._operation_lock.release()
@@ -806,6 +1108,43 @@ class UpdateManager:
             self._wake.set()
         return self.status()
 
+    def start_private_authorization(self):
+        self.private_auth.start()
+        self._set(
+            phase="authorization_required", error_category="", error="",
+            available_version="", release_notes="", release_url="",
+            confirmation_token="", prepared_digest="", etag="",
+            checked_channel="", next_check_at=0,
+        )
+        return self.status()
+
+    def poll_private_authorization(self):
+        auth = self.private_auth.poll()
+        if auth.get("private_auth_state") == "connected":
+            self._release = None
+            self._set(
+                phase="idle", error_category="", error="", etag="",
+                checked_channel="", next_check_at=0,
+            )
+            if self._configured_channel() == "private":
+                return self.check(force_refresh=True)
+        return self.status()
+
+    def disconnect_private_authorization(self):
+        self.private_auth.disconnect()
+        self._release = None
+        self._set(
+            phase=(
+                "authorization_required"
+                if self._configured_channel() == "private" else "idle"
+            ),
+            available_version="", release_notes="", release_url="",
+            confirmation_token="", prepared_digest="", etag="",
+            checked_channel="", next_check_at=0,
+            error_category="", error="",
+        )
+        return self.status()
+
     def acknowledge_notification(self, version: str):
         if version and version == self._state.get("available_version"):
             self._set(notified_version=version)
@@ -829,7 +1168,7 @@ class UpdateManager:
     def _prepare_locked(self):
         version = str(self._state.get("available_version", ""))
         if not version:
-            raise UpdateError("state", "No version is available on the selected channel")
+            raise UpdateError("state", "No newer version is available on the selected channel")
         channel = self._state.get("checked_channel") or self._configured_channel()
         client = self._release_client(channel)
         release = self._release
@@ -942,7 +1281,7 @@ class UpdateManager:
                     json.dumps({"name": "gabecubeaura", "version": "1.1.0"}), encoding="utf-8",
                 )
                 (fixture / "plugin.json").write_text(
-                    json.dumps({"name": "GabeCubeAura", "author": "Albus Querque"}), encoding="utf-8",
+                    json.dumps({"name": "GabeCubeAura", "author": "Alyenax"}), encoding="utf-8",
                 )
                 from zipfile import ZIP_DEFLATED, ZipFile
                 with ZipFile(archive, "w", ZIP_DEFLATED) as package:
@@ -1002,7 +1341,7 @@ class UpdateManager:
                         json.dumps({"name": "gabecubeaura", "version": version}), encoding="utf-8",
                     )
                     (directory / "plugin.json").write_text(
-                        json.dumps({"name": "GabeCubeAura", "author": "Albus Querque"}), encoding="utf-8",
+                        json.dumps({"name": "GabeCubeAura", "author": "Alyenax"}), encoding="utf-8",
                     )
                 lab_state = lab / "transaction-state.json"
                 _atomic_json(lab_state, {})

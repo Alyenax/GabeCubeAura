@@ -15,21 +15,28 @@ from signalbar.activation import ScreenSyncActivation
 from signalbar.arbiter import Arbiter, VanillaGuard
 from signalbar.hardware import ValveLedHardware
 from signalbar.integration import LightEventLease, StripMineClaimReader, Tw3SteamRgbClaimReader
-from signalbar.models import GameState
+from signalbar.models import GameState, ProviderOutput
 from signalbar.providers import (
     ArtworkProvider, CountdownProvider, CustomizationProvider,
     EventProvider, IdleProvider, LaunchArtworkProvider, PerformanceProvider,
-    ScreenSyncProvider,
+    ScreenSyncProvider, AudioSyncProvider,
 )
 from signalbar.providers.controller import ControllerProvider
+from signalbar.providers.audio_sync import ADAPTIVE_STYLES
 from signalbar.providers.weather import WeatherProvider
 from signalbar.renderer import Renderer
+
+LED_OUTPUT_REFERENCE_BRIGHTNESS = 9
 
 
 class Engine:
     def __init__(self, settings, cache_path, logger=None, hardware_factory=ValveLedHardware,
                  event_lease=None, stripmine_claim=None, tw3_steamrgb_claim=None):
         self.settings = settings
+        self._brightness_recovery_path = os.path.join(
+            os.path.dirname(getattr(settings, "path", cache_path)),
+            "brightness-calibration-recovery.json",
+        )
         self.log = logger
         self.hardware_factory = hardware_factory
         self.event_lease = event_lease or LightEventLease()
@@ -45,6 +52,7 @@ class Engine:
         self.countdown = CountdownProvider()
         self.performance = PerformanceProvider()
         self.screen_sync = ScreenSyncProvider()
+        self.audio_sync = AudioSyncProvider()
         self.screen_sync_activation = ScreenSyncActivation()
         self.events = EventProvider()
         self.events.set_variants(settings.all())
@@ -66,8 +74,17 @@ class Engine:
         self._steam_active_until = 0.0
         self._steam_reason = ""
         self._launch_handoff_until = 0.0
+        self._context_transition_active = False
+        self._context_transition_until = 0.0
+        self._context_palette_not_before = 0.0
+        self._context_transition_from = 0
+        self._context_transition_to = 0
         self._last_recovery_at = 0.0
         self._last_recovery_reason = ""
+        self._native_priority_kind = ""
+        self._native_priority_reason_text = ""
+        self._ignored_native_takeovers = 0
+        self._effective_steam_priority = False
         self._guard_was_allowed = False
         self._renderer = None
         self._guard = None
@@ -92,6 +109,7 @@ class Engine:
                                      "events": 0, "raw_count": 0, "query_ms": None, "error": ""},
             "frontend_heartbeat_at": 0.0,
             "game_session_state": "startup",
+            "steam_led_override_state": "waiting",
             "game_retained_count": 0,
         }
 
@@ -119,6 +137,7 @@ class Engine:
         if thread and thread.is_alive():
             thread.join(timeout=2.0)
         self.screen_sync.stop()
+        self.audio_sync.stop()
         self.screen_sync_activation.stop_preview()
         with self._lock:
             self.events.clear_transients()
@@ -140,7 +159,8 @@ class Engine:
         except (TypeError, ValueError):
             appid = 0
         with self._lock:
-            changed = appid != self._game.appid
+            previous_appid = self._game.appid
+            changed = appid != previous_appid
             self._game = GameState(appid, str(title or ""))
             if changed:
                 # A Steam Families deadline belongs to the game session that
@@ -149,6 +169,16 @@ class Engine:
                 self.events.clear_recording()
                 self.launch_artwork.cancel()
                 self._launch_handoff_until = 0.0
+                now = time.monotonic()
+                launch_duration = (
+                    float(self.settings.all()["launch_artwork_duration_seconds"])
+                    if self._game.running and bool(launch) else 0.0
+                )
+                self._context_transition_active = True
+                self._context_transition_until = now + launch_duration + 7.0
+                self._context_palette_not_before = now + 0.55
+                self._context_transition_from = previous_appid
+                self._context_transition_to = appid
             if changed or not self._game.running:
                 self.artwork.clear()
                 self.launch_palette.clear()
@@ -165,6 +195,11 @@ class Engine:
             # its PAUSED preroll. The render loop will start a fresh capture on
             # the next tick if Screen Sync is still requested.
             self.screen_sync.stop()
+            # Preserve the last rendered palette across the short PipeWire
+            # rebuild. The first fresh audio frame then fades from the old
+            # context into the new Home or in-game selection instead of
+            # flashing through a cold fallback palette.
+            self.audio_sync.stop(preserve_palette=True)
 
     def prepare_artwork(self, appid, fingerprint, filename="", source="hero"):
         artwork_settings = self.settings.artwork_for(appid)
@@ -199,10 +234,11 @@ class Engine:
 
     def _refresh_launch_palettes(self, appid):
         profile = self.settings.launch_artwork_for(appid)
+        artwork_vibrance = self.settings.artwork_for(appid)["vibrance"]
         palettes = (
             profile["custom_palettes"]
             if profile["palette_mode"] == "custom"
-            else self.launch_palette.dominant_palettes(appid)
+            else self.launch_palette.dominant_palettes(appid, artwork_vibrance)
         )
         self.launch_artwork.set_palettes(appid, palettes)
 
@@ -221,6 +257,7 @@ class Engine:
                     identity_appid, fingerprint,
                     artwork_settings["mode"], artwork_settings["manual_y"],
                 )
+            self._refresh_launch_palettes(int(appid or self._game.appid or 0))
         return artwork_settings
 
     def set_steam_activity(self, active, reason="Steam event"):
@@ -232,6 +269,24 @@ class Engine:
             else:
                 self._steam_active_until = 0.0
                 self._steam_reason = ""
+            native_critical = self._native_priority_kind == "critical-red"
+        values = self.settings.all()
+        policy = values["valve_ownership_policy"]
+        return {
+            "ownership_policy": policy,
+            "suppress_download_animation": bool(
+                active
+                and values["signalbar_enabled"]
+                and policy == "critical"
+                and not native_critical
+            ),
+            "restore_download_animation": bool(
+                active
+                and values["signalbar_enabled"]
+                and policy == "downloads"
+                and not native_critical
+            ),
+        }
 
     def set_screen_sync_context(self, context, active, state="available", detail=""):
         if str(context or "") != "steam-screensaver":
@@ -243,6 +298,11 @@ class Engine:
         if not self.settings.all()["signalbar_enabled"]:
             return False
         return self.screen_sync_activation.preview(seconds)
+
+    def preview_audio_sync(self, seconds=15.0):
+        if not self.settings.all()["signalbar_enabled"]:
+            return False
+        return self.audio_sync.preview(seconds)
 
     def report_runtime_diagnostic(self, event, appid=0, source="", duration_ms=-1):
         """Record frontend lifecycle timings without affecting provider policy."""
@@ -282,6 +342,8 @@ class Engine:
                     "game_session_state": str(source or "retained")[:64],
                     "game_retained_count": self._runtime_debug["game_retained_count"] + 1,
                 })
+            elif event == "steam_led_override":
+                self._runtime_debug["steam_led_override_state"] = str(source or "unknown")[:32]
 
     def report_parental_minutes(self, minutes):
         try:
@@ -332,6 +394,12 @@ class Engine:
         if values["mode"] == "disabled":
             return False
         return self.customization.preview()
+
+    def preview_light_calibration(self):
+        values = self.settings.all()
+        if values["mode"] == "disabled":
+            return False
+        return self.customization.preview_calibration(10.0)
 
     def trigger_event(self, kind, preview=False, variant=""):
         values = self.settings.all()
@@ -551,6 +619,8 @@ class Engine:
             return "performance"
         if provider.startswith("screen-sync"):
             return "screen_sync"
+        if provider.startswith("audio-sync"):
+            return "audio_sync"
         if provider.startswith("customization"):
             return "customization"
         if provider.startswith("weather"):
@@ -599,6 +669,15 @@ class Engine:
         )
 
     @staticmethod
+    def _audio_screen_capture_should_run(values, requested):
+        """Use Gamescope colours for Audio Sync in both Home and game contexts."""
+        return bool(
+            requested
+            and values["audio_sync_style"] in ADAPTIVE_STYLES
+            and values["audio_sync_palette"] == "screen-sync"
+        )
+
+    @staticmethod
     def _screen_sync_fallback_should_run(requested, ownership_allowed,
                                          screen_sync_frame, launch_pending=False):
         """Avoid flashing Customization+ inside a game-launch transition.
@@ -616,13 +695,96 @@ class Engine:
         )
 
     @staticmethod
-    def _native_priority_reason(hardware, signature, expected_signature):
+    def _audio_sync_should_run(values, requested, signal_critical, guard_allows,
+                               stripmine_active, steam_priority=False,
+                               companion_hud_active=False):
+        return bool(
+            values["signalbar_enabled"]
+            and requested
+            and not signal_critical
+            and not steam_priority
+            and not companion_hud_active
+            and (guard_allows or stripmine_active)
+            and (
+                not stripmine_active
+                or values["stripmine_priority_audio_sync"] == "signalbar"
+            )
+        )
+
+    @staticmethod
+    def _audio_transition_ready(audio_sync_output, screen_capture_requested,
+                                palette_source):
+        """Only reveal the new Audio Sync context once its palette is genuine."""
+        return bool(
+            audio_sync_output is not None
+            and audio_sync_output.frame is not None
+            and (
+                not screen_capture_requested
+                or palette_source == "screen-sync"
+            )
+        )
+
+    @staticmethod
+    def _hold_context_frame(transition_active, audio_sync_requested,
+                            launch_transition_active, steam_priority,
+                            stripmine_active, companion_hud_active, decision):
+        """Keep the previous physical frame through an Audio Sync handoff."""
+        return bool(
+            transition_active
+            and audio_sync_requested
+            and decision.frame is None
+            and not steam_priority
+            and not stripmine_active
+            and not companion_hud_active
+            and (
+                launch_transition_active
+                or decision.provider in {"none", "valve", "audio-sync"}
+            )
+        )
+
+    @staticmethod
+    def _native_priority_state(hardware, signature, expected_signature):
         # Never classify our own last verified frame as a native warning. This
         # matters for GabeCubeAura's legitimate full-red countdown frames.
         if expected_signature is not None and signature == expected_signature:
-            return ""
+            return "", ""
+        detector = getattr(hardware, "native_priority_state", None)
+        if callable(detector):
+            return detector(signature)
         detector = getattr(hardware, "native_priority_reason", None)
-        return detector(signature) if callable(detector) else ""
+        reason = detector(signature) if callable(detector) else ""
+        return ("critical-red" if reason == "Valve critical red hardware signal"
+                else "effect" if reason else ""), reason
+
+    @staticmethod
+    def _resolve_ownership_policy(policy, *, download_active, native_kind,
+                                  guard_allows, guard_hard_priority):
+        """Resolve semantic Steam signals separately from generic LED churn."""
+        policy = policy if policy in {"cooperative", "downloads", "critical"} else "cooperative"
+        critical = native_kind == "critical-red"
+        download = bool(download_active and policy in {"cooperative", "downloads"})
+        native_effect = bool(native_kind and policy == "cooperative")
+        steam_priority = bool(
+            critical or download or native_effect
+            or policy == "cooperative" and guard_hard_priority
+        )
+        ownership_allowed = bool(guard_allows or policy != "cooperative")
+        return ownership_allowed, steam_priority
+
+    @staticmethod
+    def _restore_before_valve_handoff(*, externally_blocked,
+                                      event_preempted_valve,
+                                      semantic_download_priority):
+        """Release manual sysfs mode before a requested native download.
+
+        Renderer still verifies that its last signature is physically present,
+        so this cannot overwrite a Valve frame that arrived concurrently.
+        """
+        return bool(
+            not externally_blocked
+            or event_preempted_valve
+            or semantic_download_priority
+        )
 
     def _run(self):
         hardware = None
@@ -643,7 +805,10 @@ class Engine:
                 try:
                     hardware = self.hardware_factory()
                     values = self.settings.all()
-                    renderer = Renderer(hardware)
+                    renderer = Renderer(
+                        hardware,
+                        brightness_recovery_path=self._brightness_recovery_path,
+                    )
                     guard = VanillaGuard(values["guard_cooldown_s"], values["guard_stable_s"])
                     with self._lock:
                         self._renderer, self._guard = renderer, guard
@@ -657,6 +822,9 @@ class Engine:
                         self._error = str(error)
                         self._suspension_reason = "hardware unavailable; retrying"
                     next_hardware_attempt = time.monotonic() + 2.0
+                    hardware = None
+                    renderer = None
+                    guard = None
                     continue
 
             if self._stop.wait(interval):
@@ -664,6 +832,11 @@ class Engine:
             try:
                 now = time.monotonic()
                 values = self.settings.all()
+                renderer.set_output_brightness_scale(
+                    LED_OUTPUT_REFERENCE_BRIGHTNESS
+                    if values["led_output_calibration_mode"] == "consistent"
+                    else None
+                )
                 if hardware.reverse != values["reverse_led_order"]:
                     # Restore with the old mapping before changing orientation;
                     # otherwise a later shutdown would restore the snapshot backwards.
@@ -674,9 +847,20 @@ class Engine:
                     game = self._game
                     explicit = now < self._steam_active_until
                     explicit_reason = self._steam_reason
+                    if self._context_transition_active and now >= self._context_transition_until:
+                        self._context_transition_active = False
+                    context_transition_active = self._context_transition_active
+                    context_palette_not_before = self._context_palette_not_before
                 display = self.settings.display_for(game.appid)
                 values["mode"] = display["mode"]
                 current_display = display["selected"]
+                audio_context = "game" if game.running else "home"
+                values["audio_sync_style"] = values[f"audio_sync_{audio_context}_style"]
+                values["audio_sync_palette"] = values[f"audio_sync_{audio_context}_palette"]
+                for role in ("low", "middle", "high"):
+                    values[f"audio_sync_colour_{role}"] = values[
+                        f"audio_sync_{audio_context}_colour_{role}"
+                    ]
                 provider_values = dict(values)
                 provider_values["controller_battery_display"] = (
                     "everywhere" if current_display == "controller" else "off"
@@ -693,27 +877,53 @@ class Engine:
                     stability_signature(signature)
                     if callable(stability_signature) else signature
                 )
-                native_priority_reason = self._native_priority_reason(
+                native_priority_kind, native_priority_reason = self._native_priority_state(
                     hardware, signature, renderer.last_signature,
                 )
-                # A new native write during our animation ends that animation
-                # immediately; otherwise the two writers would fight each tick.
-                event_interrupted = (
-                    event_was_active and renderer.last_signature is not None
+                ownership_policy = values["valve_ownership_policy"]
+                semantic_native_priority = bool(
+                    native_priority_kind == "critical-red"
+                    or ownership_policy == "cooperative" and native_priority_kind
+                )
+                signature_mismatch = bool(
+                    renderer.last_signature is not None
                     and signature != renderer.last_signature
+                )
+                semantic_download_priority = bool(
+                    explicit and ownership_policy in {"cooperative", "downloads"}
                 )
                 allowed = guard.observe(
                     signature,
                     expected_signature=renderer.last_signature,
-                    explicit_active=explicit or bool(native_priority_reason),
-                    explicit_reason=explicit_reason if explicit else native_priority_reason,
+                    explicit_active=semantic_download_priority or semantic_native_priority,
+                    explicit_reason=(
+                        explicit_reason if semantic_download_priority else native_priority_reason
+                    ),
                     stability_signature=stability_signature,
                 )
-                recovering_ownership = bool(
-                    allowed and not self._guard_was_allowed and guard.last_external_at
+                ownership_allowed, steam_priority = self._resolve_ownership_policy(
+                    ownership_policy,
+                    download_active=explicit,
+                    native_kind=native_priority_kind,
+                    guard_allows=allowed,
+                    guard_hard_priority=guard.hard_priority,
                 )
-                self._guard_was_allowed = allowed
-                steam_priority = bool(explicit or guard.hard_priority)
+                # Cooperative mode keeps the existing fail-safe handoff. The
+                # two protected modes instead reclaim ordinary Valve writes,
+                # while confirmed downloads and critical red still interrupt.
+                event_interrupted = bool(
+                    event_was_active and signature_mismatch
+                    and (ownership_policy == "cooperative" or steam_priority)
+                )
+                recovering_ownership = bool(
+                    ownership_allowed and not self._guard_was_allowed and guard.last_external_at
+                )
+                self._guard_was_allowed = ownership_allowed
+                if signature_mismatch and ownership_policy != "cooperative" and not steam_priority:
+                    self._ignored_native_takeovers += 1
+                self._native_priority_kind = native_priority_kind
+                self._native_priority_reason_text = native_priority_reason
+                self._effective_steam_priority = steam_priority
                 stripmine_active = (
                     values["stripmine_integration_enabled"]
                     and self.stripmine_claim.active()
@@ -734,7 +944,10 @@ class Engine:
                         values["temperature_custom_hot"],
                     ),
                 )
-                artwork = self.artwork.output(game.appid)
+                artwork_settings = self.settings.artwork_for(game.appid)
+                artwork = self.artwork.output(
+                    game.appid, artwork_settings["vibrance"],
+                )
                 signal = self.countdown.output(
                     colour=values["countdown_colour"],
                     dark_edge_compensation=values["countdown_dark_edge_compensation"],
@@ -760,13 +973,94 @@ class Engine:
                     enabled=values["signalbar_enabled"],
                 )
                 screen_sync_requested = bool(activation_reason)
+                audio_sync_route = (
+                    values["mode"] == "audio_sync"
+                    and current_display == "audio_sync"
+                )
+                # A Steam screensaver request is a hard mode handoff. Stop the
+                # audio reader as well as its LED output so Screen Sync owns the
+                # complete visual path until Steam dismisses the screensaver.
+                audio_sync_requested = bool(
+                    (audio_sync_route or self.audio_sync.previewing)
+                    and not screen_sync_requested
+                )
+                launch_transition_status = self.launch_artwork.status(game.appid)
+                launch_transition_active = bool(
+                    launch_transition_status["pending"]
+                    or launch_transition_status["active"]
+                )
+                audio_screen_capture = self._audio_screen_capture_should_run(
+                    values, audio_sync_requested,
+                )
                 recording = self.events.recording
                 screen_sync_active = self._screen_sync_should_run(
-                    values, screen_sync_requested, signal_critical, allowed,
+                    values, screen_sync_requested or audio_screen_capture,
+                    signal_critical, ownership_allowed,
                     stripmine_active, recording, steam_priority,
                 )
                 self.screen_sync.set_active(screen_sync_active)
                 screen_sync_base = self.screen_sync.output(values)
+                audio_sync_active = self._audio_sync_should_run(
+                    values, audio_sync_requested, signal_critical, ownership_allowed,
+                    stripmine_active, steam_priority, tw3_steamrgb_active,
+                )
+                self.audio_sync.set_active(audio_sync_active)
+                artwork_colours = self.artwork.dominant_palettes(
+                    game.appid, artwork_settings["vibrance"],
+                ).get("3", ())
+                if not artwork_colours:
+                    artwork_colours = self.launch_palette.dominant_palettes(
+                        game.appid, artwork_settings["vibrance"],
+                    ).get("3", ())
+                audio_transition_frozen = bool(
+                    context_transition_active
+                    and (
+                        launch_transition_active
+                        or now < context_palette_not_before
+                    )
+                )
+                if audio_transition_frozen:
+                    # Keep both capture services warm, but never let the Steam
+                    # launch surface recolour or advance Audio Sync underneath
+                    # the launch animation. Its last palette remains intact.
+                    audio_sync_base = ProviderOutput(
+                        "audio-sync", None,
+                        "Audio Sync held during game transition",
+                    )
+                else:
+                    audio_sync_base = self.audio_sync.output(
+                        values,
+                        screen_colours=(
+                            self.screen_sync.palette_samples
+                            if (
+                                audio_screen_capture
+                                and values["audio_sync_style"] in ADAPTIVE_STYLES
+                                and values["audio_sync_palette"] == "screen-sync"
+                                and self.screen_sync.palette_samples
+                            )
+                            else screen_sync_base.frame
+                            if audio_screen_capture and screen_sync_base.frame is not None
+                            else None
+                        ),
+                        artwork_colours=artwork_colours,
+                    )
+                audio_palette_source = self.audio_sync.status(
+                    values["audio_sync_reactivity"],
+                )["palette_source"]
+                audio_transition_ready = self._audio_transition_ready(
+                    audio_sync_base, audio_screen_capture, audio_palette_source,
+                )
+                if (context_transition_active and not launch_transition_active
+                        and now >= context_palette_not_before):
+                    transition_complete = (
+                        audio_sync_requested and audio_transition_ready
+                        or not audio_sync_requested
+                    )
+                    if transition_complete:
+                        with self._lock:
+                            if self._game.appid == game.appid:
+                                self._context_transition_active = False
+                        context_transition_active = False
                 if signal_critical:
                     self.events.clear_transients()
                     self.controllers.clear_transients()
@@ -782,7 +1076,7 @@ class Engine:
                     not stripmine_active
                     or values["stripmine_priority_screen_sync"] == "signalbar"
                 )
-                launch_transition_pending = self.launch_artwork.status(game.appid)["pending"]
+                launch_transition_pending = launch_transition_status["pending"]
                 screen_sync_fallback_active = self._screen_sync_fallback_should_run(
                     screen_sync_requested,
                     screen_sync_ownership_allowed,
@@ -809,7 +1103,7 @@ class Engine:
                 )
                 if self.launch_artwork.active and (
                     signal_critical or not launch_display_allowed or not launch_ownership_allowed
-                    or steam_priority or not (allowed or stripmine_active)
+                    or steam_priority or not (ownership_allowed or stripmine_active)
                 ):
                     self.launch_artwork.cancel()
                 launch_artwork = self.launch_artwork.output(
@@ -818,19 +1112,37 @@ class Engine:
                         launch_display_allowed and now >= self._launch_handoff_until
                         and not signal_critical and not brief_alert
                         and not steam_priority
-                        and (allowed or stripmine_active) and launch_ownership_allowed
+                        and (ownership_allowed or stripmine_active) and launch_ownership_allowed
                     ),
                     paused=brief_alert,
                 )
+                launch_status_after_output = self.launch_artwork.status(game.appid)
+                launch_finished_this_tick = bool(
+                    launch_transition_active
+                    and not launch_status_after_output["pending"]
+                    and not launch_status_after_output["active"]
+                )
+                if launch_finished_this_tick:
+                    # Let Gamescope advance beyond Steam's launch surface
+                    # before the first palette is accepted. Capture remains
+                    # warm, so this delay does not rebuild the pipeline.
+                    with self._lock:
+                        if self._game.appid == game.appid:
+                            self._context_palette_not_before = now + 0.45
                 # Moving event waves need more than ten samples per second to
                 # visibly visit all 17 positions. Normal providers stay at
                 # the conservative 10 Hz cadence.
                 interval = 0.06 if any(output.frame is not None for output in (
                     event, controller_event, launch_artwork, customization_base,
+                    audio_sync_base,
                 )) else 0.10
-                effective_mode = "screen_sync" if screen_sync_requested else values["mode"]
+                effective_mode = (
+                    "screen_sync" if screen_sync_requested
+                    else "audio_sync" if audio_sync_requested
+                    else values["mode"]
+                )
                 decision = self.arbiter.choose(
-                    mode=effective_mode, guard_allows=allowed or stripmine_active, game=game,
+                    mode=effective_mode, guard_allows=ownership_allowed or stripmine_active, game=game,
                     performance=performance, artwork=artwork, idle=self.idle.output(),
                     signal=signal, event=event, signal_critical=signal_critical,
                     controller_event=controller_event, controller_base=controller_base,
@@ -840,6 +1152,7 @@ class Engine:
                     screen_sync_fallback=(
                         customization_base if screen_sync_fallback_active else None
                     ),
+                    audio_sync_base=audio_sync_base,
                     launch_artwork=launch_artwork,
                     recording_marker=(
                         self.events.recording and values["events_enabled"]
@@ -849,6 +1162,15 @@ class Engine:
                     performance_always=values["performance_always"],
                     steam_priority=steam_priority,
                     companion_hud_active=tw3_steamrgb_active,
+                )
+
+                hold_context_frame = (
+                    renderer.last_frame is not None
+                    and self._hold_context_frame(
+                        context_transition_active, audio_sync_requested,
+                        launch_transition_active, steam_priority,
+                        stripmine_active, tw3_steamrgb_active, decision,
+                    )
                 )
 
                 stripmine_priority = self._stripmine_priority(decision.provider, values)
@@ -900,13 +1222,33 @@ class Engine:
                     event_preempted_valve = False
                     owner = self._owner
                     suspension = "waiting for StripMine LED handoff"
+                elif hold_context_frame:
+                    # A missing provider frame inside a bounded Home/game
+                    # transition is not a request to restore Valve's saved
+                    # blue frame. Keep the exact last visible frame and, if an
+                    # ordinary native write raced us, atomically reclaim it.
+                    held_frame = renderer.last_frame
+                    wrote = renderer.render(held_frame, force=signature_mismatch)
+                    if wrote:
+                        guard.note_own_write(renderer.last_signature)
+                    event_was_active = False
+                    event_preempted_valve = False
+                    owner = "GabeCubeAura"
+                    suspension = "Audio Sync context transition; holding previous frame"
                 elif decision.frame is not None:
                     is_event = decision.provider.startswith(("event:", "controller:", "launch-artwork:"))
-                    if is_event and not allowed:
+                    if is_event and not ownership_allowed:
                         event_preempted_valve = True
                     elif not is_event:
                         event_preempted_valve = False
-                    wrote = renderer.render(decision.frame)
+                    wrote = renderer.render(
+                        decision.frame,
+                        force=(
+                            ownership_policy != "cooperative"
+                            and signature_mismatch
+                            and not steam_priority
+                        ),
+                    )
                     if wrote:
                         guard.note_own_write(renderer.last_signature)
                         if recovering_ownership:
@@ -927,7 +1269,11 @@ class Engine:
                         # that exact frame back. Renderer verifies ownership
                         # first, so a concurrent native write is never undone.
                         renderer.relinquish(
-                            restore_if_owned=not externally_blocked or event_preempted_valve
+                            restore_if_owned=self._restore_before_valve_handoff(
+                                externally_blocked=externally_blocked,
+                                event_preempted_valve=event_preempted_valve,
+                                semantic_download_priority=semantic_download_priority,
+                            )
                         )
                     event_was_active = False
                     event_preempted_valve = False
@@ -948,6 +1294,8 @@ class Engine:
                         if needs_handoff and not handoff_ready
                         else "companion:stripmine"
                         if yield_to_stripmine
+                        else "transition:hold"
+                        if hold_context_frame
                         else decision.provider
                     )
                     self._owner = owner
@@ -956,6 +1304,7 @@ class Engine:
                     self._decision_at = time.monotonic()
             except Exception as error:
                 self.screen_sync.set_active(False)
+                self.audio_sync.set_active(False)
                 # A provider or renderer fault must not leave the last plugin
                 # frame frozen on the strip. Renderer restores the saved
                 # Valve state only if the hardware still matches our verified
@@ -989,6 +1338,7 @@ class Engine:
         if renderer is not None:
             renderer.relinquish(restore_if_owned=True)
         self.screen_sync.set_active(False)
+        self.audio_sync.set_active(False)
         self.stripmine_claim.release()
 
     def status(self):
@@ -1002,11 +1352,21 @@ class Engine:
             values, self._game
         )
         sample = self.performance.sample
-        art = self.artwork.status(values["launch_artwork_colour_count"])
+        artwork_settings = self.settings.artwork_for(self._game.appid)
+        art = self.artwork.status(
+            values["launch_artwork_colour_count"], artwork_settings["vibrance"],
+        )
         with self._lock:
             launch_artwork_status = self.launch_artwork.status(self._game.appid)
             display = self.settings.display_for(self._game.appid)
             values["mode"] = display["mode"]
+            audio_context = "game" if self._game.running else "home"
+            values["audio_sync_style"] = values[f"audio_sync_{audio_context}_style"]
+            values["audio_sync_palette"] = values[f"audio_sync_{audio_context}_palette"]
+            for role in ("low", "middle", "high"):
+                values[f"audio_sync_colour_{role}"] = values[
+                    f"audio_sync_{audio_context}_colour_{role}"
+                ]
             status_values = dict(values)
             status_values["controller_battery_display"] = (
                 "everywhere" if display["selected"] == "controller" else "off"
@@ -1017,7 +1377,6 @@ class Engine:
             status_values["weather_display"] = (
                 "everywhere" if display["selected"] == "weather" else "off"
             )
-            artwork_settings = self.settings.artwork_for(self._game.appid)
             countdown = self.countdown.status(
                 colour=values["countdown_colour"],
                 dark_edge_compensation=values["countdown_dark_edge_compensation"],
@@ -1081,6 +1440,7 @@ class Engine:
             weather_status = self.weather.status(status_values, self._game.running)
             customization_status = self.customization.status(values)
             screen_sync_status = self.screen_sync.status()
+            audio_sync_status = self.audio_sync.status(values["audio_sync_reactivity"])
             game_screen_sync = (
                 values["mode"] == "screen_sync"
                 and display["selected"] == "screen_sync"
@@ -1111,6 +1471,20 @@ class Engine:
                 "fallback_reason": fallback_reason,
             })
             engine_running = bool(self._thread and self._thread.is_alive())
+            calibration_status = (
+                renderer.calibration_status() if renderer else {
+                    "supported": False,
+                    "detected_brightness": None,
+                    "reference_brightness": None,
+                    "saved_steam_brightness": None,
+                    "override_active": False,
+                    "startup_recovered": False,
+                }
+            )
+            calibration_status.update({
+                "mode": values["led_output_calibration_mode"],
+                "reference_brightness": LED_OUTPUT_REFERENCE_BRIGHTNESS,
+            })
             decision_age_s = (
                 max(0.0, now - self._decision_at) if self._decision_at else None
             )
@@ -1126,6 +1500,10 @@ class Engine:
                 "default_mode": display["default"],
                 "display_override": display["override"],
                 "signalbar_enabled": values["signalbar_enabled"],
+                "display_preset": values["display_preset"],
+                "valve_ownership_policy": values["valve_ownership_policy"],
+                "led_output_calibration_mode": values["led_output_calibration_mode"],
+                "led_output_calibration": calibration_status,
                 "home_display": values["home_display"],
                 "game_display": values["game_display"],
                 "current_display": display["selected"],
@@ -1140,10 +1518,12 @@ class Engine:
                 "artwork_mode": artwork_settings["mode"],
                 "artwork_manual_y": artwork_settings["manual_y"],
                 "artwork_source": artwork_settings["source"],
+                "artwork_vibrance": artwork_settings["vibrance"],
                 "artwork_custom": artwork_settings["custom"],
                 "artwork_default_mode": values["artwork_mode"],
                 "artwork_default_manual_y": values["artwork_manual_y"],
                 "artwork_default_source": values["artwork_source"],
+                "artwork_default_vibrance": values["artwork_vibrance"],
                 "launch_artwork_animation_enabled": values["launch_artwork_animation_enabled"],
                 "launch_artwork_pattern": values["launch_artwork_pattern"],
                 "launch_artwork_colour_count": values["launch_artwork_colour_count"],
@@ -1166,6 +1546,24 @@ class Engine:
                 "screen_sync_black_threshold": values["screen_sync_black_threshold"],
                 "screen_sync_ignore_black_bars": values["screen_sync_ignore_black_bars"],
                 "screen_sync_screensaver_enabled": values["screen_sync_screensaver_enabled"],
+                "audio_sync_style": values["audio_sync_style"],
+                "audio_sync_brightness": values["audio_sync_brightness"],
+                "audio_sync_reactivity": values["audio_sync_reactivity"],
+                "audio_sync_palette": values["audio_sync_palette"],
+                "audio_sync_home_style": values["audio_sync_home_style"],
+                "audio_sync_home_palette": values["audio_sync_home_palette"],
+                "audio_sync_game_style": values["audio_sync_game_style"],
+                "audio_sync_game_palette": values["audio_sync_game_palette"],
+                "audio_sync_lab_crest_strength": values["audio_sync_lab_crest_strength"],
+                "audio_sync_lab_edge_reach": values["audio_sync_lab_edge_reach"],
+                "audio_sync_lab_background": values["audio_sync_lab_background"],
+                "audio_sync_hifi_lab_enabled": values["audio_sync_hifi_lab_enabled"],
+                "audio_sync_home_colour_low": values["audio_sync_home_colour_low"],
+                "audio_sync_home_colour_middle": values["audio_sync_home_colour_middle"],
+                "audio_sync_home_colour_high": values["audio_sync_home_colour_high"],
+                "audio_sync_game_colour_low": values["audio_sync_game_colour_low"],
+                "audio_sync_game_colour_middle": values["audio_sync_game_colour_middle"],
+                "audio_sync_game_colour_high": values["audio_sync_game_colour_high"],
                 "cool_temp_c": values["cool_temp_c"],
                 "hot_temp_c": values["hot_temp_c"],
                 "reverse_led_order": values["reverse_led_order"],
@@ -1211,6 +1609,7 @@ class Engine:
                 "weather_display": values["weather_display"],
                 "weather_location": values["weather_location"],
                 "weather_topbar_enabled": values["weather_topbar_enabled"],
+                "weather_icon_style": values["weather_icon_style"],
                 "weather_temperature_unit": values["weather_temperature_unit"],
                 "weather_brightness": values["weather_brightness"],
                 "weather_shadow_cutoff": values["weather_shadow_cutoff"],
@@ -1227,10 +1626,12 @@ class Engine:
                 "stripmine_priority_game_launches": values["stripmine_priority_game_launches"],
                 "stripmine_priority_customization": values["stripmine_priority_customization"],
                 "stripmine_priority_screen_sync": values["stripmine_priority_screen_sync"],
+                "stripmine_priority_audio_sync": values["stripmine_priority_audio_sync"],
                 **{key: values[key] for key in values if key.startswith("weather_") and key.endswith("_variant")},
                 "weather": weather_status,
                 "customization": customization_status,
                 "screen_sync": screen_sync_status,
+                "audio_sync": audio_sync_status,
                 "controllers": controller_status,
                 "events": self.events.status(),
                 "game": {"appid": self._game.appid, "title": self._game.title},
@@ -1258,10 +1659,26 @@ class Engine:
                     "stable_remaining": guard_debug["stable_remaining"],
                     "guard_state": "ready" if guard_debug["ready"] else "blocked",
                     "guard_reason": guard_debug["reason"],
-                    "steam_priority": guard_debug["hard_priority"],
-                    "steam_priority_reason": guard_debug["hard_reason"],
+                    "steam_priority": self._effective_steam_priority,
+                    "steam_priority_reason": (
+                        self._native_priority_reason_text
+                        if self._effective_steam_priority and self._native_priority_reason_text
+                        else self._steam_reason
+                        if self._effective_steam_priority else ""
+                    ),
+                    "guard_hard_priority": guard_debug["hard_priority"],
+                    "guard_hard_reason": guard_debug["hard_reason"],
+                    "native_priority_kind": self._native_priority_kind,
+                    "native_priority_reason": self._native_priority_reason_text,
+                    "ignored_native_takeovers": self._ignored_native_takeovers,
                     "steam_lease_remaining_s": max(0.0, self._steam_active_until - now),
                     "launch_handoff_remaining_s": max(0.0, self._launch_handoff_until - now),
+                    "context_transition_active": self._context_transition_active,
+                    "context_transition_remaining_s": max(
+                        0.0, self._context_transition_until - now,
+                    ) if self._context_transition_active else 0.0,
+                    "context_transition_from": self._context_transition_from,
+                    "context_transition_to": self._context_transition_to,
                     "last_recovery_age_s": (
                         max(0.0, now - self._last_recovery_at)
                         if self._last_recovery_at else None

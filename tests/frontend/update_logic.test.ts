@@ -22,9 +22,6 @@ const available: UpdateStatus = {
   error: "",
   auto_check: true,
   notifications: true,
-  check_interval_minutes: 1440,
-  channel: "stable",
-  return_to_stable: false,
   test_build: false,
 };
 
@@ -34,16 +31,4 @@ test("one update notification waits for Home and is deduplicated by version", ()
   assert.equal(shouldNotifyUpdate({ ...available, notified_version: "1.1.0" }, 0), false);
   assert.equal(shouldNotifyUpdate({ ...available, notifications: false }, 0), false);
   assert.equal(shouldNotifyUpdate({ ...available, phase: "ready" }, 0), false);
-});
-
-test("a beta found after selecting the Beta channel uses the normal notification path", () => {
-  const beta: UpdateStatus = {
-    ...available,
-    installed_version: "1.1.1",
-    available_version: "1.2.0-beta.2",
-    release_url: "https://github.com/Alyenax/GabeCubeAura/releases/tag/v1.2.0-beta.2",
-    channel: "beta",
-  };
-  assert.equal(shouldNotifyUpdate(beta, 0), true);
-  assert.equal(shouldNotifyUpdate({ ...beta, notified_version: "1.2.0-beta.2" }, 0), false);
 });

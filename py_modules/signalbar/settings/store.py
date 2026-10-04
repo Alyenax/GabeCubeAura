@@ -11,31 +11,67 @@ from copy import deepcopy
 from signalbar.providers.customization import CUSTOMIZATION_PATTERNS
 
 DEFAULTS = {
-    "mode": "performance",
+    "mode": "audio_sync",
     "signalbar_enabled": True,
-    "home_display": "controller",
-    "game_display": "performance",
+    "home_display": "audio_sync",
+    "game_display": "audio_sync",
     "display_profiles": {},
+    "display_preset": "custom",
+    "display_preset_restore": {},
+    "valve_ownership_policy": "downloads",
+    # Approved 1.3.2 reference configuration. The renderer restores Steam's
+    # saved hardware gain before every normal ownership handoff.
+    "led_output_calibration_mode": "consistent",
     "screen_sync_style": "panorama",
     "screen_sync_brightness": 160,
     "screen_sync_reactivity": "balanced",
     "screen_sync_colour_intensity": "natural",
     "screen_sync_black_threshold": 8,
     "screen_sync_ignore_black_bars": True,
-    "screen_sync_screensaver_enabled": False,
+    "screen_sync_screensaver_enabled": True,
+    "audio_sync_style": "slow-prism",
+    "audio_sync_brightness": 180,
+    # Retained as a neutral compatibility field for older exports/frontends.
+    # Runtime analysis always uses 100 because programme-level matching makes
+    # a user-facing pre-normalisation trim misleading after warm-up.
+    "audio_sync_sensitivity": 100,
+    "audio_sync_reactivity": "fast",
+    "audio_sync_palette": "screen-sync",
+    # Pattern and palette are contextual. The legacy pair above remains as a
+    # migration and API compatibility seed, but runtime routing resolves one
+    # of these explicit Home or in-game pairs.
+    "audio_sync_home_style": "slow-prism",
+    "audio_sync_home_palette": "screen-sync",
+    "audio_sync_game_style": "slow-prism",
+    "audio_sync_game_palette": "screen-sync",
+    "audio_sync_home_colour_low": [11, 94, 142],
+    "audio_sync_home_colour_middle": [8, 127, 191],
+    "audio_sync_home_colour_high": [6, 148, 249],
+    "audio_sync_game_colour_low": [11, 94, 142],
+    "audio_sync_game_colour_middle": [8, 127, 191],
+    "audio_sync_game_colour_high": [26, 159, 255],
+    # Temporary on-device calibration controls for the Hi-Fi Crest beta lab.
+    # A value of 100 preserves the reference 1.3.1 renderer exactly.
+    "audio_sync_lab_crest_strength": 100,
+    "audio_sync_lab_edge_reach": 100,
+    "audio_sync_lab_background": 100,
+    "audio_sync_hifi_lab_enabled": False,
+    "audio_sync_colour_low": [11, 94, 142],
+    "audio_sync_colour_middle": [8, 127, 191],
+    "audio_sync_colour_high": [26, 159, 255],
     "customization_pattern": "steady",
     "customization_colour_count": 1,
-    "customization_colour_1": [255, 120, 24],
+    "customization_colour_1": [255, 153, 10],
     "customization_colour_2": [0, 200, 255],
     "customization_colour_3": [180, 48, 255],
-    "customization_brightness": 128,
+    "customization_brightness": 60,
     "customization_speed": 50,
     "customization_direction": "forward",
     # Retained only to migrate v0.1/v0.2 Automatic configurations.
     "performance_enabled": True,
     "performance_metric": "mixed",
     "performance_smoothing": "responsive",
-    "performance_always": True,
+    "performance_always": False,
     "mixed_direction": "mirrored",
     "temperature_palette": "classic",
     "temperature_custom_cool": [30, 180, 230],
@@ -44,11 +80,15 @@ DEFAULTS = {
     "artwork_mode": "auto",
     "artwork_manual_y": 0.34,
     "artwork_source": "hero",
-    "artwork_profiles": {},
-    "launch_artwork_animation_enabled": False,
+    "artwork_vibrance": 100,
+    "artwork_profiles": {
+        "1030300": {"manual_y": 0.34, "mode": "auto", "source": "hero", "vibrance": 100},
+        "977880": {"manual_y": 0.34, "mode": "auto", "source": "hero", "vibrance": 100},
+    },
+    "launch_artwork_animation_enabled": True,
     "launch_artwork_pattern": "arpege-crossed",
     "launch_artwork_colour_count": 2,
-    "launch_artwork_duration_seconds": 8,
+    "launch_artwork_duration_seconds": 5,
     "launch_artwork_source": "hero",
     "launch_artwork_profiles": {},
     "cool_temp_c": 45.0,
@@ -70,16 +110,16 @@ DEFAULTS = {
     "event_notification_variant": "notification-beacon",
     "event_achievement_variant": "achievement-constellation",
     "event_screenshot_variant": "screenshot-bloom",
-    "controller_battery_display": "home",
+    "controller_battery_display": "off",
     # Charging choices are exclusive; legacy display/enabled keys are derived
     # for compatibility with older local beta settings.
-    "controller_charging_mode": "continuous-home",
-    "controller_charging_display": "home",
+    "controller_charging_mode": "brief",
+    "controller_charging_display": "off",
     "controller_alert_context": "both",
     "controller_alerts_enabled": True,
     "controller_connect_enabled": True,
     "controller_low_enabled": True,
-    "controller_charging_enabled": False,
+    "controller_charging_enabled": True,
     "controller_low_threshold": 20,
     "controller_connect_variant": "welcome",
     "controller_persistent_variant": "tip",
@@ -100,7 +140,8 @@ DEFAULTS = {
     "controller_gauge_brightness": 65,
     "weather_display": "off",
     "weather_location": None,
-    "weather_topbar_enabled": False,
+    "weather_topbar_enabled": True,
+    "weather_icon_style": "phosphor-duotone",
     "weather_temperature_unit": "celsius",
     "weather_brightness": 100,
     "weather_shadow_cutoff": 0,
@@ -124,6 +165,7 @@ DEFAULTS = {
     "stripmine_priority_game_launches": "signalbar",
     "stripmine_priority_customization": "stripmine",
     "stripmine_priority_screen_sync": "stripmine",
+    "stripmine_priority_audio_sync": "stripmine",
     "guard_cooldown_s": 5.0,
     "guard_stable_s": 2.0,
     "updates_auto_check": True,
@@ -132,12 +174,80 @@ DEFAULTS = {
     "updates_channel": "stable",
 }
 
-VALID_MODES = {"artwork", "performance", "customization", "screen_sync", "events", "disabled"}
-VALID_HOME_DISPLAYS = {"steam", "customization", "performance", "weather", "controller"}
-VALID_GAME_DISPLAYS = {"steam", "customization", "artwork", "performance", "screen_sync", "weather", "controller"}
+VALID_MODES = {"artwork", "performance", "customization", "screen_sync", "audio_sync", "blackout", "events", "disabled"}
+VALID_HOME_DISPLAYS = {"steam", "blackout", "customization", "performance", "audio_sync", "weather", "controller"}
+VALID_GAME_DISPLAYS = {"steam", "blackout", "customization", "artwork", "performance", "screen_sync", "audio_sync", "weather", "controller"}
+VALID_DISPLAY_PRESETS = {
+    "custom", "lights-out", "focus", "essential", "moderate",
+    "atmosphere", "signals", "immersive", "immersive-plus", "festive",
+}
+VALID_VALVE_OWNERSHIP_POLICIES = {"cooperative", "downloads", "critical"}
+VALID_LED_OUTPUT_CALIBRATION_MODES = {"follow", "consistent"}
 VALID_SCREEN_SYNC_STYLES = {"panorama", "ambient"}
 VALID_SCREEN_SYNC_REACTIVITY = {"calm", "balanced", "fast"}
 VALID_SCREEN_SYNC_COLOUR_INTENSITY = {"natural", "vivid"}
+VALID_AUDIO_SYNC_STYLES = {
+    "hifi-crest", "velvet-relay", "negative-bloom", "stereo-lanterns",
+    "constellation", "slow-prism", "spectrum", "spatial", "bass",
+    "audio-pulse",
+}
+VALID_AUDIO_SYNC_REACTIVITY = {"calm", "balanced", "fast", "punchy"}
+
+# Reference tunings are deliberately different for each optical pattern. They
+# are loaded when the user selects a style, then remain freely adjustable.
+# Bright, sparse renderers can use more headroom than full-width patterns on
+# the Steam Machine diffuser without producing the same white bloom.
+AUDIO_SYNC_STYLE_TUNING = {
+    "hifi-crest": {
+        "audio_sync_brightness": 160,
+        "audio_sync_reactivity": "balanced",
+        "audio_sync_lab_crest_strength": 100,
+        "audio_sync_lab_edge_reach": 100,
+        "audio_sync_lab_background": 100,
+    },
+    "velvet-relay": {
+        "audio_sync_brightness": 184,
+        "audio_sync_reactivity": "fast",
+    },
+    "negative-bloom": {
+        "audio_sync_brightness": 192,
+        "audio_sync_reactivity": "fast",
+    },
+    "stereo-lanterns": {
+        "audio_sync_brightness": 172,
+        "audio_sync_reactivity": "balanced",
+    },
+    "constellation": {
+        "audio_sync_brightness": 205,
+        "audio_sync_reactivity": "fast",
+    },
+    "slow-prism": {
+        "audio_sync_brightness": 180,
+        "audio_sync_reactivity": "fast",
+    },
+    "spectrum": {
+        "audio_sync_brightness": 190,
+        "audio_sync_reactivity": "fast",
+    },
+    "spatial": {
+        "audio_sync_brightness": 170,
+        "audio_sync_reactivity": "balanced",
+    },
+    "bass": {
+        "audio_sync_brightness": 185,
+        "audio_sync_reactivity": "fast",
+    },
+    "audio-pulse": {
+        "audio_sync_brightness": 168,
+        "audio_sync_reactivity": "balanced",
+    },
+}
+VALID_AUDIO_SYNC_PALETTES = {
+    "aurora", "ember", "magma", "forest", "ice", "copper", "solar",
+    "pearl", "glacier", "lagoon", "lime", "orchid", "plasma",
+    "sunset", "deep-sea", "silver", "candy", "sapphire", "coastline",
+    "screen-sync", "artwork", "custom",
+}
 VALID_ARTWORK_MODES = {"auto", "center", "lower", "manual"}
 VALID_ARTWORK_SOURCES = {"hero", "header", "capsule"}
 VALID_LAUNCH_ARTWORK_PATTERNS = {
@@ -152,6 +262,223 @@ VALID_MIXED_DIRECTIONS = {"same", "mirrored"}
 VALID_TEMPERATURE_PALETTES = {"thermal", "classic", "icefire", "custom"}
 VALID_COUNTDOWN_COLOURS = {"cyan", "green", "amber", "violet", "white"}
 VALID_COMPANION_PRIORITIES = {"stripmine", "signalbar"}
+VALID_WEATHER_ICON_STYLES = {
+    "current", "material-rounded", "phosphor-duotone",
+}
+
+DISPLAY_PRESET_RECIPES = {
+    "lights-out": {
+        "signalbar_enabled": True,
+        "home_display": "blackout",
+        "game_display": "blackout",
+        "display_profiles": {},
+        "valve_ownership_policy": "critical",
+        "launch_artwork_animation_enabled": False,
+        "parental_countdown_enabled": True,
+        "events_enabled": False,
+        "controller_alerts_enabled": False,
+        "controller_alert_context": "off",
+        "controller_connect_enabled": False,
+        "controller_low_enabled": False,
+        "controller_charging_mode": "off",
+        "screen_sync_screensaver_enabled": False,
+    },
+    "focus": {
+        "signalbar_enabled": True,
+        "home_display": "customization",
+        "game_display": "customization",
+        "display_profiles": {},
+        "valve_ownership_policy": "critical",
+        "launch_artwork_animation_enabled": False,
+        "parental_countdown_enabled": True,
+        "events_enabled": False,
+        "controller_alerts_enabled": False,
+        "controller_alert_context": "off",
+        "controller_connect_enabled": False,
+        "controller_low_enabled": False,
+        "controller_charging_mode": "off",
+        "screen_sync_screensaver_enabled": False,
+    },
+    "essential": {
+        "signalbar_enabled": True,
+        "home_display": "blackout",
+        "game_display": "blackout",
+        "display_profiles": {},
+        "valve_ownership_policy": "downloads",
+        "launch_artwork_animation_enabled": False,
+        "parental_countdown_enabled": True,
+        "events_enabled": False,
+        "controller_alerts_enabled": False,
+        "controller_alert_context": "off",
+        "controller_connect_enabled": False,
+        "controller_low_enabled": False,
+        "controller_charging_mode": "off",
+        "screen_sync_screensaver_enabled": False,
+    },
+    "moderate": {
+        "signalbar_enabled": True,
+        "home_display": "customization",
+        "game_display": "artwork",
+        "display_profiles": {},
+        "valve_ownership_policy": "downloads",
+        "launch_artwork_animation_enabled": True,
+        "parental_countdown_enabled": True,
+        "events_enabled": True,
+        "event_notifications_enabled": True,
+        "event_achievements_enabled": True,
+        "event_screenshots_enabled": True,
+        "event_recording_enabled": True,
+        "controller_alerts_enabled": True,
+        "controller_alert_context": "both",
+        "controller_connect_enabled": True,
+        "controller_low_enabled": True,
+        "controller_charging_mode": "brief",
+        "screen_sync_screensaver_enabled": True,
+    },
+    "atmosphere": {
+        "signalbar_enabled": True,
+        "home_display": "audio_sync",
+        "game_display": "artwork",
+        "display_profiles": {},
+        "valve_ownership_policy": "downloads",
+        "launch_artwork_animation_enabled": True,
+        "parental_countdown_enabled": True,
+        "events_enabled": True,
+        "event_notifications_enabled": True,
+        "event_achievements_enabled": True,
+        "event_screenshots_enabled": True,
+        "event_recording_enabled": True,
+        "controller_alerts_enabled": True,
+        "controller_alert_context": "both",
+        "controller_connect_enabled": True,
+        "controller_low_enabled": True,
+        "controller_charging_mode": "brief",
+        "screen_sync_screensaver_enabled": True,
+        "audio_sync_style": "slow-prism",
+        "audio_sync_home_style": "slow-prism",
+        "audio_sync_brightness": 180,
+        "audio_sync_reactivity": "fast",
+        "audio_sync_palette": "screen-sync",
+        "audio_sync_home_palette": "screen-sync",
+    },
+    "signals": {
+        "signalbar_enabled": True,
+        "home_display": "controller",
+        "game_display": "performance",
+        "display_profiles": {},
+        "valve_ownership_policy": "downloads",
+        "launch_artwork_animation_enabled": True,
+        "parental_countdown_enabled": True,
+        "events_enabled": True,
+        "event_notifications_enabled": True,
+        "event_achievements_enabled": True,
+        "event_screenshots_enabled": True,
+        "event_recording_enabled": True,
+        "controller_alerts_enabled": True,
+        "controller_alert_context": "both",
+        "controller_connect_enabled": True,
+        "controller_low_enabled": True,
+        "controller_charging_mode": "continuous-home",
+        "screen_sync_screensaver_enabled": True,
+    },
+    "immersive": {
+        "signalbar_enabled": True,
+        "home_display": "audio_sync",
+        "game_display": "screen_sync",
+        "display_profiles": {},
+        "valve_ownership_policy": "downloads",
+        "launch_artwork_animation_enabled": True,
+        "parental_countdown_enabled": True,
+        "events_enabled": True,
+        "event_notifications_enabled": True,
+        "event_achievements_enabled": True,
+        "event_screenshots_enabled": True,
+        "event_recording_enabled": True,
+        "controller_alerts_enabled": True,
+        "controller_alert_context": "both",
+        "controller_connect_enabled": True,
+        "controller_low_enabled": True,
+        "controller_charging_mode": "brief",
+        "screen_sync_screensaver_enabled": True,
+        "audio_sync_style": "slow-prism",
+        "audio_sync_home_style": "slow-prism",
+        "audio_sync_brightness": 180,
+        "audio_sync_reactivity": "fast",
+        "audio_sync_palette": "sapphire",
+        "audio_sync_home_palette": "sapphire",
+        "audio_sync_game_style": "slow-prism",
+        "audio_sync_game_palette": "screen-sync",
+    },
+    "immersive-plus": {
+        "signalbar_enabled": True,
+        "home_display": "audio_sync",
+        "game_display": "audio_sync",
+        "display_profiles": {},
+        "valve_ownership_policy": "downloads",
+        "launch_artwork_animation_enabled": True,
+        "parental_countdown_enabled": True,
+        "events_enabled": True,
+        "event_notifications_enabled": True,
+        "event_achievements_enabled": True,
+        "event_screenshots_enabled": True,
+        "event_recording_enabled": True,
+        "controller_alerts_enabled": True,
+        "controller_alert_context": "both",
+        "controller_connect_enabled": True,
+        "controller_low_enabled": True,
+        "controller_charging_mode": "brief",
+        "screen_sync_screensaver_enabled": True,
+        "audio_sync_style": "slow-prism",
+        "audio_sync_home_style": "slow-prism",
+        "audio_sync_game_style": "slow-prism",
+        "audio_sync_brightness": 180,
+        "audio_sync_reactivity": "fast",
+        "audio_sync_palette": "screen-sync",
+        "audio_sync_home_palette": "screen-sync",
+        "audio_sync_game_palette": "screen-sync",
+    },
+    "festive": {
+        "signalbar_enabled": True,
+        "home_display": "audio_sync",
+        "game_display": "audio_sync",
+        "display_profiles": {},
+        "valve_ownership_policy": "downloads",
+        "launch_artwork_animation_enabled": True,
+        "parental_countdown_enabled": True,
+        "events_enabled": True,
+        "event_notifications_enabled": True,
+        "event_achievements_enabled": True,
+        "event_screenshots_enabled": True,
+        "event_recording_enabled": True,
+        "controller_alerts_enabled": True,
+        "controller_alert_context": "both",
+        "controller_connect_enabled": True,
+        "controller_low_enabled": True,
+        "controller_charging_mode": "brief",
+        "screen_sync_screensaver_enabled": True,
+        "audio_sync_style": "slow-prism",
+        "audio_sync_home_style": "slow-prism",
+        "audio_sync_game_style": "slow-prism",
+        "audio_sync_brightness": 180,
+        "audio_sync_reactivity": "fast",
+        "audio_sync_palette": "screen-sync",
+        "audio_sync_home_palette": "screen-sync",
+        "audio_sync_game_palette": "aurora",
+    },
+}
+# Steam Families and the validated SteamOS top-bar weather indicator remain
+# available in every named routing recipe, including deliberately quiet ones.
+for _preset_recipe in DISPLAY_PRESET_RECIPES.values():
+    _preset_recipe["parental_countdown_enabled"] = True
+    _preset_recipe["weather_topbar_enabled"] = True
+DISPLAY_PRESET_CONTROLLED_KEYS = tuple(sorted({
+    key for recipe in DISPLAY_PRESET_RECIPES.values() for key in recipe
+} | {
+    "audio_sync_home_style",
+    "audio_sync_home_palette",
+    "audio_sync_game_style",
+    "audio_sync_game_palette",
+}))
 EVENT_VARIANTS = {
     "event_notification_variant": {
         "notification-original", "notification-return", "notification-echo",
@@ -201,7 +528,7 @@ class SettingsStore:
     def __init__(self, path: str):
         self.path = path
         self._lock = threading.RLock()
-        self._data = dict(DEFAULTS)
+        self._data = deepcopy(DEFAULTS)
         self.load()
 
     def load(self):
@@ -213,6 +540,32 @@ class SettingsStore:
                     for key in DEFAULTS:
                         if key in raw:
                             self._data[key] = raw[key]
+                    # Lab 20 splits the Audio Sync pattern and palette by
+                    # context. Existing installations must look identical in
+                    # both contexts until the user deliberately changes one.
+                    legacy_audio_style = raw.get(
+                        "audio_sync_style", DEFAULTS["audio_sync_style"],
+                    )
+                    legacy_audio_palette = raw.get(
+                        "audio_sync_palette", DEFAULTS["audio_sync_palette"],
+                    )
+                    for key in ("audio_sync_home_style", "audio_sync_game_style"):
+                        if key not in raw:
+                            self._data[key] = legacy_audio_style
+                    for key in ("audio_sync_home_palette", "audio_sync_game_palette"):
+                        if key not in raw:
+                            self._data[key] = legacy_audio_palette
+                    # Lab 22 gives Home and in-game Custom palettes their own
+                    # three colours. Seed both from the former shared palette
+                    # so existing installations remain visually unchanged.
+                    for context in ("home", "game"):
+                        for role in ("low", "middle", "high"):
+                            contextual_key = f"audio_sync_{context}_colour_{role}"
+                            legacy_key = f"audio_sync_colour_{role}"
+                            if contextual_key not in raw:
+                                self._data[contextual_key] = deepcopy(
+                                    raw.get(legacy_key, DEFAULTS[contextual_key])
+                                )
                     legacy_routing = (
                         "signalbar_enabled" not in raw
                         and "home_display" not in raw
@@ -306,6 +659,21 @@ class SettingsStore:
             return dict(self._data)
 
     def _validate(self):
+        if self._data.get("display_preset") not in VALID_DISPLAY_PRESETS:
+            self._data["display_preset"] = DEFAULTS["display_preset"]
+        if self._data.get("valve_ownership_policy") not in VALID_VALVE_OWNERSHIP_POLICIES:
+            self._data["valve_ownership_policy"] = DEFAULTS["valve_ownership_policy"]
+        if self._data.get("led_output_calibration_mode") not in VALID_LED_OUTPUT_CALIBRATION_MODES:
+            self._data["led_output_calibration_mode"] = DEFAULTS["led_output_calibration_mode"]
+        raw_restore = self._data.get("display_preset_restore")
+        self._data["display_preset_restore"] = (
+            {
+                key: deepcopy(raw_restore[key])
+                for key in DISPLAY_PRESET_CONTROLLED_KEYS
+                if isinstance(raw_restore, dict) and key in raw_restore
+            }
+            if isinstance(raw_restore, dict) else {}
+        )
         self._data["stripmine_integration_enabled"] = bool(self._data["stripmine_integration_enabled"])
         self._data["tw3_steamrgb_integration_enabled"] = bool(
             self._data["tw3_steamrgb_integration_enabled"]
@@ -317,6 +685,7 @@ class SettingsStore:
             "stripmine_priority_game_launches",
             "stripmine_priority_customization",
             "stripmine_priority_screen_sync",
+            "stripmine_priority_audio_sync",
         ):
             if self._data[key] not in VALID_COMPANION_PRIORITIES:
                 self._data[key] = DEFAULTS[key]
@@ -349,6 +718,45 @@ class SettingsStore:
                 self._data[key] = max(lower, min(upper, int(round(float(self._data[key])))))
             except (TypeError, ValueError, OverflowError):
                 self._data[key] = DEFAULTS[key]
+        legacy_audio_styles = {
+            "screen-pulse": "audio-pulse",
+            "screen-spatial": "spatial",
+        }
+        for key in (
+            "audio_sync_style",
+            "audio_sync_home_style",
+            "audio_sync_game_style",
+        ):
+            self._data[key] = legacy_audio_styles.get(self._data[key], self._data[key])
+        if self._data["audio_sync_style"] not in VALID_AUDIO_SYNC_STYLES:
+            self._data["audio_sync_style"] = DEFAULTS["audio_sync_style"]
+        if self._data["audio_sync_reactivity"] not in VALID_AUDIO_SYNC_REACTIVITY:
+            self._data["audio_sync_reactivity"] = DEFAULTS["audio_sync_reactivity"]
+        if self._data["audio_sync_palette"] == "game":
+            self._data["audio_sync_palette"] = "screen-sync"
+        if self._data["audio_sync_palette"] not in VALID_AUDIO_SYNC_PALETTES:
+            self._data["audio_sync_palette"] = DEFAULTS["audio_sync_palette"]
+        for key in ("audio_sync_home_style", "audio_sync_game_style"):
+            if self._data[key] not in VALID_AUDIO_SYNC_STYLES:
+                self._data[key] = DEFAULTS[key]
+        for key in ("audio_sync_home_palette", "audio_sync_game_palette"):
+            if self._data[key] == "game":
+                self._data[key] = "screen-sync"
+            if self._data[key] not in VALID_AUDIO_SYNC_PALETTES:
+                self._data[key] = DEFAULTS[key]
+        for key, lower, upper in (
+            ("audio_sync_brightness", 34, 255),
+            ("audio_sync_lab_crest_strength", 0, 250),
+            ("audio_sync_lab_edge_reach", 50, 200),
+            ("audio_sync_lab_background", 0, 150),
+        ):
+            try:
+                self._data[key] = max(lower, min(upper, int(round(float(self._data[key])))))
+            except (TypeError, ValueError, OverflowError):
+                self._data[key] = DEFAULTS[key]
+        # Older configurations may still carry this compatibility field. Keep
+        # it neutral because runtime source-level matching is authoritative.
+        self._data["audio_sync_sensitivity"] = 100
         if self._data["customization_pattern"] not in VALID_CUSTOMIZATION_PATTERNS:
             self._data["customization_pattern"] = DEFAULTS["customization_pattern"]
         if self._data["customization_direction"] not in VALID_CUSTOMIZATION_DIRECTIONS:
@@ -398,6 +806,9 @@ class SettingsStore:
             "controller_player_colour_1", "controller_player_colour_2",
             "controller_player_colour_3", "controller_player_colour_4",
             "customization_colour_1", "customization_colour_2", "customization_colour_3",
+            "audio_sync_colour_low", "audio_sync_colour_middle", "audio_sync_colour_high",
+            "audio_sync_home_colour_low", "audio_sync_home_colour_middle", "audio_sync_home_colour_high",
+            "audio_sync_game_colour_low", "audio_sync_game_colour_middle", "audio_sync_game_colour_high",
         ):
             value = self._data.get(key)
             if not isinstance(value, (list, tuple)) or len(value) != 3:
@@ -429,7 +840,8 @@ class SettingsStore:
             "events_enabled", "event_notifications_enabled", "event_achievements_enabled",
             "event_screenshots_enabled", "event_recording_enabled", "recording_marker_isolation",
             "controller_alerts_enabled", "controller_connect_enabled", "controller_low_enabled",
-            "controller_charging_enabled", "updates_auto_check", "updates_notifications",
+            "controller_charging_enabled", "audio_sync_hifi_lab_enabled",
+            "updates_auto_check", "updates_notifications",
         ):
             self._data[key] = bool(self._data[key])
         try:
@@ -440,7 +852,7 @@ class SettingsStore:
             interval if interval in {15, 60, 180, 360, 720, 1440}
             else DEFAULTS["updates_check_interval_minutes"]
         )
-        if self._data["updates_channel"] not in {"stable", "beta"}:
+        if self._data["updates_channel"] not in {"stable", "beta", "private"}:
             self._data["updates_channel"] = DEFAULTS["updates_channel"]
         for key, choices in EVENT_VARIANTS.items():
             if not isinstance(self._data[key], str) or self._data[key] not in choices:
@@ -455,7 +867,9 @@ class SettingsStore:
         if self._data["weather_display"] not in {"off", "home", "game", "everywhere"}:
             self._data["weather_display"] = DEFAULTS["weather_display"]
         if not isinstance(self._data["weather_topbar_enabled"], bool):
-            self._data["weather_topbar_enabled"] = False
+            self._data["weather_topbar_enabled"] = DEFAULTS["weather_topbar_enabled"]
+        if self._data["weather_icon_style"] not in VALID_WEATHER_ICON_STYLES:
+            self._data["weather_icon_style"] = DEFAULTS["weather_icon_style"]
         if self._data["weather_temperature_unit"] not in {"celsius", "fahrenheit"}:
             self._data["weather_temperature_unit"] = DEFAULTS["weather_temperature_unit"]
         self._data["weather_location"] = _valid_weather_location(self._data["weather_location"])
@@ -467,7 +881,6 @@ class SettingsStore:
             for appid, display in list(self._data["display_profiles"].items()):
                 if display == "weather":
                     self._data["display_profiles"].pop(appid)
-            self._data["weather_topbar_enabled"] = False
         for key, lower, upper in (("weather_brightness", 10, 100), ("weather_shadow_cutoff", 0, 60)):
             try:
                 self._data[key] = max(lower, min(upper, int(round(float(self._data[key])))))
@@ -500,7 +913,7 @@ class SettingsStore:
         self._data["performance_always"] = self._data["home_display"] == "performance"
         self._data["mode"] = (
             "disabled" if not self._data["signalbar_enabled"]
-            else self._data["game_display"] if self._data["game_display"] in {"artwork", "performance", "customization", "screen_sync"}
+            else self._data["game_display"] if self._data["game_display"] in {"artwork", "performance", "customization", "screen_sync", "audio_sync"}
             else "events"
         )
         charging_mode = self._data["controller_charging_mode"]
@@ -545,6 +958,12 @@ class SettingsStore:
         except (TypeError, ValueError):
             self._data["free_timer_minutes"] = DEFAULTS["free_timer_minutes"]
         self._data["artwork_manual_y"] = max(0.15, min(0.90, float(self._data["artwork_manual_y"])))
+        try:
+            self._data["artwork_vibrance"] = max(
+                0, min(200, int(round(float(self._data["artwork_vibrance"]))))
+            )
+        except (TypeError, ValueError, OverflowError):
+            self._data["artwork_vibrance"] = DEFAULTS["artwork_vibrance"]
         self._data["cool_temp_c"] = max(20.0, min(100.0, float(self._data["cool_temp_c"])))
         self._data["hot_temp_c"] = max(self._data["cool_temp_c"] + 1.0, min(120.0, float(self._data["hot_temp_c"])))
         self._data["guard_cooldown_s"] = max(1.0, min(30.0, float(self._data["guard_cooldown_s"])))
@@ -569,7 +988,16 @@ class SettingsStore:
                     manual_y = max(0.15, min(0.90, float(raw_profile.get("manual_y", DEFAULTS["artwork_manual_y"]))))
                 except (TypeError, ValueError):
                     manual_y = DEFAULTS["artwork_manual_y"]
-                profiles[appid] = {"mode": mode, "manual_y": manual_y, "source": source}
+                try:
+                    vibrance = max(0, min(200, int(round(float(
+                        raw_profile.get("vibrance", DEFAULTS["artwork_vibrance"])
+                    )))))
+                except (TypeError, ValueError, OverflowError):
+                    vibrance = DEFAULTS["artwork_vibrance"]
+                profiles[appid] = {
+                    "mode": mode, "manual_y": manual_y, "source": source,
+                    "vibrance": vibrance,
+                }
         self._data["artwork_profiles"] = profiles
         raw_launch_profiles = self._data.get("launch_artwork_profiles")
         launch_profiles = {}
@@ -615,11 +1043,75 @@ class SettingsStore:
 
     def update(self, changes: dict):
         with self._lock:
+            changes = dict(changes)
+            # Older frontends and imported configuration used one global
+            # pair. Keep that API meaningful by applying it to both contexts.
+            if "audio_sync_style" in changes:
+                changes.setdefault("audio_sync_home_style", changes["audio_sync_style"])
+                changes.setdefault("audio_sync_game_style", changes["audio_sync_style"])
+            if "audio_sync_palette" in changes:
+                changes.setdefault("audio_sync_home_palette", changes["audio_sync_palette"])
+                changes.setdefault("audio_sync_game_palette", changes["audio_sync_palette"])
+            for role in ("low", "middle", "high"):
+                legacy_key = f"audio_sync_colour_{role}"
+                if legacy_key in changes:
+                    changes.setdefault(f"audio_sync_home_colour_{role}", changes[legacy_key])
+                    changes.setdefault(f"audio_sync_game_colour_{role}", changes[legacy_key])
+            requested_preset = changes.pop("display_preset", None)
+            if requested_preset is not None:
+                if requested_preset not in VALID_DISPLAY_PRESETS:
+                    raise ValueError("Choose a supported display preset")
+                if requested_preset == "custom":
+                    restore = self._data.get("display_preset_restore", {})
+                    if isinstance(restore, dict):
+                        for key in DISPLAY_PRESET_CONTROLLED_KEYS:
+                            if key in restore:
+                                self._data[key] = deepcopy(restore[key])
+                    self._data["display_preset_restore"] = {}
+                    self._data["display_preset"] = "custom"
+                else:
+                    if self._data.get("display_preset") == "custom" \
+                            or not self._data.get("display_preset_restore"):
+                        self._data["display_preset_restore"] = {
+                            key: deepcopy(self._data[key])
+                            for key in DISPLAY_PRESET_CONTROLLED_KEYS
+                        }
+                    else:
+                        # Recipes are overlays on the user's saved Custom
+                        # baseline, not on the previously selected recipe.
+                        # This prevents Atmosphere's fixed Slow Prism/Screen Sync
+                        # choice from leaking into Festive or another preset.
+                        restore = self._data.get("display_preset_restore", {})
+                        if isinstance(restore, dict):
+                            for key in DISPLAY_PRESET_CONTROLLED_KEYS:
+                                if key in restore:
+                                    self._data[key] = deepcopy(restore[key])
+                    self._data.update(deepcopy(DISPLAY_PRESET_RECIPES[requested_preset]))
+                    self._data["display_preset"] = requested_preset
+            elif self._data.get("display_preset") != "custom" \
+                    and any(key in DISPLAY_PRESET_CONTROLLED_KEYS for key in changes):
+                # A direct edit intentionally starts from the active recipe.
+                # The preset label must not claim that its exact recipe is
+                # still active after the user changes one of its fields.
+                self._data["display_preset"] = "custom"
+                self._data["display_preset_restore"] = {}
+            requested_audio_style = (
+                changes.get("audio_sync_home_style")
+                or changes.get("audio_sync_game_style")
+                or changes.get("audio_sync_style")
+            )
+            if requested_audio_style in AUDIO_SYNC_STYLE_TUNING:
+                # Explicit values in the same transaction win. This keeps
+                # imports and tests deterministic while a normal style change
+                # receives the hardware-tuned recommendation automatically.
+                changes = {
+                    **deepcopy(AUDIO_SYNC_STYLE_TUNING[requested_audio_style]),
+                    **changes,
+                }
             wants_weather = (
                 changes.get("weather_display") not in (None, "off")
                 or changes.get("home_display") == "weather"
                 or changes.get("game_display") == "weather"
-                or changes.get("weather_topbar_enabled") is True
             )
             if (wants_weather
                     and _valid_weather_location(changes.get("weather_location", self._data["weather_location"])) is None):
@@ -628,7 +1120,7 @@ class SettingsStore:
                 legacy_mode = changes["mode"]
                 if legacy_mode == "disabled":
                     changes = {**changes, "signalbar_enabled": False}
-                elif legacy_mode in {"artwork", "performance", "customization", "screen_sync"}:
+                elif legacy_mode in {"artwork", "performance", "customization", "screen_sync", "audio_sync", "blackout"}:
                     changes = {**changes, "signalbar_enabled": True, "game_display": legacy_mode}
                 elif legacy_mode == "events":
                     changes = {**changes, "signalbar_enabled": True, "game_display": "steam"}
@@ -712,6 +1204,21 @@ class SettingsStore:
                 else imported.get("mode") if imported.get("mode") in {"artwork", "performance"}
                 else "steam"
             )
+        legacy_audio_style = imported.get("audio_sync_style", DEFAULTS["audio_sync_style"])
+        legacy_audio_palette = imported.get("audio_sync_palette", DEFAULTS["audio_sync_palette"])
+        imported.setdefault("audio_sync_home_style", legacy_audio_style)
+        imported.setdefault("audio_sync_game_style", legacy_audio_style)
+        imported.setdefault("audio_sync_home_palette", legacy_audio_palette)
+        imported.setdefault("audio_sync_game_palette", legacy_audio_palette)
+        for context in ("home", "game"):
+            for role in ("low", "middle", "high"):
+                imported.setdefault(
+                    f"audio_sync_{context}_colour_{role}",
+                    deepcopy(imported.get(
+                        f"audio_sync_colour_{role}",
+                        DEFAULTS[f"audio_sync_{context}_colour_{role}"],
+                    )),
+                )
         imported["display_profiles"] = deepcopy(display_profiles)
         imported["artwork_profiles"] = deepcopy(artwork_profiles)
         imported["launch_artwork_profiles"] = deepcopy(launch_artwork_profiles)
@@ -749,6 +1256,7 @@ class SettingsStore:
                 "mode": profile.get("mode", self._data["artwork_mode"]),
                 "manual_y": profile.get("manual_y", self._data["artwork_manual_y"]),
                 "source": profile.get("source", self._data["artwork_source"]),
+                "vibrance": profile.get("vibrance", self._data["artwork_vibrance"]),
                 "custom": bool(profile),
             }
 
@@ -760,7 +1268,7 @@ class SettingsStore:
             selected = default if override == "inherit" else override
             mode = (
                 "disabled" if not self._data["signalbar_enabled"]
-                else selected if selected in {"artwork", "performance", "customization", "screen_sync"} else "events"
+                else selected if selected in {"artwork", "performance", "customization", "screen_sync", "audio_sync", "blackout"} else "events"
             )
             return {"default": default, "override": override, "selected": selected, "mode": mode}
 
@@ -771,6 +1279,11 @@ class SettingsStore:
         with self._lock:
             if mode == "weather" and self._data["weather_location"] is None:
                 raise ValueError("Choose a weather city before selecting Weather")
+            if self._data.get("display_preset") != "custom":
+                # Per-game routing is part of every preset recipe. Once the
+                # user changes it, the result is an intentional custom setup.
+                self._data["display_preset"] = "custom"
+                self._data["display_preset_restore"] = {}
             profiles = dict(self._data["display_profiles"])
             if mode == "inherit":
                 profiles.pop(str(appid), None)
@@ -794,6 +1307,8 @@ class SettingsStore:
                     mapped["artwork_manual_y"] = changes["manual_y"]
                 if "source" in changes:
                     mapped["artwork_source"] = changes["source"]
+                if "vibrance" in changes:
+                    mapped["artwork_vibrance"] = changes["vibrance"]
                 return self.update(mapped)
 
             profiles = dict(self._data["artwork_profiles"])
@@ -805,6 +1320,8 @@ class SettingsStore:
                 profile["manual_y"] = changes["manual_y"]
             if "source" in changes:
                 profile["source"] = changes["source"]
+            if "vibrance" in changes:
+                profile["vibrance"] = changes["vibrance"]
             profiles[str(appid)] = profile
             self._data["artwork_profiles"] = profiles
             self._validate()

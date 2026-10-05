@@ -25,6 +25,7 @@ from signalbar.providers.controller import ControllerProvider
 from signalbar.providers.audio_sync import ADAPTIVE_STYLES
 from signalbar.providers.weather import WeatherProvider
 from signalbar.renderer import Renderer
+from signalbar.thermal import ThermalProtection, THERMAL_SUSPENSION_MESSAGE
 
 LED_OUTPUT_REFERENCE_BRIGHTNESS = 9
 
@@ -32,9 +33,8 @@ LED_OUTPUT_REFERENCE_BRIGHTNESS = 9
 def apply_automatic_night_brightness(frame, provider, solar_status):
     """Dim ordinary GabeCubeAura output after local sunset.
 
-    Playtime and low-battery warnings remain fully legible. Steam's critical
-    red pattern never reaches this function because GabeCubeAura yields before
-    rendering it.
+    Playtime and low-battery warnings remain fully legible. Thermal protection
+    is enforced before this function or any LED render path can run.
     """
     if (frame is None or not solar_status.get("active")
             or provider == "countdown" or provider.startswith("controller:low")):
@@ -71,6 +71,7 @@ class Engine:
         self.customization = CustomizationProvider()
         self.countdown = CountdownProvider()
         self.performance = PerformanceProvider()
+        self.thermal_protection = ThermalProtection()
         self.screen_sync = ScreenSyncProvider()
         self.audio_sync = AudioSyncProvider()
         self.screen_sync_activation = ScreenSyncActivation()
@@ -292,7 +293,7 @@ class Engine:
             else:
                 self._steam_active_until = 0.0
                 self._steam_reason = ""
-            native_critical = self._native_priority_kind == "critical-red"
+            thermal_active = self.thermal_protection.active
         values = self.settings.all()
         policy = values["valve_ownership_policy"]
         return {
@@ -301,13 +302,13 @@ class Engine:
                 active
                 and values["signalbar_enabled"]
                 and policy == "critical"
-                and not native_critical
+                and not thermal_active
             ),
             "restore_download_animation": bool(
                 active
                 and values["signalbar_enabled"]
                 and policy == "downloads"
-                and not native_critical
+                and not thermal_active
             ),
         }
 
@@ -770,8 +771,8 @@ class Engine:
 
     @staticmethod
     def _native_priority_state(hardware, signature, expected_signature):
-        # Never classify our own last verified frame as a native warning. This
-        # matters for GabeCubeAura's legitimate full-red countdown frames.
+        # Ignore our own verified frame before asking hardware about explicit
+        # native effects. Fixed colours, including red, have no semantics here.
         if expected_signature is not None and signature == expected_signature:
             return "", ""
         detector = getattr(hardware, "native_priority_state", None)
@@ -779,23 +780,43 @@ class Engine:
             return detector(signature)
         detector = getattr(hardware, "native_priority_reason", None)
         reason = detector(signature) if callable(detector) else ""
-        return ("critical-red" if reason == "Valve critical red hardware signal"
-                else "effect" if reason else ""), reason
+        return ("effect" if reason else ""), reason
 
     @staticmethod
     def _resolve_ownership_policy(policy, *, download_active, native_kind,
                                   guard_allows, guard_hard_priority):
         """Resolve semantic Steam signals separately from generic LED churn."""
         policy = policy if policy in {"cooperative", "downloads", "critical"} else "cooperative"
-        critical = native_kind == "critical-red"
         download = bool(download_active and policy in {"cooperative", "downloads"})
         native_effect = bool(native_kind and policy == "cooperative")
         steam_priority = bool(
-            critical or download or native_effect
+            download or native_effect
             or policy == "cooperative" and guard_hard_priority
         )
         ownership_allowed = bool(guard_allows or policy != "cooperative")
         return ownership_allowed, steam_priority
+
+    def _suspend_for_thermal_protection(self, renderer):
+        """Stop every plugin animation and return the physical bar to Valve."""
+        if renderer is not None:
+            renderer.relinquish(restore_if_owned=True)
+        self.screen_sync.set_active(False)
+        self.audio_sync.set_active(False)
+        self.screen_sync_activation.stop_preview()
+        self.customization.stop_preview()
+        self.weather.stop_preview()
+        self.events.clear_transients()
+        self.controllers.clear_transients()
+        self.launch_artwork.cancel()
+        self.event_lease.release()
+        self.stripmine_claim.release()
+        self._light_event_announced_at = 0.0
+        with self._lock:
+            self._owner = "Valve"
+            self._decision = "thermal-protection"
+            self._suspension_reason = THERMAL_SUSPENSION_MESSAGE
+            self._error = ""
+            self._decision_at = time.monotonic()
 
     @staticmethod
     def _restore_before_valve_handoff(*, externally_blocked,
@@ -824,6 +845,16 @@ class Engine:
             # Telemetry must not depend on LED ownership, hardware availability,
             # the chosen display, or whether a Decky panel is open.
             self.performance.refresh(self.settings.all()["performance_smoothing"])
+            thermal_active = self.thermal_protection.update(
+                self.performance.sample, now=time.monotonic(),
+            )
+            if thermal_active:
+                self._suspend_for_thermal_protection(renderer)
+                event_was_active = False
+                event_preempted_valve = False
+                if self._stop.wait(interval):
+                    break
+                continue
             if hardware is None:
                 if time.monotonic() < next_hardware_attempt:
                     self._stop.wait(0.1)
@@ -908,8 +939,7 @@ class Engine:
                 )
                 ownership_policy = values["valve_ownership_policy"]
                 semantic_native_priority = bool(
-                    native_priority_kind == "critical-red"
-                    or ownership_policy == "cooperative" and native_priority_kind
+                    ownership_policy == "cooperative" and native_priority_kind
                 )
                 signature_mismatch = bool(
                     renderer.last_signature is not None
@@ -935,8 +965,8 @@ class Engine:
                     guard_hard_priority=guard.hard_priority,
                 )
                 # Cooperative mode keeps the existing fail-safe handoff. The
-                # two protected modes instead reclaim ordinary Valve writes,
-                # while confirmed downloads and critical red still interrupt.
+                # two protected modes instead reclaim ordinary Valve writes.
+                # Thermal protection is an independent sensor-driven gate.
                 event_interrupted = bool(
                     event_was_active and signature_mismatch
                     and (ownership_policy == "cooperative" or steam_priority)
@@ -1382,6 +1412,7 @@ class Engine:
             values, self._game
         )
         sample = self.performance.sample
+        thermal_status = self.thermal_protection.status(now)
         artwork_settings = self.settings.artwork_for(self._game.appid)
         art = self.artwork.status(
             values["launch_artwork_colour_count"], artwork_settings["vibrance"],
@@ -1680,6 +1711,7 @@ class Engine:
                     "logical_lit": sum(pixel != (0, 0, 0) for pixel in logical_performance),
                     "physical_lit": sum(pixel != (0, 0, 0) for pixel in physical_performance),
                 },
+                "thermal_protection": thermal_status,
                 "artwork": art,
                 "launch_artwork": launch_artwork_status,
                 "countdown": countdown,

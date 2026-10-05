@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import glob
+import math
 import os
 import time
 
@@ -20,6 +21,19 @@ SMOOTHING_PROFILES = {
     "balanced": (0.45, 0.20, 2, 25.0, 16.0),
     "smooth": (0.25, 0.12, 3, 12.5, 8.0),
 }
+
+
+def _coherent_temperature(value):
+    """Reject unavailable, non-finite or physically incoherent sensor data."""
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        clean = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if not math.isfinite(clean) or clean < -40.0 or clean > 150.0:
+        return None
+    return clean
 
 
 def _lerp(left, right, amount):
@@ -285,11 +299,11 @@ class PerformanceProvider:
             gpu_load=self._smooth_load(
                 "gpu", raw.gpu_load, previous.gpu_load, profile, elapsed,
             ),
-            gpu_temp_c=raw.gpu_temp_c,
+            gpu_temp_c=_coherent_temperature(raw.gpu_temp_c),
             cpu_load=self._smooth_load(
                 "cpu", raw.cpu_load, previous.cpu_load, profile, elapsed,
             ),
-            cpu_temp_c=raw.cpu_temp_c,
+            cpu_temp_c=_coherent_temperature(raw.cpu_temp_c),
             sampled_at=raw.sampled_at or now,
         )
 

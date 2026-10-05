@@ -103,9 +103,9 @@ const DISPLAY_PRESET_OPTIONS = [
 
 const DISPLAY_PRESET_DESCRIPTIONS: Record<string, string> = {
   custom: "Your detailed routing and animation settings.",
-  "lights-out": "Hold all 17 LEDs off except for the Steam Families limit and critical red safety pattern.",
-  focus: "Use only Customization+ with the Steam Families limit and critical red safety pattern.",
-  essential: "Stay black except for Steam Families, confirmed downloads and the critical red safety pattern.",
+  "lights-out": "Hold all 17 LEDs off except for the Steam Families limit. Sensor-based thermal protection always remains active.",
+  focus: "Use only Customization+ with the Steam Families limit. Sensor-based thermal protection always remains active.",
+  essential: "Stay black except for Steam Families and confirmed downloads. Sensor-based thermal protection always remains active.",
   moderate: "Customization+ at Home, Artwork in games, Game launches, Light Events, brief controller alerts and Screen Sync during the Steam screensaver.",
   atmosphere: "Slow Prism with the Screen Sync palette at Home, Artwork in games, Game launches, Light Events, brief controller alerts and Screen Sync during the Steam screensaver.",
   signals: "Controller status and continuous charging at Home, CPU/GPU in games, brief controller alerts, Game launches, Light Events and Screen Sync during the Steam screensaver.",
@@ -122,8 +122,8 @@ const VALVE_OWNERSHIP_OPTIONS = [
 
 const VALVE_OWNERSHIP_DESCRIPTIONS: Record<string, string> = {
   cooperative: "Yield to detected Steam or external LED activity. This is the compatibility-first behaviour.",
-  downloads: "Keep GabeCubeAura in control except for confirmed Steam downloads and the critical red safety pattern. A reversible Steam LED manager request holds the native Download mode until each transfer ends.",
-  critical: "Keep GabeCubeAura in control except for the critical red safety pattern. During confirmed downloads, a reversible Steam LED manager override prevents Download mode from starting when this Steam build exposes the required private service.",
+  downloads: "Keep GabeCubeAura in control except for confirmed Steam downloads. A reversible Steam LED manager request holds the native Download mode until each transfer ends. Sensor-based thermal protection is always active.",
+  critical: "Keep GabeCubeAura in control during ordinary Steam LED activity. During confirmed downloads, a reversible Steam LED manager override prevents Download mode from starting when this Steam build exposes the required private service. Sensor-based thermal protection is always active.",
 };
 
 const LED_OUTPUT_CALIBRATION_OPTIONS = [
@@ -1041,7 +1041,7 @@ function WeatherPanel({ status, setStatus }: { status: Status; setStatus: (next:
               ? `Daylight mode. Sunset: ${formatSolarTime(status.night_mode.sunset_at)}.`
               : "Waiting for solar times from Open-Meteo."}
         <div style={{ marginTop: 6, opacity: .76 }}>
-          Ordinary GabeCubeAura output is dimmed after sunset. Playtime warnings and Steam's critical red safety pattern remain fully visible.
+          Ordinary GabeCubeAura output is dimmed after sunset. Playtime warnings remain fully visible, and sensor-based thermal protection stays active.
         </div>
       </div></PanelSectionRow>
     </PanelSection>
@@ -1775,7 +1775,7 @@ function FirstRunSetup({ status, setStatus }: {
   if (step === 2) return <>
     <PanelSection title="Automatic night mode">
       <PanelSectionRow><div style={{ fontSize: ".82em", opacity: .82 }}>
-        GabeCubeAura can reduce ordinary lighting after local sunset and restore it at sunrise. Playtime warnings and Steam's critical red safety pattern stay fully visible.
+        GabeCubeAura can reduce ordinary lighting after local sunset and restore it at sunrise. Playtime warnings stay fully visible, and sensor-based thermal protection remains active.
       </div></PanelSectionRow>
       {location ? <PanelSectionRow><div style={{ width: "100%", fontSize: ".82em" }}>
         <b>{location.name}, {location.country}</b>
@@ -2197,6 +2197,17 @@ function Content({ page = "quick" }: { page?: Page }) {
 
   return (
     <>
+      {status.thermal_protection.active ? <PanelSection title="Thermal protection">
+        <PanelSectionRow>
+          <div style={{ width: "100%", color: "#ffcc66", fontSize: ".88em", lineHeight: 1.45 }}>
+            <b>Désactivé temporairement : protection thermique</b>
+            <div style={{ opacity: .82 }}>
+              Valve controls the light bar until CPU and GPU stay below 90°C for 30 seconds.
+              {status.thermal_protection.recovery_remaining_s == null ? " Waiting for coherent sensor readings." : ` Recovery in ${Math.ceil(status.thermal_protection.recovery_remaining_s)} s.`}
+            </div>
+          </div>
+        </PanelSectionRow>
+      </PanelSection> : null}
       {page === "quick" ? <PanelSection title="Status">
         <PanelSectionRow>
           <div style={{ width: "100%", fontSize: ".88em", lineHeight: 1.45 }}>
@@ -2293,7 +2304,7 @@ function Content({ page = "quick" }: { page?: Page }) {
             rgOptions={VALVE_OWNERSHIP_OPTIONS} selectedOption={status.valve_ownership_policy}
             onChange={async (option) => setStatus(await setSetting("valve_ownership_policy", String(option.data)))} /></PanelSectionRow>
           <PanelSectionRow><div style={{ fontSize: ".76em", opacity: .78 }}>
-            The critical red exception is detected from the physical LED pattern because Steam exposes no public semantic thermal-warning signal. It is a conservative best-effort safeguard, not a guaranteed source identification.
+            Thermal protection reads CPU and GPU temperatures independently of LED colours. At 94°C GabeCubeAura immediately returns the light bar to Valve, then waits for 30 continuous seconds below 90°C. A fixed red colour remains available for ordinary lighting.
           </div></PanelSectionRow>
           <PanelSectionRow><DropdownItem label="Home display"
             description="The permanent display used when no game is running. Temporary alerts and previews may still replace it."

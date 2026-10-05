@@ -285,6 +285,19 @@ export interface Status {
     logical_lit: number;
     physical_lit: number;
   };
+  thermal_protection: {
+    active: boolean;
+    message: string;
+    trip_temperature_c: number;
+    reset_temperature_c: number;
+    reset_hold_seconds: number;
+    recovery_remaining_s: number | null;
+    trigger_sensor: string;
+    triggered_at: number;
+    cpu_temperature: number | null;
+    gpu_temperature: number | null;
+    sensor_state: "waiting" | "unavailable" | "ok" | "hot" | "cooling" | "recovering" | "fail-safe";
+  };
   artwork: { sample_y?: number; filename?: string; colors?: RGB[]; dominant_colors?: RGB[] };
   launch_artwork: {
     active: boolean;
@@ -411,7 +424,7 @@ export interface Status {
     steam_priority_reason: string;
     guard_hard_priority: boolean;
     guard_hard_reason: string;
-    native_priority_kind: "" | "effect" | "critical-red";
+    native_priority_kind: "" | "effect";
     native_priority_reason: string;
     ignored_native_takeovers: number;
     steam_led_override_state: "waiting" | "blocked" | "download" | "inactive" | "unavailable" | "error" | string;

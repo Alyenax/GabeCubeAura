@@ -123,33 +123,16 @@ class ValveLedHardware:
 
         Steam's explicit download lease remains the primary signal. Hardware
         effects provide a local fallback if that private Steam callback is not
-        available. A nearly full fixed red bar is treated conservatively as a
-        critical thermal/system warning even though it is not animated.
+        available. Fixed colours are never interpreted semantically: thermal
+        protection uses CPU/GPU sensors instead of guessing from red pixels.
         """
         controls, pixels = signature
-        effect, enabled, brightness_scale = controls
+        effect, enabled, _brightness_scale = controls
         if str(enabled or "1").strip().lower() in {"0", "false", "off"}:
             return "", ""
         effect = str(effect or "").strip().lower()
         if effect in VALVE_ANIMATED_EFFECTS:
             return "effect", f"Valve {effect} hardware effect"
-        try:
-            if int(str(brightness_scale or "255"), 0) <= 0:
-                return "", ""
-        except ValueError:
-            pass
-
-        critical_red = 0
-        for colour, brightness in pixels:
-            try:
-                red, green, blue = (int(part) for part in str(colour).split())
-                visible = int(str(brightness), 0) > 0
-            except (TypeError, ValueError):
-                continue
-            if visible and red >= 96 and green <= max(24, red // 4) and blue <= max(24, red // 4):
-                critical_red += 1
-        if pixels and critical_red >= max(1, len(pixels) - 2):
-            return "critical-red", "Valve critical red hardware signal"
         return "", ""
 
     @staticmethod

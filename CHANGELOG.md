@@ -1,6 +1,20 @@
 # Changelog
 
-## 1.3.3-lab.1 - LOCAL LAB - 2026-10-05
+## 1.3.3-lab.1 - 2026-10-05
+
+### Thermal safety correction
+
+- Replace the fixed-red colour heuristic with a real CPU/GPU thermal
+  interlock. Either processor reaching 94°C immediately stops GabeCubeAura
+  output and returns complete light-bar control to Valve.
+- Keep GabeCubeAura disabled until both coherent sensor readings remain
+  strictly below 90°C for 30 continuous seconds. A missing, stale, non-finite
+  or implausible reading during an active alert resets recovery and keeps Valve
+  in control.
+- Restore fixed red as an ordinary usable colour. LED colour is no longer
+  treated as evidence of a thermal alert.
+- Display `Désactivé temporairement : protection thermique` in the quick panel
+  while the thermal interlock is active.
 
 ### New features
 
@@ -13,8 +27,8 @@
 - Add an optional automatic night mode driven by sunrise and sunset for the
   exact Weather location selected by the user. No IP-based location is used.
 - Add a 10% to 100% night brightness control. Ordinary GabeCubeAura frames are
-  reduced after sunset and restored after sunrise, while playtime warnings and
-  Steam's critical red safety pattern remain fully visible.
+  reduced after sunset and restored after sunrise, while playtime warnings
+  remain fully visible and thermal protection stays active.
 
 ### Lab fixes and safeguards
 

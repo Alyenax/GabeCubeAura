@@ -25,6 +25,10 @@ from signalbar.providers.artwork import artwork_vibrance
 from signalbar.renderer import Renderer
 from signalbar.settings import SettingsStore
 from signalbar.steam import find_library_artwork, get_library_artwork
+from signalbar.thermal import (
+    THERMAL_SUSPENSION_MESSAGE,
+    ThermalProtection,
+)
 
 
 BLACK = normalize_frame([(0, 0, 0)] * 17)
@@ -81,7 +85,7 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(Engine._stripmine_priority("none", values), "stripmine")
         self.assertEqual(Engine._stripmine_priority("valve", values), "stripmine")
 
-    def test_own_verified_red_frame_is_not_a_native_thermal_warning(self):
+    def test_fixed_red_is_not_a_native_priority_signal(self):
         red_signature = (
             ("manual", "1", "56"),
             tuple(("255 0 0", "255") for _ in range(17)),
@@ -94,15 +98,15 @@ class CoreTests(unittest.TestCase):
         )
         self.assertEqual(
             Engine._native_priority_state(ValveLedHardware, red_signature, None),
-            ("critical-red", "Valve critical red hardware signal"),
+            ("", ""),
         )
 
-    def test_native_priority_state_distinguishes_effect_and_critical_red(self):
+    def test_native_priority_state_only_recognizes_explicit_effects(self):
         effect = (("rainbow", "1", "255"), tuple(("0 0 0", "255") for _ in range(17)))
-        critical = (("manual", "1", "255"), tuple(("255 8 4", "255") for _ in range(17)))
+        red = (("manual", "1", "255"), tuple(("255 8 4", "255") for _ in range(17)))
         ordinary = (("manual", "1", "255"), tuple(("0 64 255", "255") for _ in range(17)))
         self.assertEqual(ValveLedHardware.native_priority_state(effect)[0], "effect")
-        self.assertEqual(ValveLedHardware.native_priority_state(critical)[0], "critical-red")
+        self.assertEqual(ValveLedHardware.native_priority_state(red), ("", ""))
         self.assertEqual(ValveLedHardware.native_priority_state(ordinary), ("", ""))
 
     def test_ownership_policies_preserve_only_the_requested_valve_layers(self):
@@ -124,9 +128,9 @@ class CoreTests(unittest.TestCase):
             guard_allows=False, guard_hard_priority=True,
         ), (True, False))
         self.assertEqual(resolve(
-            "critical", download_active=False, native_kind="critical-red",
+            "critical", download_active=False, native_kind="effect",
             guard_allows=False, guard_hard_priority=False,
-        ), (True, True))
+        ), (True, False))
 
     def test_download_handoff_restores_native_hardware_mode_if_still_owned(self):
         restore = Engine._restore_before_valve_handoff
@@ -157,11 +161,13 @@ class CoreTests(unittest.TestCase):
             self.assertTrue(decision["suppress_download_animation"])
             self.assertFalse(decision["restore_download_animation"])
 
-            engine._native_priority_kind = "critical-red"
-            critical = engine.set_steam_activity(True)
-            self.assertFalse(critical["suppress_download_animation"])
-            self.assertFalse(critical["restore_download_animation"])
-            engine._native_priority_kind = ""
+            engine.thermal_protection.update(PerformanceSample(
+                cpu_temp_c=94.0, gpu_temp_c=60.0, sampled_at=1.0,
+            ), now=1.0)
+            thermal = engine.set_steam_activity(True)
+            self.assertFalse(thermal["suppress_download_animation"])
+            self.assertFalse(thermal["restore_download_animation"])
+            engine.thermal_protection = ThermalProtection()
             store.update({"valve_ownership_policy": "downloads"})
             downloads = engine.set_steam_activity(True)
             self.assertFalse(downloads["suppress_download_animation"])
@@ -1171,7 +1177,7 @@ class PersistenceTests(unittest.TestCase):
             self.assertTrue(restarted.calibration_status()["startup_recovered"])
             self.assertFalse(recovery.exists())
 
-    def test_native_valve_animation_and_critical_red_keep_hard_priority(self):
+    def test_native_valve_animation_has_priority_but_fixed_red_does_not(self):
         normal = (
             ("normal", "1", "56"),
             tuple(("0 0 255", "255") for _ in range(17)),
@@ -1187,23 +1193,128 @@ class PersistenceTests(unittest.TestCase):
             "Valve patrol hardware effect",
         )
 
-        thermal_warning = (
+        fixed_red = (
             ("normal", "1", "56"),
             tuple(("255 0 0", "255") for _ in range(17)),
         )
-        self.assertEqual(
-            ValveLedHardware.native_priority_reason(thermal_warning),
-            "Valve critical red hardware signal",
-        )
+        self.assertEqual(ValveLedHardware.native_priority_reason(fixed_red), "")
 
-        # A Witcher-style half red vitality meter must not be mistaken for a
-        # full-bar native thermal warning.
+        # A Witcher-style half red vitality meter remains ordinary LED output.
         partial_red = (
             ("normal", "1", "56"),
             tuple(("255 0 0", "255") if index < 8 else ("0 0 0", "255")
                   for index in range(17)),
         )
         self.assertEqual(ValveLedHardware.native_priority_reason(partial_red), "")
+
+    def test_thermal_protection_trips_at_exact_threshold_not_93_9(self):
+        clock = ManualClock(100)
+        protection = ThermalProtection(clock=clock)
+        self.assertFalse(protection.update(PerformanceSample(
+            cpu_temp_c=93.9, gpu_temp_c=70.0, sampled_at=100,
+        )))
+        self.assertTrue(protection.update(PerformanceSample(
+            cpu_temp_c=94.0, gpu_temp_c=70.0, sampled_at=100,
+        )))
+        self.assertTrue(protection.status()["active"])
+        self.assertEqual(protection.status()["trigger_sensor"], "CPU")
+
+    def test_thermal_protection_trips_from_gpu_alone_or_cpu_alone(self):
+        gpu = ThermalProtection(clock=ManualClock(100))
+        self.assertTrue(gpu.update(PerformanceSample(
+            gpu_temp_c=94.0, sampled_at=100,
+        )))
+        self.assertEqual(gpu.status()["trigger_sensor"], "GPU")
+
+        cpu = ThermalProtection(clock=ManualClock(100))
+        self.assertTrue(cpu.update(PerformanceSample(
+            cpu_temp_c=94.0, sampled_at=100,
+        )))
+        self.assertEqual(cpu.status()["trigger_sensor"], "CPU")
+
+    def test_thermal_recovery_requires_30_seconds_strictly_below_90(self):
+        clock = ManualClock(100)
+        protection = ThermalProtection(clock=clock)
+        self.assertTrue(protection.update(PerformanceSample(
+            cpu_temp_c=94.0, gpu_temp_c=70.0, sampled_at=100,
+        )))
+        clock.advance(1)
+        self.assertTrue(protection.update(PerformanceSample(
+            cpu_temp_c=90.0, gpu_temp_c=70.0, sampled_at=101,
+        )))
+        self.assertIsNone(protection.status()["recovery_remaining_s"])
+
+        clock.advance(1)
+        self.assertTrue(protection.update(PerformanceSample(
+            cpu_temp_c=89.9, gpu_temp_c=70.0, sampled_at=102,
+        )))
+        clock.advance(29)
+        self.assertTrue(protection.update(PerformanceSample(
+            cpu_temp_c=89.9, gpu_temp_c=70.0, sampled_at=131,
+        )))
+        clock.advance(1)
+        self.assertFalse(protection.update(PerformanceSample(
+            cpu_temp_c=89.9, gpu_temp_c=70.0, sampled_at=132,
+        )))
+
+    def test_thermal_recovery_is_fail_safe_for_incoherent_sensor(self):
+        clock = ManualClock(100)
+        protection = ThermalProtection(clock=clock)
+        protection.update(PerformanceSample(
+            cpu_temp_c=94.0, gpu_temp_c=70.0, sampled_at=100,
+        ))
+        clock.advance(1)
+        protection.update(PerformanceSample(
+            cpu_temp_c=80.0, gpu_temp_c=70.0, sampled_at=101,
+        ))
+        clock.advance(20)
+        self.assertTrue(protection.update(PerformanceSample(
+            cpu_temp_c=None, gpu_temp_c=70.0, sampled_at=121,
+        )))
+        self.assertEqual(protection.status()["sensor_state"], "fail-safe")
+        self.assertIsNone(protection.status()["recovery_remaining_s"])
+        clock.advance(1)
+        protection.update(PerformanceSample(
+            cpu_temp_c=80.0, gpu_temp_c=70.0, sampled_at=122,
+        ))
+        clock.advance(20)
+        self.assertTrue(protection.update(PerformanceSample(
+            cpu_temp_c=float("nan"), gpu_temp_c=70.0, sampled_at=142,
+        )))
+        self.assertEqual(protection.status()["sensor_state"], "fail-safe")
+        self.assertIsNone(protection.status()["recovery_remaining_s"])
+        clock.advance(30)
+        self.assertTrue(protection.update(PerformanceSample(
+            cpu_temp_c=80.0, gpu_temp_c=70.0, sampled_at=172,
+        )))
+        clock.advance(30)
+        self.assertFalse(protection.update(PerformanceSample(
+            cpu_temp_c=80.0, gpu_temp_c=70.0, sampled_at=202,
+        )))
+
+    def test_thermal_handoff_restores_valve_and_stops_future_writes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = SettingsStore(str(Path(directory) / "config.json"))
+            engine = Engine(store, str(Path(directory) / "art.json"))
+            clock = ManualClock(100)
+            hardware = FakeHardware()
+            renderer = Renderer(hardware, clock=clock)
+            self.assertTrue(renderer.render(RED))
+            self.assertEqual(hardware.frame, RED)
+
+            engine.thermal_protection.update(PerformanceSample(
+                cpu_temp_c=94.0, gpu_temp_c=70.0, sampled_at=100,
+            ), now=100)
+            engine._suspend_for_thermal_protection(renderer)
+            writes_after_handoff = len(hardware.write_calls)
+            self.assertEqual(hardware.frame, BLACK)
+            self.assertIsNone(renderer.last_frame)
+            self.assertEqual(engine._owner, "Valve")
+            self.assertEqual(engine._decision, "thermal-protection")
+            self.assertEqual(engine._suspension_reason, THERMAL_SUSPENSION_MESSAGE)
+
+            engine._suspend_for_thermal_protection(renderer)
+            self.assertEqual(len(hardware.write_calls), writes_after_handoff)
 
 
 if __name__ == "__main__":

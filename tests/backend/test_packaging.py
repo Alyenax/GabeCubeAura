@@ -72,6 +72,9 @@ class PackagingTests(unittest.TestCase):
         self.assertIn('{ data: "steam", label: "GabeCubeAura Off" }', panel)
         self.assertIn('{ data: "blackout", label: "Blackout (held off)" }', panel)
         self.assertIn('label="Lighting preset"', panel)
+        self.assertLess(panel.index('{ data: "lights-out", label: "Lights out" }'), panel.index('{ data: "essential", label: "Essential" }'))
+        self.assertLess(panel.index('{ data: "essential", label: "Essential" }'), panel.index('{ data: "focus", label: "Focus" }'))
+        self.assertIn('<b>Even Valve download animations are excluded.</b>', panel)
         self.assertIn('function FirstRunSetupRoute()', panel)
         self.assertIn('label="Open guided setup"', panel)
         self.assertIn('Navigation.Navigate("/gabecubeaura/setup")', panel)
@@ -92,6 +95,13 @@ class PackagingTests(unittest.TestCase):
         self.assertIn('label="Night brightness"', panel)
         self.assertIn('label="Steam ownership"', panel)
         self.assertEqual(panel.count('<LightBarBrightness status={status} setStatus={setStatus} />'), 1)
+        self.assertGreater(
+            panel.index('<LightBarBrightness status={status} setStatus={setStatus} />'),
+            panel.index('title="Current game override"'),
+        )
+        self.assertIn('Below 8/255, the lighting experience may be strongly affected.', panel)
+        for preset in ('moderate', 'atmosphere', 'signals', 'immersive'):
+            self.assertIn(f'{{ data: "{preset}"', panel)
         self.assertNotIn('Open light bar calibration', panel)
         self.assertNotIn('Use consistent output', panel)
         self.assertIn('LED_OUTPUT_REFERENCE_BRIGHTNESS = 9', engine)

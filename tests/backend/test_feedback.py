@@ -295,3 +295,34 @@ class FeedbackTests(unittest.TestCase):
                     self.assertIn((appid, mode), seen)
             finally:
                 engine.stop()
+
+    def test_atmosphere_uses_audio_sync_until_home_weather_is_available(self):
+        class Hardware:
+            device_path = "/fake/valve-leds"
+            reverse = False
+            frame = normalize_frame([(0, 0, 0)] * 17)
+            def set_reverse(self, value): self.reverse = value
+            def read_frame(self): return self.frame
+            def read_signature(self): return self.frame
+            def write_frame(self, value): self.frame = value
+            def try_restore(self, value): self.frame = value
+
+        with tempfile.TemporaryDirectory() as folder:
+            settings = SettingsStore(str(Path(folder) / "settings.json"))
+            settings.update({"display_preset": "atmosphere"})
+            engine = Engine(settings, str(Path(folder) / "cache"), hardware_factory=Hardware)
+            modes = []
+            choose = engine.arbiter.choose
+            def record(**kwargs):
+                modes.append(kwargs["mode"])
+                return choose(**kwargs)
+            engine.arbiter.choose = record
+            engine.start()
+            try:
+                deadline = time.monotonic() + 2
+                while "audio_sync" not in modes and time.monotonic() < deadline:
+                    time.sleep(.02)
+                self.assertIn("audio_sync", modes)
+                self.assertEqual(engine.status()["current_display"], "weather")
+            finally:
+                engine.stop()

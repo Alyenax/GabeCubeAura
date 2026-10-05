@@ -141,9 +141,12 @@ a particular permanent display. Choosing GabeCubeAura Off reproduces the former
 Signals-only behaviour: GabeCubeAura yields the bar between temporary signals.
 Blackout instead keeps ownership and holds all 17 LEDs off.
 
-Nine one-step presets configure a complete setup: Lights out, Focus, Essential,
+Nine one-step presets configure a complete setup: Lights out, Essential, Focus,
 Moderate, Atmosphere, Signals, Immersive, Immersive+ and Festive. Returning to
 Custom restores the setup saved before the first preset was selected.
+Lights out also excludes Valve's download animation; Essential lets Valve show
+confirmed downloads. Atmosphere uses Weather at Home and falls back to its
+Slow Prism display until a current weather frame is available.
 
 StripMine is developed by the same author as GabeCubeAura. With StripMine
 v0.1.1-alpha.7 or newer, open **Settings > Advanced / debug > Compatibility** to

@@ -449,7 +449,7 @@ class Engine:
         return self.customization.preview_brightness(mode, 3.0)
 
     def preview_display_preset(self, preset, seconds=10.0):
-        if preset not in {"essential", "atmosphere", "immersive", "immersive-plus"}:
+        if preset not in {"moderate", "atmosphere", "signals", "immersive"}:
             return False
         with self._lock:
             self._display_preset_preview = preset
@@ -941,6 +941,7 @@ class Engine:
                 display = self.settings.display_for(game.appid)
                 if preview_preset:
                     values.update(DISPLAY_PRESET_RECIPES[preview_preset])
+                    values["display_preset"] = preview_preset
                     selected_preview = values[
                         "game_display" if game.running else "home_display"
                     ]
@@ -975,6 +976,7 @@ class Engine:
                 provider_values["weather_display"] = (
                     "everywhere" if current_display == "weather" else "off"
                 )
+                weather_base = self.weather.output(provider_values, game.running, now)
                 signature = hardware.read_signature()
                 stability_signature = getattr(hardware, "stability_signature", None)
                 stability_signature = (
@@ -1076,9 +1078,15 @@ class Engine:
                     enabled=values["signalbar_enabled"],
                 )
                 screen_sync_requested = bool(activation_reason)
-                audio_sync_route = (
-                    values["mode"] == "audio_sync"
-                    and current_display == "audio_sync"
+                atmosphere_weather_fallback = bool(
+                    values.get("display_preset") == "atmosphere"
+                    and not game.running
+                    and current_display == "weather"
+                    and weather_base.frame is None
+                )
+                audio_sync_route = bool(
+                    values["mode"] == "audio_sync" and current_display == "audio_sync"
+                    or atmosphere_weather_fallback
                 )
                 # A Steam screensaver request is a hard mode handoff. Stop the
                 # audio reader as well as its LED output so Screen Sync owns the
@@ -1173,8 +1181,16 @@ class Engine:
                     self.launch_artwork.cancel()
                 event = self.events.output()
                 controller_event = self.controllers.event_output()
+                if preview_preset == "signals" and controller_event.frame is None:
+                    # Keep the onboarding preview visibly representative even
+                    # before a controller has been paired. This reuses the
+                    # real two-controller animation and physical render path.
+                    self.controllers.preview(
+                        "duo", values, values.get("controller_duo_variant", "double-welcome"),
+                        count=2, target=1,
+                    )
+                    controller_event = self.controllers.event_output()
                 controller_base = self.controllers.persistent_output(provider_values, game.running)
-                weather_base = self.weather.output(provider_values, game.running, now)
                 screen_sync_ownership_allowed = (
                     not stripmine_active
                     or values["stripmine_priority_screen_sync"] == "signalbar"

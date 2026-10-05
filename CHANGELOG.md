@@ -1,5 +1,34 @@
 # Changelog
 
+## 1.3.3-lab.4 - 2026-10-05
+
+### NEW FEATURE — Weather-first Atmosphere
+
+- Make Weather the Home display for Atmosphere. If no city, network result or
+  fresh weather frame is available, the same preset automatically falls back
+  to its previous Slow Prism with Screen Sync colours.
+- Keep the real Audio Sync fallback warm only while Weather is unavailable;
+  a valid Weather frame resumes priority automatically.
+
+### Onboarding improvements
+
+- Replace Essential and Immersive+ in the visual first-run selection with the
+  more demonstrative Moderate and Signals presets. The four choices are now
+  Moderate, Atmosphere, Signals and Immersive.
+- Keep Signals visually useful before pairing a controller by replaying its
+  real two-controller animation through the same backend and physical bar.
+- Add a red warning below `8/255` explaining that such a low Day brightness can
+  strongly affect the lighting experience.
+
+### Display routing cleanup
+
+- Put presets in the requested order: Lights out, Essential, Focus, Moderate,
+  Atmosphere, Signals, Immersive, Immersive+, Festive, then Custom.
+- State clearly and in bold that Lights out excludes even Valve's download
+  animation, while Essential continues to hand confirmed downloads to Valve.
+- Move Light bar brightness to the final settings section of Display routing,
+  after the optional current-game override.
+
 ## 1.3.3-lab.3 - 2026-10-05
 
 ### NEW FEATURE — One brightness control for the whole light bar

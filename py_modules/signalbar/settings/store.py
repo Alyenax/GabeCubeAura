@@ -342,7 +342,7 @@ DISPLAY_PRESET_RECIPES = {
     },
     "atmosphere": {
         "signalbar_enabled": True,
-        "home_display": "audio_sync",
+        "home_display": "weather",
         "game_display": "artwork",
         "display_profiles": {},
         "valve_ownership_policy": "downloads",
@@ -906,7 +906,11 @@ class SettingsStore:
         if self._data["weather_location"] is None:
             self._data["night_mode_enabled"] = False
         if self._data["weather_location"] is None:
-            if self._data["home_display"] == "weather":
+            # Atmosphere intentionally keeps Weather as its Home route without
+            # a city so the engine can use the recipe's former Slow Prism Home
+            # display as a real fallback until Weather becomes available.
+            if (self._data["home_display"] == "weather"
+                    and self._data.get("display_preset") != "atmosphere"):
                 self._data["home_display"] = "steam"
             if self._data["game_display"] == "weather":
                 self._data["game_display"] = "steam"

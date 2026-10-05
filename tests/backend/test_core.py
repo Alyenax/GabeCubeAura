@@ -582,7 +582,7 @@ class PersistenceTests(unittest.TestCase):
                 "focus": ("customization", "customization", False, False, False, "off", "off", False, False, False, "critical"),
                 "essential": ("blackout", "blackout", False, False, False, "off", "off", False, False, False, "downloads"),
                 "moderate": ("customization", "artwork", True, True, True, "both", "brief", True, True, True, "downloads"),
-                "atmosphere": ("audio_sync", "artwork", True, True, True, "both", "brief", True, True, True, "downloads"),
+                "atmosphere": ("weather", "artwork", True, True, True, "both", "brief", True, True, True, "downloads"),
                 "signals": ("controller", "performance", True, True, True, "both", "continuous-home", True, True, True, "downloads"),
                 "immersive": ("audio_sync", "screen_sync", True, True, True, "both", "brief", True, True, True, "downloads"),
                 "immersive-plus": ("audio_sync", "audio_sync", True, True, True, "both", "brief", True, True, True, "downloads"),
@@ -663,6 +663,15 @@ class PersistenceTests(unittest.TestCase):
             self.assertEqual(values["display_preset"], "immersive")
             self.assertEqual(values["home_display"], "audio_sync")
             self.assertEqual(values["game_display"], "screen_sync")
+
+    def test_atmosphere_keeps_weather_home_without_a_city_for_audio_fallback(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = SettingsStore(str(Path(directory) / "config.json"))
+            values = store.update({"display_preset": "atmosphere"})
+            self.assertEqual(values["display_preset"], "atmosphere")
+            self.assertEqual(values["home_display"], "weather")
+            self.assertEqual(values["weather_display"], "home")
+            self.assertIsNone(values["weather_location"])
 
     def test_blackout_and_ownership_values_are_validated(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -91,25 +91,25 @@ const GAME_DISPLAY_OPTIONS: { data: GameDisplay; label: string }[] = [
 ];
 
 const DISPLAY_PRESET_OPTIONS = [
-  { data: "custom", label: "Custom" },
   { data: "lights-out", label: "Lights out" },
-  { data: "focus", label: "Focus" },
   { data: "essential", label: "Essential" },
+  { data: "focus", label: "Focus" },
   { data: "moderate", label: "Moderate" },
   { data: "atmosphere", label: "Atmosphere" },
   { data: "signals", label: "Signals" },
   { data: "immersive", label: "Immersive" },
   { data: "immersive-plus", label: "Immersive+" },
   { data: "festive", label: "Festive" },
+  { data: "custom", label: "Custom" },
 ];
 
 const DISPLAY_PRESET_DESCRIPTIONS: Record<string, string> = {
   custom: "Your detailed routing and animation settings.",
-  "lights-out": "Hold all 17 LEDs off except for the Steam Families limit. Sensor-based thermal protection always remains active.",
+  "lights-out": "All LEDs stay off except Steam Families. Even Valve download animations are excluded.",
   focus: "Use only Customization+ with the Steam Families limit. Sensor-based thermal protection always remains active.",
   essential: "Stay black except for Steam Families and confirmed downloads. Sensor-based thermal protection always remains active.",
   moderate: "Customization+ at Home, Artwork in games, Game launches, Light Events, brief controller alerts and Screen Sync during the Steam screensaver.",
-  atmosphere: "Slow Prism with the Screen Sync palette at Home, Artwork in games, Game launches, Light Events, brief controller alerts and Screen Sync during the Steam screensaver.",
+  atmosphere: "Weather at Home, falling back to Slow Prism; Artwork in games, plus alerts and launches.",
   signals: "Controller status and continuous charging at Home, CPU/GPU in games, brief controller alerts, Game launches, Light Events and Screen Sync during the Steam screensaver.",
   immersive: "Slow Prism with the Sapphire palette at Home, Screen Sync in games, Game launches, Light Events, brief controller alerts and Screen Sync during the Steam screensaver.",
   "immersive-plus": "Slow Prism with the Screen Sync palette at Home and in games, plus Game launches, Light Events, brief controller alerts and Screen Sync during the Steam screensaver.",
@@ -1682,10 +1682,10 @@ function SettingsPageEnd({ page, setStatus }: {
 }
 
 const ONBOARDING_PRESETS: { data: DisplayPreset; label: string; detail: string; colors: RGB[] }[] = [
-  { data: "essential", label: "Essential", detail: "Dark by default. Keep downloads and important signals.", colors: [[0, 0, 0], [0, 0, 0], [0, 0, 0]] },
-  { data: "atmosphere", label: "Atmosphere", detail: "Gentle Audio Sync at Home and Artwork in games.", colors: [[11, 94, 142], [8, 127, 191], [26, 159, 255]] },
+  { data: "moderate", label: "Moderate", detail: "Customization+ at Home and Artwork in games.", colors: [[255, 153, 10], [0, 200, 255], [180, 48, 255]] },
+  { data: "atmosphere", label: "Atmosphere", detail: "Weather at Home, Slow Prism fallback; Artwork in games.", colors: [[60, 135, 220], [190, 220, 255], [255, 205, 90]] },
+  { data: "signals", label: "Signals", detail: "Controller status at Home and performance in games.", colors: [[0, 180, 45], [230, 110, 0], [220, 12, 24]] },
   { data: "immersive", label: "Immersive", detail: "Audio Sync at Home and Screen Sync in games.", colors: [[20, 65, 105], [35, 115, 175], [80, 185, 220]] },
-  { data: "immersive-plus", label: "Immersive+", detail: "Slow Prism with Screen Sync colours everywhere.", colors: [[11, 94, 142], [8, 127, 191], [106, 92, 210], [26, 159, 255]] },
 ];
 
 function onboardingPreview(colors: RGB[]): RGB[] {
@@ -1771,7 +1771,7 @@ function FirstRunSetup({ status, setStatus, onClose }: {
   onClose: () => void;
 }) {
   const [step, setStep] = useState(1);
-  const [preset, setPreset] = useState<DisplayPreset>("immersive-plus");
+  const [preset, setPreset] = useState<DisplayPreset>("immersive");
   const [location, setLocation] = useState<WeatherLocation | null>(status.weather_location);
   const [nightEnabled, setNightEnabled] = useState(Boolean(status.weather_location));
   const [dayBrightness, setDayBrightness] = useState(status.light_bar_day_brightness || 9);
@@ -1907,6 +1907,10 @@ function FirstRunSetup({ status, setStatus, onClose }: {
     <SliderField label="Day brightness" value={dayBrightness} min={1} max={255} step={1} showValue valueSuffix=" / 255"
       onChange={(value) => { setDayBrightness(value); void previewBrightness("day", "light_bar_day_brightness", value); }} />
     <div style={{ margin: "8px 0 18px", fontSize: ".8em", opacity: .7 }}>Recommended starting value: 9/255. The real bar previews every change immediately.</div>
+    {dayBrightness < 8 ? <div style={{ margin: "0 0 18px", padding: "11px 14px", borderRadius: 10,
+      color: "#ff8f8f", background: "rgba(190, 32, 42, .16)", border: "1px solid rgba(255, 92, 102, .52)", fontWeight: 700 }}>
+      Below 8/255, the lighting experience may be strongly affected.
+    </div> : null}
     <ToggleField label="Dim automatically after sunset"
       description="Use a chosen city's exact solar times. No IP geolocation."
       checked={nightEnabled} onChange={setNightEnabled} />
@@ -2486,14 +2490,15 @@ function Content({ page = "quick" }: { page?: Page }) {
             checked={status.signalbar_enabled}
             onChange={async (value) => setStatus(await setSetting("signalbar_enabled", value))} /></PanelSectionRow>
           <PanelSectionRow><DropdownItem label="Lighting preset"
-            description={DISPLAY_PRESET_DESCRIPTIONS[status.display_preset] ?? DISPLAY_PRESET_DESCRIPTIONS.custom}
+            description={status.display_preset === "lights-out"
+              ? <>All LEDs stay off except Steam Families. <b>Even Valve download animations are excluded.</b></>
+              : DISPLAY_PRESET_DESCRIPTIONS[status.display_preset] ?? DISPLAY_PRESET_DESCRIPTIONS.custom}
             rgOptions={DISPLAY_PRESET_OPTIONS} selectedOption={status.display_preset}
             onChange={(option) => void applyDisplayPreset(String(option.data))} /></PanelSectionRow>
           {routingMessage ? <PanelSectionRow><div style={{ fontSize: ".78em", color: "#ffd27a" }}>
             {routingMessage}
           </div></PanelSectionRow> : null}
         </PanelSection>
-        <LightBarBrightness status={status} setStatus={setStatus} />
         <PanelSection title="Display routing">
           <PanelSectionRow><DropdownItem label="Steam ownership"
             description={VALVE_OWNERSHIP_DESCRIPTIONS[status.valve_ownership_policy] ?? VALVE_OWNERSHIP_DESCRIPTIONS.cooperative}
@@ -2521,6 +2526,7 @@ function Content({ page = "quick" }: { page?: Page }) {
             selectedOption={status.display_override}
             onChange={async (option) => setStatus(await setGameDisplay(status.game.appid, String(option.data)))} /></PanelSectionRow>
         </PanelSection> : null}
+        <LightBarBrightness status={status} setStatus={setStatus} />
       </> : null}
 
       {showPage("customization") ? <CustomizationPanel status={status} setStatus={setStatus} /> : null}

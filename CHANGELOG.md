@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.3.3-lab.8 - 2026-10-05
+
+### Skip setup correction
+
+- Make `Skip guided setup · Keep recommended defaults` apply the actual
+  recommended configuration before closing: Immersive and Day brightness
+  `9/255`.
+- Keep Valve handoffs unchanged. Whenever GabeCubeAura intentionally yields
+  the bar, the exact saved Steam brightness is still restored.
+
 ## 1.3.3-lab.7 - 2026-10-05
 
 ### Immersive onboarding preview

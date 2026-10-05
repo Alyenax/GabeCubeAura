@@ -1700,6 +1700,8 @@ const ONBOARDING_PRESETS: { data: DisplayPreset; label: string; detail: string; 
   { data: "signals", label: "Signals", detail: "Controller status at Home and performance in games.", colors: [[0, 180, 45], [230, 110, 0], [220, 12, 24]] },
   { data: "immersive", label: "Immersive", detail: "Audio Sync at Home and Screen Sync in games.", colors: [[20, 65, 105], [35, 115, 175], [80, 185, 220]] },
 ];
+const RECOMMENDED_ONBOARDING_PRESET: DisplayPreset = "immersive";
+const RECOMMENDED_DAY_BRIGHTNESS = 9;
 
 function onboardingPreview(colors: RGB[]): RGB[] {
   if (!colors.length) return Array.from({ length: 17 }, () => [0, 0, 0] as RGB);
@@ -1820,10 +1822,10 @@ function FirstRunSetup({ status, setStatus, onClose }: {
   onClose: () => void;
 }) {
   const [step, setStep] = useState(1);
-  const [preset, setPreset] = useState<DisplayPreset>("immersive");
+  const [preset, setPreset] = useState<DisplayPreset>(RECOMMENDED_ONBOARDING_PRESET);
   const [location, setLocation] = useState<WeatherLocation | null>(status.weather_location);
   const [nightEnabled, setNightEnabled] = useState(Boolean(status.weather_location));
-  const [dayBrightness, setDayBrightness] = useState(status.light_bar_day_brightness || 9);
+  const [dayBrightness, setDayBrightness] = useState(status.light_bar_day_brightness || RECOMMENDED_DAY_BRIGHTNESS);
   const [nightBrightness, setNightBrightness] = useState(status.night_mode_brightness || 35);
   const [cityQuery, setCityQuery] = useState("");
   const [countryQuery, setCountryQuery] = useState("");
@@ -1912,9 +1914,12 @@ function FirstRunSetup({ status, setStatus, onClose }: {
   const skip = async () => {
     setSaving(true);
     try {
+      let next = await setSetting("display_preset", RECOMMENDED_ONBOARDING_PRESET);
+      next = await setSetting("light_bar_day_brightness", RECOMMENDED_DAY_BRIGHTNESS);
       await disconnectPrivateUpdateAuthorization();
       await setUpdatePreferences(true, true, 1440, "stable");
-      setStatus(await setSetting("onboarding_completed", true));
+      next = await setSetting("onboarding_completed", true);
+      setStatus(next);
       onClose();
     } catch (error) {
       setMessage(`Setup could not be closed: ${String(error)}`);

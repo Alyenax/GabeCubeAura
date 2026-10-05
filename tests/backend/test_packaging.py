@@ -87,6 +87,15 @@ class PackagingTests(unittest.TestCase):
             panel.index('Navigation.CloseSideMenus()', setup_navigation),
         )
         self.assertIn('setSetting("onboarding_completed", true)', panel)
+        skip_start = panel.index('const skip = async () => {')
+        skip_end = panel.index('if (step === 1)', skip_start)
+        skip_body = panel[skip_start:skip_end]
+        self.assertIn('setSetting("display_preset", RECOMMENDED_ONBOARDING_PRESET)', skip_body)
+        self.assertIn('setSetting("light_bar_day_brightness", RECOMMENDED_DAY_BRIGHTNESS)', skip_body)
+        self.assertLess(
+            skip_body.index('setSetting("light_bar_day_brightness", RECOMMENDED_DAY_BRIGHTNESS)'),
+            skip_body.index('setSetting("onboarding_completed", true)'),
+        )
         self.assertIn('synthetic Audio Sync and Screen Sync demo', panel)
         self.assertIn('status.display_preset_preview.colors.length', panel)
         self.assertIn('setUpdatePreferences(true, true, 1440, "stable")', panel)

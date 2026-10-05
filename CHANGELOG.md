@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.3.3-lab.5 - 2026-10-05
+
+### Advanced settings cleanup
+
+- Hide TW3-SteamRGB compatibility, StripMine ownership coordination and every
+  `Priority while StripMine is active` choice behind one collapsed toggle.
+- Keep every compatibility setting and live status unchanged when the controls
+  are expanded. The new toggle only reduces clutter and is not persisted.
+
 ## 1.3.3-lab.4 - 2026-10-05
 
 ### NEW FEATURE — Weather-first Atmosphere

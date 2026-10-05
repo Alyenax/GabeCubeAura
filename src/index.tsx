@@ -1574,6 +1574,7 @@ function AudioSyncPanel({ status, setStatus }: { status: Status; setStatus: (nex
 }
 
 function CompatibilityPanel({ status, setStatus }: { status: Status; setStatus: (next: Status) => void }) {
+  const [showCompatibilityControls, setShowCompatibilityControls] = useState(false);
   const priorities = ([
     ["Artwork", "stripmine_priority_artwork", "The sampled game artwork display."],
     ["Performance", "stripmine_priority_performance", "CPU, GPU and mixed performance displays."],
@@ -1586,6 +1587,17 @@ function CompatibilityPanel({ status, setStatus }: { status: Status; setStatus: 
     ["Light Events", "stripmine_priority_light_events", "Notifications, achievements, screenshots and recording cues."],
   ] as const);
   return <>
+    <PanelSection title="Plugin compatibility">
+      <PanelSectionRow>
+        <ToggleField
+          label="Show TW3-SteamRGB and StripMine controls"
+          description="Reveal external ownership coordination and per-display StripMine priorities."
+          checked={showCompatibilityControls}
+          onChange={setShowCompatibilityControls}
+        />
+      </PanelSectionRow>
+    </PanelSection>
+    {showCompatibilityControls ? <>
     <PanelSection title="TW3-SteamRGB compatibility">
       <PanelSectionRow>
         <ToggleField
@@ -1646,6 +1658,7 @@ function CompatibilityPanel({ status, setStatus }: { status: Status; setStatus: 
         </div>
       </PanelSectionRow>
     </PanelSection>
+    </> : null}
   </>;
 }
 

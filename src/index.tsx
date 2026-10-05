@@ -14,7 +14,7 @@ import {
   staticClasses,
 } from "@decky/ui";
 import { definePlugin, openFilePicker, routerHook } from "@decky/api";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { TbCubeSpark } from "react-icons/tb";
 
 import {
@@ -1678,9 +1678,87 @@ const ONBOARDING_PRESETS: { data: DisplayPreset; label: string; detail: string; 
   { data: "immersive-plus", label: "Immersive+", detail: "Slow Prism with Screen Sync colours everywhere.", colors: [[11, 94, 142], [8, 127, 191], [106, 92, 210], [26, 159, 255]] },
 ];
 
-function FirstRunSetup({ status, setStatus }: {
+function onboardingPreview(colors: RGB[]): RGB[] {
+  if (!colors.length) return Array.from({ length: 17 }, () => [0, 0, 0] as RGB);
+  return Array.from({ length: 17 }, (_, index) => (
+    colors[Math.min(colors.length - 1, Math.floor(index * colors.length / 17))]
+  ));
+}
+
+function SetupFrame({ step, title, description, children }: {
+  step: 1 | 2 | 3;
+  title: string;
+  description: string;
+  children: ReactNode;
+}) {
+  const steps = ["Lighting", "Night mode", "Review"];
+  return <Focusable aria-label={`GabeCubeAura setup, step ${step} of 3`} style={{
+    width: "100%",
+    minHeight: "100vh",
+    boxSizing: "border-box",
+    overflowY: "auto",
+    padding: "48px clamp(32px, 6vw, 88px) 72px",
+    background: "radial-gradient(circle at 16% 0%, rgba(26,159,255,.18), transparent 38%), linear-gradient(145deg, #101821 0%, #11151b 52%, #090d12 100%)",
+  }}>
+    <div style={{ width: "100%", maxWidth: 1040, margin: "0 auto" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 28 }}>
+        <TbCubeSpark size={36} color="#55b9f3" />
+        <div>
+          <div style={{ fontSize: "1.35em", fontWeight: 700 }}>GabeCubeAura</div>
+          <div style={{ fontSize: ".78em", opacity: .68 }}>First-time setup</div>
+        </div>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 10, marginBottom: 34 }}>
+        {steps.map((label, index) => {
+          const number = index + 1;
+          const active = number === step;
+          const complete = number < step;
+          return <div key={label} style={{
+            padding: "10px 14px",
+            borderRadius: 999,
+            textAlign: "center",
+            fontSize: ".78em",
+            fontWeight: active ? 700 : 500,
+            color: active || complete ? "#e9f7ff" : "rgba(255,255,255,.56)",
+            background: active ? "rgba(38,159,255,.28)" : complete ? "rgba(38,159,255,.13)" : "rgba(255,255,255,.055)",
+            border: active ? "1px solid rgba(104,199,255,.65)" : "1px solid rgba(255,255,255,.09)",
+          }}>{complete ? "✓ " : `${number}. `}{label}</div>;
+        })}
+      </div>
+      <div style={{ marginBottom: 24 }}>
+        <h1 style={{ fontSize: "2em", margin: "0 0 8px", letterSpacing: "-.025em" }}>{title}</h1>
+        <div style={{ maxWidth: 760, fontSize: ".95em", lineHeight: 1.5, opacity: .75 }}>{description}</div>
+      </div>
+      <div style={{
+        padding: "clamp(20px, 3.5vw, 36px)",
+        borderRadius: 20,
+        background: "rgba(7,12,18,.72)",
+        border: "1px solid rgba(255,255,255,.11)",
+        boxShadow: "0 24px 70px rgba(0,0,0,.25)",
+      }}>{children}</div>
+    </div>
+  </Focusable>;
+}
+
+function SetupActions({ primaryLabel, primaryText, primaryDisabled = false, onPrimary, secondaryLabel, secondaryText, onSecondary }: {
+  primaryLabel: string;
+  primaryText: string;
+  primaryDisabled?: boolean;
+  onPrimary: () => void;
+  secondaryLabel: string;
+  secondaryText: string;
+  onSecondary: () => void;
+}) {
+  return <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.7fr) minmax(0, 1fr)", gap: 12, marginTop: 24 }}>
+    <ButtonItem layout="below" label={primaryLabel} disabled={primaryDisabled} onClick={onPrimary}>{primaryText}</ButtonItem>
+    <ButtonItem layout="below" label={secondaryLabel} disabled={primaryDisabled} onClick={onSecondary}>{secondaryText}</ButtonItem>
+  </div>;
+}
+
+function FirstRunSetup({ status, setStatus, onClose }: {
   status: Status;
   setStatus: (next: Status) => void;
+  onClose: () => void;
 }) {
   const [step, setStep] = useState(1);
   const [preset, setPreset] = useState<DisplayPreset>("immersive-plus");
@@ -1730,8 +1808,11 @@ function FirstRunSetup({ status, setStatus }: {
       if (location) next = await setSetting("weather_location", location);
       next = await setSetting("night_mode_brightness", nightBrightness);
       next = await setSetting("night_mode_enabled", Boolean(nightEnabled && location));
+      await disconnectPrivateUpdateAuthorization();
+      await setUpdatePreferences(true, true, 1440, "stable");
       next = await setSetting("onboarding_completed", true);
       setStatus(next);
+      onClose();
     } catch (error) {
       setMessage(`Setup could not be saved: ${String(error)}`);
     } finally {
@@ -1742,7 +1823,10 @@ function FirstRunSetup({ status, setStatus }: {
   const skip = async () => {
     setSaving(true);
     try {
+      await disconnectPrivateUpdateAuthorization();
+      await setUpdatePreferences(true, true, 1440, "stable");
       setStatus(await setSetting("onboarding_completed", true));
+      onClose();
     } catch (error) {
       setMessage(`Setup could not be closed: ${String(error)}`);
     } finally {
@@ -1750,79 +1834,128 @@ function FirstRunSetup({ status, setStatus }: {
     }
   };
 
-  if (step === 1) return <>
-    <PanelSection title="Welcome to GabeCubeAura">
-      <PanelSectionRow><div style={{ fontSize: ".84em", opacity: .82 }}>
-        Choose a complete lighting style. Every detail remains editable later.
-      </div></PanelSectionRow>
-      {ONBOARDING_PRESETS.map((item) => <PanelSectionRow key={item.data}>
-        <ButtonItem label={`${item.data === preset ? "✓ " : ""}${item.label}`}
+  if (step === 1) return <SetupFrame step={1} title="Choose your lighting style"
+    description="Start with one complete setup for the 17-LED light bar. Every individual option remains editable later.">
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 14 }}>
+      {ONBOARDING_PRESETS.map((item) => <div key={item.data} style={{
+        padding: 14,
+        borderRadius: 14,
+        background: item.data === preset ? "rgba(38,159,255,.15)" : "rgba(255,255,255,.035)",
+        border: item.data === preset ? "1px solid rgba(104,199,255,.58)" : "1px solid rgba(255,255,255,.08)",
+      }}>
+        <ButtonItem layout="below" label={`${item.data === preset ? "✓ " : ""}${item.label}`}
           description={item.detail} onClick={() => setPreset(item.data)}>
           {item.data === preset ? "Selected" : "Choose"}
         </ButtonItem>
-      </PanelSectionRow>)}
-      <PanelSectionRow><div style={{ width: "100%", fontSize: ".78em", opacity: .8 }}>
-        <b>{selected.label} preview</b>
-        <PalettePreview colors={selected.colors} />
-        <div>{selected.detail}</div>
-      </div></PanelSectionRow>
-      <PanelSectionRow><ButtonItem label="Continue" onClick={() => setStep(2)}>Set up night mode</ButtonItem></PanelSectionRow>
-      <PanelSectionRow><ButtonItem label="Skip guided setup" disabled={saving}
-        onClick={() => void skip()}>Keep recommended defaults</ButtonItem></PanelSectionRow>
-    </PanelSection>
-  </>;
+        <div style={{ marginTop: 8 }}><PalettePreview colors={onboardingPreview(item.colors)} /></div>
+      </div>)}
+    </div>
+    <div style={{ marginTop: 20, padding: "14px 16px", borderRadius: 12, background: "rgba(255,255,255,.05)", lineHeight: 1.45 }}>
+      <b>{selected.label}</b><span style={{ opacity: .72 }}> · {selected.detail}</span>
+    </div>
+    <SetupActions primaryLabel="Continue" primaryText="Set up night mode" onPrimary={() => setStep(2)}
+      secondaryLabel="Skip guided setup" secondaryText={saving ? "Saving…" : "Keep recommended defaults"}
+      primaryDisabled={saving} onSecondary={() => void skip()} />
+  </SetupFrame>;
 
-  if (step === 2) return <>
-    <PanelSection title="Automatic night mode">
-      <PanelSectionRow><div style={{ fontSize: ".82em", opacity: .82 }}>
-        GabeCubeAura can reduce ordinary lighting after local sunset and restore it at sunrise. Playtime warnings stay fully visible, and sensor-based thermal protection remains active.
-      </div></PanelSectionRow>
-      {location ? <PanelSectionRow><div style={{ width: "100%", fontSize: ".82em" }}>
-        <b>{location.name}, {location.country}</b>
-        <div style={{ marginTop: 5, opacity: .72 }}>Sunrise and sunset are calculated for this exact location.</div>
-      </div></PanelSectionRow> : <>
-        <PanelSectionRow><TextField label="City or postal code" value={cityQuery}
-          onChange={(event) => setCityQuery(event.currentTarget.value)} /></PanelSectionRow>
-        <PanelSectionRow><TextField label="Country (optional)" value={countryQuery}
-          onChange={(event) => setCountryQuery(event.currentTarget.value)} /></PanelSectionRow>
-        <PanelSectionRow><ButtonItem label="Find city" disabled={searching || cityQuery.trim().length < 2}
-          onClick={() => void findCity()}>{searching ? "Searching…" : "Search"}</ButtonItem></PanelSectionRow>
-        {cityResults.map((city, index) => <PanelSectionRow key={`${city.latitude}:${city.longitude}:${index}`}>
-          <ButtonItem label={`${city.name}, ${city.country}`} onClick={() => chooseCity(city)}>Use this city</ButtonItem>
-        </PanelSectionRow>)}
-      </>}
-      {location ? <>
-        <PanelSectionRow><ToggleField label="Automatic night mode" checked={nightEnabled}
-          onChange={setNightEnabled} /></PanelSectionRow>
-        <PanelSectionRow><SliderField label="Night brightness" value={nightBrightness}
-          min={10} max={100} step={5} showValue valueSuffix="%"
-          onChange={setNightBrightness} /></PanelSectionRow>
-        <PanelSectionRow><ButtonItem label="Change city" onClick={() => {
-          setLocation(null); setNightEnabled(false); setCityResults([]); setMessage("");
-        }}>Choose another</ButtonItem></PanelSectionRow>
-      </> : null}
-      {message ? <PanelSectionRow><div style={{ fontSize: ".78em", opacity: .82 }}>{message}</div></PanelSectionRow> : null}
-      <PanelSectionRow><ButtonItem label="Continue" onClick={() => setStep(3)}>Review setup</ButtonItem></PanelSectionRow>
-      <PanelSectionRow><ButtonItem label="Back" onClick={() => setStep(1)}>Lighting style</ButtonItem></PanelSectionRow>
-    </PanelSection>
-  </>;
+  if (step === 2) return <SetupFrame step={2} title="Make nights more comfortable"
+    description="Choose a city manually. GabeCubeAura uses its exact sunrise and sunset times without IP geolocation.">
+    {location ? <div style={{ padding: "16px 18px", borderRadius: 14, background: "rgba(38,159,255,.11)", border: "1px solid rgba(104,199,255,.3)" }}>
+      <div style={{ fontSize: "1.08em", fontWeight: 700 }}>{location.name}, {location.country}</div>
+      <div style={{ marginTop: 5, opacity: .72 }}>Sunrise and sunset are calculated for this exact location.</div>
+    </div> : <>
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.4fr) minmax(0, 1fr)", gap: 12 }}>
+        <TextField label="City or postal code" value={cityQuery}
+          onChange={(event) => setCityQuery(event.currentTarget.value)} />
+        <TextField label="Country (optional)" value={countryQuery}
+          onChange={(event) => setCountryQuery(event.currentTarget.value)} />
+      </div>
+      <div style={{ marginTop: 12 }}><ButtonItem layout="below" label="Find city"
+        disabled={searching || cityQuery.trim().length < 2}
+        onClick={() => void findCity()}>{searching ? "Searching…" : "Search"}</ButtonItem></div>
+      {cityResults.length ? <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10, marginTop: 12 }}>
+        {cityResults.map((city, index) => <ButtonItem key={`${city.latitude}:${city.longitude}:${index}`}
+          layout="below" label={`${city.name}, ${city.country}`} onClick={() => chooseCity(city)}>Use this city</ButtonItem>)}
+      </div> : null}
+    </>}
+    {location ? <div style={{ marginTop: 16 }}>
+      <ToggleField label="Automatic night mode" description="Dim ordinary lighting after sunset and restore it at sunrise."
+        checked={nightEnabled} onChange={setNightEnabled} />
+      <div style={{ marginTop: 12 }}><SliderField label="Night brightness" value={nightBrightness}
+        min={10} max={100} step={5} showValue valueSuffix="%" onChange={setNightBrightness} /></div>
+      <div style={{ marginTop: 12 }}><ButtonItem layout="below" label="Change city" onClick={() => {
+        setLocation(null); setNightEnabled(false); setCityResults([]); setMessage("");
+      }}>Choose another</ButtonItem></div>
+    </div> : <div style={{ marginTop: 16, opacity: .72, lineHeight: 1.45 }}>
+      You can continue without a city. Automatic night mode will remain off and can be configured later in Weather settings.
+    </div>}
+    {message ? <div style={{ marginTop: 14, color: message.includes("failed") || message.includes("No matching") ? "#ffbc9e" : "#a9ddff" }}>{message}</div> : null}
+    <div style={{ marginTop: 18, opacity: .68, fontSize: ".82em" }}>
+      Playtime warnings stay fully visible. Thermal protection always remains active.
+    </div>
+    <SetupActions primaryLabel="Continue" primaryText="Review setup" onPrimary={() => setStep(3)}
+      secondaryLabel="Back" secondaryText="Lighting style" onSecondary={() => setStep(1)} />
+  </SetupFrame>;
 
-  return <>
-    <PanelSection title="Ready to start">
-      <PanelSectionRow><div style={{ width: "100%", fontSize: ".84em", lineHeight: 1.5 }}>
-        <div><b>Lighting preset:</b> {selected.label}</div>
-        <div><b>Night mode:</b> {nightEnabled && location
-          ? `Automatic for ${location.name} · ${nightBrightness}%`
-          : "Off"}</div>
-        <div><b>Updates:</b> Stable · every 24 hours</div>
-      </div></PanelSectionRow>
-      {message ? <PanelSectionRow><div style={{ fontSize: ".78em", opacity: .82 }}>{message}</div></PanelSectionRow> : null}
-      <PanelSectionRow><ButtonItem label="Apply setup" disabled={saving}
-        onClick={() => void finish()}>{saving ? "Saving…" : "Start GabeCubeAura"}</ButtonItem></PanelSectionRow>
-      <PanelSectionRow><ButtonItem label="Back" disabled={saving}
-        onClick={() => setStep(2)}>Night mode</ButtonItem></PanelSectionRow>
-    </PanelSection>
-  </>;
+  return <SetupFrame step={3} title="Ready to start"
+    description="Review the choices that will be saved. You can change all of them later from GabeCubeAura settings.">
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 12 }}>
+      {[{ label: "Lighting preset", value: selected.label }, {
+        label: "Night mode", value: nightEnabled && location
+          ? `${location.name} · ${nightBrightness}%` : "Off",
+      }, { label: "Updates", value: "Stable · every 24 hours" }].map((item) => <div key={item.label} style={{
+        minHeight: 92,
+        padding: "16px 18px",
+        borderRadius: 14,
+        background: "rgba(255,255,255,.045)",
+        border: "1px solid rgba(255,255,255,.08)",
+      }}>
+        <div style={{ fontSize: ".76em", opacity: .62, marginBottom: 8 }}>{item.label}</div>
+        <div style={{ fontWeight: 700, lineHeight: 1.35 }}>{item.value}</div>
+      </div>)}
+    </div>
+    <div style={{ marginTop: 16, padding: "13px 16px", borderRadius: 12, background: "rgba(83,185,243,.08)", fontSize: ".82em", lineHeight: 1.45, opacity: .84 }}>
+      Private Lab authentication is not kept. Updates use the Stable channel with one automatic check every 24 hours.
+    </div>
+    {message ? <div style={{ marginTop: 14, color: "#ffbc9e" }}>{message}</div> : null}
+    <SetupActions primaryLabel="Apply setup" primaryText={saving ? "Saving…" : "Start GabeCubeAura"}
+      primaryDisabled={saving} onPrimary={() => void finish()}
+      secondaryLabel="Back" secondaryText="Night mode" onSecondary={() => setStep(2)} />
+  </SetupFrame>;
+}
+
+function FirstRunSetupRoute() {
+  const [status, setStatus] = useState<Status | null>(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let alive = true;
+    void getStatus().then((next) => {
+      if (alive) setStatus(next);
+    }).catch((reason) => {
+      if (alive) setError(String(reason));
+    });
+    return () => { alive = false; };
+  }, []);
+
+  if (!status) return <SetupFrame step={1} title="Loading GabeCubeAura"
+    description="Preparing the first-time setup.">
+    <div style={{ opacity: .76 }}>{error || "Reading the saved configuration…"}</div>
+    {error ? <div style={{ marginTop: 16 }}><ButtonItem label="Back" onClick={() => Navigation.NavigateBack()}>Return to Steam</ButtonItem></div> : null}
+  </SetupFrame>;
+
+  if (!status.available) return <SetupFrame step={1} title="Light bar unavailable"
+    description="The guided setup will remain available after GabeCubeAura detects the 17-pixel valve-leds device.">
+    <div style={{ opacity: .78 }}>{status.error || "No compatible light bar was found."}</div>
+    <div style={{ marginTop: 16 }}><ButtonItem label="Back" onClick={() => Navigation.NavigateBack()}>Return to Steam</ButtonItem></div>
+  </SetupFrame>;
+
+  if (status.onboarding_completed) return <SetupFrame step={3} title="Setup already complete"
+    description="Your saved configuration is active. Detailed settings remain available from the GabeCubeAura panel.">
+    <ButtonItem label="Back" onClick={() => Navigation.NavigateBack()}>Return to Steam</ButtonItem>
+  </SetupFrame>;
+
+  return <FirstRunSetup status={status} setStatus={setStatus} onClose={() => Navigation.NavigateBack()} />;
 }
 
 function Content({ page = "quick" }: { page?: Page }) {
@@ -2052,9 +2185,15 @@ function Content({ page = "quick" }: { page?: Page }) {
       </PanelSection>
     );
   }
-  if (page === "quick" && !status.onboarding_completed) {
-    return <FirstRunSetup status={status} setStatus={setStatus} />;
-  }
+  if (page === "quick" && !status.onboarding_completed) return <PanelSection title="Welcome to GabeCubeAura">
+    <PanelSectionRow><div style={{ fontSize: ".84em", lineHeight: 1.45, opacity: .82 }}>
+      Complete the guided first-time setup in a full-screen SteamOS page.
+    </div></PanelSectionRow>
+    <PanelSectionRow><ButtonItem label="Open guided setup" onClick={() => {
+      Navigation.Navigate("/gabecubeaura/setup");
+      Navigation.CloseSideMenus();
+    }}>Choose lighting and night mode</ButtonItem></PanelSectionRow>
+  </PanelSection>;
 
   const changeArtworkSetting = async (key: string, value: unknown) => {
     const next = await setArtworkSetting(status.game.appid, key, value);
@@ -2970,6 +3109,7 @@ export default definePlugin(() => {
   const weatherTopBar = startWeatherTopBar();
   const updateNotifications = startUpdateNotifications();
   routerHook.addRoute("/gabecubeaura/settings", GabeCubeAuraSettings);
+  routerHook.addRoute("/gabecubeaura/setup", FirstRunSetupRoute, { exact: true });
   return {
     name: "GabeCubeAura",
     titleView: <div className={staticClasses.Title}>GabeCubeAura</div>,
@@ -2981,6 +3121,7 @@ export default definePlugin(() => {
       weatherTopBar.stop();
       updateNotifications.stop();
       routerHook.removeRoute("/gabecubeaura/settings");
+      routerHook.removeRoute("/gabecubeaura/setup");
     },
   };
 });

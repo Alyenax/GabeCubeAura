@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.3.3-lab.2 - 2026-10-05
+
+### Full-screen first-run setup
+
+- Move the complete three-step onboarding flow out of Decky's narrow quick
+  panel and into the dedicated full-screen SteamUI route
+  `/gabecubeaura/setup`.
+- Add a controller-friendly two-column lighting preset selector, live 17-LED
+  previews, a clear three-step progress indicator and a compact final review.
+- Keep the quick panel focused on a single `Open guided setup` action until
+  onboarding is complete. Navigate before closing Decky's side menu to avoid
+  the Big Picture route race documented by Decky.
+- Return to the previous Steam page after applying or skipping setup. Directly
+  reopening the route after completion cannot overwrite the saved choices.
+
+### Update privacy safeguard
+
+- Explicitly restore Stable updates with automatic checks every 24 hours when
+  first-run setup finishes or is skipped.
+- Remove any saved Private Lab authorization before onboarding is marked
+  complete, so a new installation never retains personal private-channel
+  credentials.
+
 ## 1.3.3-lab.1 - 2026-10-05
 
 ### Thermal safety correction

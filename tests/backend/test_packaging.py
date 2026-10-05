@@ -61,6 +61,8 @@ class PackagingTests(unittest.TestCase):
         self.assertNotIn("Albusquerque/GabeCubeAura", package)
         self.assertIn('routerHook.addRoute("/gabecubeaura/settings", GabeCubeAuraSettings)', panel)
         self.assertIn('routerHook.removeRoute("/gabecubeaura/settings")', panel)
+        self.assertIn('routerHook.addRoute("/gabecubeaura/setup", FirstRunSetupRoute, { exact: true })', panel)
+        self.assertIn('routerHook.removeRoute("/gabecubeaura/setup")', panel)
         self.assertIn('return <SidebarNavigation title="GabeCubeAura settings"', panel)
         self.assertIn('route: "/gabecubeaura/settings/customization"', panel)
         self.assertIn('route: "/gabecubeaura/settings/screen-sync"', panel)
@@ -70,8 +72,17 @@ class PackagingTests(unittest.TestCase):
         self.assertIn('{ data: "steam", label: "GabeCubeAura Off" }', panel)
         self.assertIn('{ data: "blackout", label: "Blackout (held off)" }', panel)
         self.assertIn('label="Lighting preset"', panel)
-        self.assertIn('title="Welcome to GabeCubeAura"', panel)
+        self.assertIn('function FirstRunSetupRoute()', panel)
+        self.assertIn('label="Open guided setup"', panel)
+        self.assertIn('Navigation.Navigate("/gabecubeaura/setup")', panel)
+        setup_navigation = panel.index('Navigation.Navigate("/gabecubeaura/setup")')
+        self.assertLess(
+            setup_navigation,
+            panel.index('Navigation.CloseSideMenus()', setup_navigation),
+        )
         self.assertIn('setSetting("onboarding_completed", true)', panel)
+        self.assertIn('setUpdatePreferences(true, true, 1440, "stable")', panel)
+        self.assertIn('disconnectPrivateUpdateAuthorization()', panel)
         self.assertIn('label="Follow local sunset and sunrise"', panel)
         self.assertIn('label="Night brightness"', panel)
         self.assertIn('label="Steam ownership"', panel)

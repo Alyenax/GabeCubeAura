@@ -77,6 +77,7 @@ export interface Status {
   signalbar_enabled: boolean;
   onboarding_completed: boolean;
   display_preset: DisplayPreset;
+  display_preset_preview: { active: boolean; preset: string; remaining_s: number };
   valve_ownership_policy: ValveOwnershipPolicy;
   led_output_calibration_mode: "follow" | "consistent";
   led_output_calibration: {
@@ -84,6 +85,20 @@ export interface Status {
     supported: boolean;
     detected_brightness: number | null;
     reference_brightness: number;
+    saved_steam_brightness: number | null;
+    override_active: boolean;
+    startup_recovered: boolean;
+  };
+  light_bar_day_brightness: number;
+  light_bar_brightness: {
+    supported: boolean;
+    control_mode: "hardware" | "rgb-fallback";
+    day_brightness: number;
+    night_percentage: number;
+    target_brightness: number | null;
+    current_output: "day" | "night" | "alert" | "valve";
+    detected_brightness: number | null;
+    applied_brightness: number | null;
     saved_steam_brightness: number | null;
     override_active: boolean;
     startup_recovered: boolean;
@@ -315,6 +330,9 @@ export interface Status {
     calibration_stage: "idle" | "colour-separation" | "white-balance" | "motion-contrast";
     calibration_remaining_s: number;
     preview_active: boolean;
+    brightness_preview_active: boolean;
+    brightness_preview_mode: "day" | "night";
+    brightness_preview_remaining_s: number;
     colors: RGB[];
   };
   screen_sync: {

@@ -25,24 +25,39 @@ from signalbar.providers.controller import ControllerProvider
 from signalbar.providers.audio_sync import ADAPTIVE_STYLES
 from signalbar.providers.weather import WeatherProvider
 from signalbar.renderer import Renderer
+from signalbar.settings.store import DISPLAY_PRESET_RECIPES
 from signalbar.thermal import ThermalProtection, THERMAL_SUSPENSION_MESSAGE
 
 LED_OUTPUT_REFERENCE_BRIGHTNESS = 9
 
 
-def apply_automatic_night_brightness(frame, provider, solar_status):
-    """Dim ordinary GabeCubeAura output after local sunset.
-
-    Playtime and low-battery warnings remain fully legible. Thermal protection
-    is enforced before this function or any LED render path can run.
-    """
-    if (frame is None or not solar_status.get("active")
-            or provider == "countdown" or provider.startswith("controller:low")):
-        return frame
+def resolve_light_bar_brightness(values, provider, solar_status):
+    """Return the global hardware gain and the reason it was selected."""
     try:
-        scale = max(10, min(100, int(solar_status.get("brightness", 35)))) / 100.0
+        day = max(1, min(255, int(values.get("light_bar_day_brightness", 9))))
     except (TypeError, ValueError, OverflowError):
-        scale = 0.35
+        day = LED_OUTPUT_REFERENCE_BRIGHTNESS
+    try:
+        percentage = max(10, min(100, int(values.get("night_mode_brightness", 35))))
+    except (TypeError, ValueError, OverflowError):
+        percentage = 35
+    night = max(1, min(255, round(day * percentage / 100.0)))
+    if provider.endswith(":night") and provider.startswith("customization:brightness-preview:"):
+        return night, "night"
+    if provider.endswith(":day") and provider.startswith("customization:brightness-preview:"):
+        return day, "day"
+    if provider == "countdown" or provider.startswith("controller:low"):
+        return day, "alert"
+    if solar_status.get("active"):
+        return night, "night"
+    return day, "day"
+
+
+def apply_rgb_brightness_fallback(frame, target):
+    """Approximate global gain when the LED driver lacks brightness_scale."""
+    if frame is None:
+        return None
+    scale = max(1, min(255, int(target))) / float(LED_OUTPUT_REFERENCE_BRIGHTNESS)
     return [
         tuple(max(0, min(255, round(channel * scale))) for channel in pixel)
         for pixel in frame
@@ -107,6 +122,8 @@ class Engine:
         self._last_recovery_reason = ""
         self._native_priority_kind = ""
         self._native_priority_reason_text = ""
+        self._display_preset_preview = ""
+        self._display_preset_preview_until = 0.0
         self._ignored_native_takeovers = 0
         self._effective_steam_priority = False
         self._guard_was_allowed = False
@@ -424,6 +441,20 @@ class Engine:
         if values["mode"] == "disabled":
             return False
         return self.customization.preview_calibration(10.0)
+
+    def preview_light_brightness(self, mode="day"):
+        values = self.settings.all()
+        if values["mode"] == "disabled":
+            return False
+        return self.customization.preview_brightness(mode, 3.0)
+
+    def preview_display_preset(self, preset, seconds=10.0):
+        if preset not in {"essential", "atmosphere", "immersive", "immersive-plus"}:
+            return False
+        with self._lock:
+            self._display_preset_preview = preset
+            self._display_preset_preview_until = time.monotonic() + max(3.0, min(20.0, float(seconds)))
+        return True
 
     def trigger_event(self, kind, preview=False, variant=""):
         values = self.settings.all()
@@ -889,11 +920,6 @@ class Engine:
             try:
                 now = time.monotonic()
                 values = self.settings.all()
-                renderer.set_output_brightness_scale(
-                    LED_OUTPUT_REFERENCE_BRIGHTNESS
-                    if values["led_output_calibration_mode"] == "consistent"
-                    else None
-                )
                 if hardware.reverse != values["reverse_led_order"]:
                     # Restore with the old mapping before changing orientation;
                     # otherwise a later shutdown would restore the snapshot backwards.
@@ -908,7 +934,28 @@ class Engine:
                         self._context_transition_active = False
                     context_transition_active = self._context_transition_active
                     context_palette_not_before = self._context_palette_not_before
+                    preview_preset = (
+                        self._display_preset_preview
+                        if now < self._display_preset_preview_until else ""
+                    )
                 display = self.settings.display_for(game.appid)
+                if preview_preset:
+                    values.update(DISPLAY_PRESET_RECIPES[preview_preset])
+                    selected_preview = values[
+                        "game_display" if game.running else "home_display"
+                    ]
+                    display = {
+                        "selected": selected_preview,
+                        "default": selected_preview,
+                        "override": "inherit",
+                        "mode": (
+                            selected_preview
+                            if selected_preview in {
+                                "artwork", "performance", "customization",
+                                "screen_sync", "audio_sync", "blackout",
+                            } else "events"
+                        ),
+                    }
                 values["mode"] = display["mode"]
                 current_display = display["selected"]
                 audio_context = "game" if game.running else "home"
@@ -1297,9 +1344,17 @@ class Engine:
                         event_preempted_valve = True
                     elif not is_event:
                         event_preempted_valve = False
-                    output_frame = apply_automatic_night_brightness(
-                        decision.frame, decision.provider,
-                        self.weather.solar_status(values),
+                    solar_status = self.weather.solar_status(values)
+                    target_brightness, _brightness_period = resolve_light_bar_brightness(
+                        values, decision.provider, solar_status,
+                    )
+                    hardware_brightness = renderer.calibration_status()["supported"]
+                    renderer.set_output_brightness_scale(
+                        target_brightness if hardware_brightness else None
+                    )
+                    output_frame = (
+                        decision.frame if hardware_brightness
+                        else apply_rgb_brightness_fallback(decision.frame, target_brightness)
                     )
                     wrote = renderer.render(
                         output_frame,
@@ -1538,18 +1593,31 @@ class Engine:
                     "supported": False,
                     "detected_brightness": None,
                     "reference_brightness": None,
+                    "applied_brightness": None,
                     "saved_steam_brightness": None,
                     "override_active": False,
                     "startup_recovered": False,
                 }
             )
+            brightness_target, brightness_period = resolve_light_bar_brightness(
+                values, self._decision, night_mode_status,
+            )
+            light_bar_brightness = dict(calibration_status)
+            light_bar_brightness.update({
+                "control_mode": "hardware" if calibration_status["supported"] else "rgb-fallback",
+                "day_brightness": values["light_bar_day_brightness"],
+                "night_percentage": values["night_mode_brightness"],
+                "target_brightness": brightness_target if self._owner == "GabeCubeAura" else None,
+                "current_output": brightness_period if self._owner == "GabeCubeAura" else "valve",
+            })
             calibration_status.update({
-                "mode": values["led_output_calibration_mode"],
-                "reference_brightness": LED_OUTPUT_REFERENCE_BRIGHTNESS,
+                "mode": "consistent",
+                "reference_brightness": values["light_bar_day_brightness"],
             })
             decision_age_s = (
                 max(0.0, now - self._decision_at) if self._decision_at else None
             )
+            preset_preview_active = now < self._display_preset_preview_until
             return {
                 "version": __version__,
                 "available": self._available,
@@ -1564,9 +1632,16 @@ class Engine:
                 "signalbar_enabled": values["signalbar_enabled"],
                 "onboarding_completed": values["onboarding_completed"],
                 "display_preset": values["display_preset"],
+                "display_preset_preview": {
+                    "active": preset_preview_active,
+                    "preset": self._display_preset_preview if preset_preview_active else "",
+                    "remaining_s": max(0.0, self._display_preset_preview_until - now),
+                },
                 "valve_ownership_policy": values["valve_ownership_policy"],
                 "led_output_calibration_mode": values["led_output_calibration_mode"],
                 "led_output_calibration": calibration_status,
+                "light_bar_day_brightness": values["light_bar_day_brightness"],
+                "light_bar_brightness": light_bar_brightness,
                 "home_display": values["home_display"],
                 "game_display": values["game_display"],
                 "current_display": display["selected"],

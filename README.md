@@ -405,10 +405,16 @@ default is two.
 The official Steam Machine's physical LED order is reversed by default while
 the Decky preview remains left to right.
 
-The shipped Consistent output policy temporarily applies the tested 9 / 255
-Steam brightness reference only while GabeCubeAura owns the bar, then restores
-Steam's saved value before handing control back. Follow Steam brightness
-remains available in Display routing.
+The global **Light bar brightness** section applies the selected Day brightness
+to every Home and in-game route. The default remains the tested `9 / 255`.
+Optional sunset dimming applies a percentage of that value, for example 35%
+gives `3 / 255`. Important alerts temporarily return to Day brightness.
+
+GabeCubeAura changes the hardware `brightness_scale` only while it owns the
+bar, then restores Steam's exact saved value before handing control back. If a
+driver does not expose `brightness_scale`, the panel clearly reports the RGB
+attenuation fallback. Thermal protection always returns complete control to
+Valve.
 
 ### Configuration backup and reset
 

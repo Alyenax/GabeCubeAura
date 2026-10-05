@@ -7,6 +7,7 @@ import {
   PanelSectionRow,
   Navigation,
   SidebarNavigation,
+  ScrollPanel,
   SliderField,
   TextField,
   showModal,
@@ -30,7 +31,7 @@ import {
   installPreparedUpdate,
   previewCountdown,
   previewCustomization,
-  previewLightCalibration,
+  previewDisplayPreset,
   previewLaunchArtwork,
   previewAudioSync,
   previewScreenSync,
@@ -43,6 +44,7 @@ import {
   searchWeatherCities,
   setArtworkSetting,
   setLaunchArtworkSetting,
+  setLightBarBrightness,
   setGameDisplay,
   setSetting,
   setUpdatePreferences,
@@ -125,11 +127,6 @@ const VALVE_OWNERSHIP_DESCRIPTIONS: Record<string, string> = {
   downloads: "Keep GabeCubeAura in control except for confirmed Steam downloads. A reversible Steam LED manager request holds the native Download mode until each transfer ends. Sensor-based thermal protection is always active.",
   critical: "Keep GabeCubeAura in control during ordinary Steam LED activity. During confirmed downloads, a reversible Steam LED manager override prevents Download mode from starting when this Steam build exposes the required private service. Sensor-based thermal protection is always active.",
 };
-
-const LED_OUTPUT_CALIBRATION_OPTIONS = [
-  { data: "consistent", label: "Consistent output (Recommended)" },
-  { data: "follow", label: "Follow Steam brightness" },
-];
 
 const UPDATE_INTERVAL_OPTIONS = [
   { data: 15, label: "15 minutes" },
@@ -1017,32 +1014,9 @@ function WeatherPanel({ status, setStatus }: { status: Status; setStatus: (next:
         Current conditions refresh about every 15 minutes. The last reading can be reused for up to one hour; then weather yields the bar. No city, no network request. Data by <a href="https://open-meteo.com/" target="_blank" rel="noreferrer">Open-Meteo</a>.
       </div></PanelSectionRow>
     </PanelSection>
-    <PanelSection title="Automatic night mode">
-      <PanelSectionRow><ToggleField label="Follow local sunset and sunrise"
-        description={status.weather_location
-          ? `Use solar times for ${status.weather_location.name}, ${status.weather_location.country}. No approximate IP location.`
-          : "Choose a city above before enabling automatic night mode."}
-        disabled={!status.weather_location}
-        checked={status.night_mode_enabled}
-        onChange={async (enabled) => {
-          try {
-            setStatus(await setSetting("night_mode_enabled", enabled));
-            setMessage(enabled ? "Automatic night mode enabled." : "Automatic night mode disabled.");
-          } catch (error) { setMessage(`Could not change night mode: ${String(error)}`); }
-        }} /></PanelSectionRow>
-      <PanelSectionRow><SliderField label="Night brightness" min={10} max={100} step={5}
-        showValue valueSuffix="%" value={status.night_mode_brightness}
-        onChange={async (value) => setStatus(await setSetting("night_mode_brightness", value))} /></PanelSectionRow>
+    <PanelSection title="Automatic night brightness">
       <PanelSectionRow><div style={{ fontSize: ".78em", opacity: .78 }}>
-        {!status.night_mode_enabled ? "Night mode is off."
-          : status.night_mode.active
-            ? `Night mode active at ${status.night_mode_brightness}%. Sunrise: ${formatSolarTime(status.night_mode.sunrise_at)}.`
-            : status.night_mode.available
-              ? `Daylight mode. Sunset: ${formatSolarTime(status.night_mode.sunset_at)}.`
-              : "Waiting for solar times from Open-Meteo."}
-        <div style={{ marginTop: 6, opacity: .76 }}>
-          Ordinary GabeCubeAura output is dimmed after sunset. Playtime warnings remain fully visible, and sensor-based thermal protection stays active.
-        </div>
+        Sunset dimming now belongs to the single global <b>Light bar brightness</b> section in Display routing. Weather keeps the shared city and solar data.
       </div></PanelSectionRow>
     </PanelSection>
     <PanelSection title="Weather animations">
@@ -1130,62 +1104,98 @@ function CustomizationPanel({ status, setStatus }: { status: Status; setStatus: 
   </PanelSection>;
 }
 
-function LightBarCalibration({ status, setStatus }: {
+function LightBarBrightness({ status, setStatus }: {
   status: Status;
   setStatus: (next: Status) => void;
 }) {
-  const calibration = status.led_output_calibration;
-  const consistent = status.led_output_calibration_mode === "consistent";
-  const detected = calibration.detected_brightness == null
-    ? "Waiting for hardware"
-    : `${calibration.detected_brightness} / 255`;
-  const stage = {
-    idle: "Idle",
-    "colour-separation": "Colour separation",
-    "white-balance": "White balance",
-    "motion-contrast": "Motion and contrast",
-  }[status.customization.calibration_stage];
-  return <PanelSection title="Light bar calibration · Lab">
+  const brightness = status.light_bar_brightness;
+  const [changingCity, setChangingCity] = useState(false);
+  const [cityQuery, setCityQuery] = useState("");
+  const [countryQuery, setCountryQuery] = useState("");
+  const [cityResults, setCityResults] = useState<WeatherLocation[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [message, setMessage] = useState("");
+  const nightOutput = Math.max(1, Math.round(status.light_bar_day_brightness * status.night_mode_brightness / 100));
+  const currentOutput = brightness.current_output === "night"
+    ? `Night · ${brightness.target_brightness ?? nightOutput}/255${status.night_mode.sunrise_at ? ` until ${formatSolarTime(status.night_mode.sunrise_at)}` : ""}`
+    : brightness.current_output === "alert"
+      ? `Important alert · ${status.light_bar_day_brightness}/255`
+      : brightness.current_output === "valve"
+        ? "Valve control · Steam brightness restored"
+        : `Daytime · ${brightness.target_brightness ?? status.light_bar_day_brightness}/255`;
+  const preview = async (mode: "day" | "night", key: "light_bar_day_brightness" | "night_mode_brightness", value: number) => {
+    try {
+      setStatus(await setLightBarBrightness(key, value, mode));
+    } catch (error) { setMessage(`Brightness preview failed: ${String(error)}`); }
+  };
+  const findCity = async () => {
+    setSearching(true);
+    setMessage("");
+    try {
+      const country = countryQuery.trim();
+      const response = await searchWeatherCities(country ? `${cityQuery.trim()}, ${country}` : cityQuery.trim());
+      setCityResults(response.results);
+      if (response.error) setMessage(`City search failed: ${response.error}`);
+      else if (!response.results.length) setMessage("No matching city. Try the full city and country name.");
+    } catch (error) { setMessage(`City search failed: ${String(error)}`); }
+    finally { setSearching(false); }
+  };
+  const chooseCity = async (city: WeatherLocation) => {
+    try {
+      let next = await setSetting("weather_location", city);
+      next = await setSetting("night_mode_enabled", true);
+      setStatus(next);
+      setChangingCity(false);
+      setCityResults([]);
+      setMessage("");
+    } catch (error) { setMessage(`Could not save city: ${String(error)}`); }
+  };
+  return <PanelSection title="Light bar brightness">
     <PanelSectionRow><div style={{ fontSize: ".78em", opacity: .82 }}>
-      Normalises Valve's global hardware brightness while GabeCubeAura owns the light bar. Pattern brightness remains independent.
+      One global intensity for every Home and in-game display. Changing a preset or route never changes it.
     </div></PanelSectionRow>
-    <PanelSectionRow><DropdownItem
-      label="Output mode"
-      description={consistent
-        ? "Temporarily uses the GabeCubeAura reference gain, then restores the saved Steam value before Valve takes over."
-        : "Keeps Steam's current global brightness. Colours, white balance and contrast may differ from the reference tuning."}
-      rgOptions={LED_OUTPUT_CALIBRATION_OPTIONS}
-      selectedOption={status.led_output_calibration_mode}
-      onChange={async (option) => setStatus(await setSetting("led_output_calibration_mode", String(option.data)))}
-    /></PanelSectionRow>
-    <PanelSectionRow><div style={{ width: "100%", fontSize: ".77em", lineHeight: 1.45, opacity: .82 }}>
-      <div>Steam brightness detected: <b>{detected}</b></div>
-      <div>GabeCubeAura Lab reference: <b>{calibration.reference_brightness} / 255</b></div>
-      <div>Restored when Steam takes over: <b>Yes</b></div>
-      {calibration.saved_steam_brightness != null
-        ? <div>Saved Steam brightness: <b>{calibration.saved_steam_brightness} / 255</b></div>
-        : null}
-      {!calibration.supported && status.available
-        ? <div style={{ color: "#ffd27a" }}>This SteamOS LED driver does not expose brightness_scale.</div>
-        : null}
-      {calibration.startup_recovered
+    <PanelSectionRow><SliderField label="Day brightness" description="Direct hardware brightness. Moving the slider previews it immediately on the 17-LED bar."
+      min={1} max={255} step={1} showValue valueSuffix=" / 255" value={status.light_bar_day_brightness}
+      onChange={(value) => void preview("day", "light_bar_day_brightness", value)} /></PanelSectionRow>
+    <PanelSectionRow><ToggleField label="Dim automatically after sunset"
+      description={status.weather_location
+        ? `Uses sunset and sunrise for ${status.weather_location.name}, ${status.weather_location.country}.`
+        : "Choose a city to calculate exact local sunset and sunrise times."}
+      disabled={!status.weather_location}
+      checked={status.night_mode_enabled}
+      onChange={async (enabled) => setStatus(await setSetting("night_mode_enabled", enabled))} /></PanelSectionRow>
+    <PanelSectionRow><SliderField label="Night brightness"
+      description={`${status.night_mode_brightness}% of day brightness · ${nightOutput}/255. Moving the slider previews the night output immediately.`}
+      min={10} max={100} step={5} showValue valueSuffix="%" value={status.night_mode_brightness}
+      onChange={(value) => void preview("night", "night_mode_brightness", value)} /></PanelSectionRow>
+    <PanelSectionRow><div style={{ width: "100%", fontSize: ".79em", lineHeight: 1.5 }}>
+      <div>Current output: <b>{currentOutput}</b></div>
+      <div>Location: <b>{status.weather_location ? `${status.weather_location.name}, ${status.weather_location.country}` : "Not set"}</b></div>
+      <div>Control: <b>{brightness.supported ? "Hardware brightness_scale" : "RGB fallback"}</b></div>
+      {brightness.saved_steam_brightness != null
+        ? <div>Steam value saved for handoff: <b>{brightness.saved_steam_brightness}/255</b></div> : null}
+      {!brightness.supported && status.available
+        ? <div style={{ color: "#ffd27a" }}>This driver has no brightness_scale. GabeCubeAura is using RGB attenuation instead.</div> : null}
+      {brightness.startup_recovered
         ? <div style={{ color: "#93f7a7" }}>A brightness value left by an interrupted session was restored safely.</div>
         : null}
     </div></PanelSectionRow>
-    <PanelSectionRow><ButtonItem
-      label={consistent ? "Preview calibrated output" : "Preview current Steam brightness"}
-      description="Runs a 10-second colour separation, white balance and centre-out motion check using the current Audio Sync brightness."
-      disabled={!status.signalbar_enabled || !calibration.supported}
-      onClick={() => void previewLightCalibration().then(setStatus).catch(console.warn)}>
-      Preview for 10 seconds
+    <PanelSectionRow><ButtonItem label={status.weather_location ? "Change city" : "Choose city"}
+      onClick={() => { setChangingCity(!changingCity); setCityResults([]); setMessage(""); }}>
+      {changingCity ? "Close" : "Open city search"}
     </ButtonItem></PanelSectionRow>
-    {status.customization.calibration_preview_active ? <PanelSectionRow><div style={{ width: "100%", fontSize: ".78em" }}>
-      <div><b>{stage}</b> · {Math.ceil(status.customization.calibration_remaining_s)} s remaining</div>
-      <PalettePreview colors={status.customization.colors} />
-    </div></PanelSectionRow> : null}
-    <PanelSectionRow><div style={{ fontSize: ".73em", opacity: .68 }}>
-      Reference {calibration.reference_brightness} is experimental and based on the current physical Steam Machine calibration. Follow Steam brightness remains the default in this Lab.
-    </div></PanelSectionRow>
+    {changingCity ? <>
+      <PanelSectionRow><TextField label="City or postal code" value={cityQuery}
+        onChange={(event) => setCityQuery(event.currentTarget.value)} /></PanelSectionRow>
+      <PanelSectionRow><TextField label="Country (optional)" value={countryQuery}
+        onChange={(event) => setCountryQuery(event.currentTarget.value)} /></PanelSectionRow>
+      <PanelSectionRow><ButtonItem label="Find city" disabled={searching || cityQuery.trim().length < 2}
+        onClick={() => void findCity()}>{searching ? "Searching…" : "Search"}</ButtonItem></PanelSectionRow>
+      {cityResults.map((city, index) => <PanelSectionRow key={`${city.latitude}:${city.longitude}:${index}`}>
+        <ButtonItem label={`${city.name}, ${city.country}`} onClick={() => void chooseCity(city)}>Use this city</ButtonItem>
+      </PanelSectionRow>)}
+    </> : null}
+    {message ? <PanelSectionRow><div style={{ color: "#ffd27a", fontSize: ".78em" }}>{message}</div></PanelSectionRow> : null}
   </PanelSection>;
 }
 
@@ -1691,16 +1701,16 @@ function SetupFrame({ step, title, description, children }: {
   description: string;
   children: ReactNode;
 }) {
-  const steps = ["Lighting", "Night mode", "Review"];
+  const steps = ["Experience", "Brightness", "Review"];
   return <Focusable aria-label={`GabeCubeAura setup, step ${step} of 3`} style={{
     width: "100%",
-    minHeight: "100vh",
+    height: "100%",
+    maxHeight: "100%",
     boxSizing: "border-box",
-    overflowY: "auto",
-    padding: "48px clamp(32px, 6vw, 88px) 72px",
+    overflow: "hidden",
     background: "radial-gradient(circle at 16% 0%, rgba(26,159,255,.18), transparent 38%), linear-gradient(145deg, #101821 0%, #11151b 52%, #090d12 100%)",
   }}>
-    <div style={{ width: "100%", maxWidth: 1040, margin: "0 auto" }}>
+    <ScrollPanel><div style={{ width: "100%", maxWidth: 1040, margin: "0 auto", boxSizing: "border-box", padding: "40px clamp(32px, 6vw, 88px) 156px" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 28 }}>
         <TbCubeSpark size={36} color="#55b9f3" />
         <div>
@@ -1736,7 +1746,7 @@ function SetupFrame({ step, title, description, children }: {
         border: "1px solid rgba(255,255,255,.11)",
         boxShadow: "0 24px 70px rgba(0,0,0,.25)",
       }}>{children}</div>
-    </div>
+    </div></ScrollPanel>
   </Focusable>;
 }
 
@@ -1749,7 +1759,7 @@ function SetupActions({ primaryLabel, primaryText, primaryDisabled = false, onPr
   secondaryText: string;
   onSecondary: () => void;
 }) {
-  return <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.7fr) minmax(0, 1fr)", gap: 12, marginTop: 24 }}>
+  return <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.7fr) minmax(0, 1fr)", gap: 12, marginTop: 24, scrollMarginBottom: 156 }}>
     <ButtonItem layout="below" label={primaryLabel} disabled={primaryDisabled} onClick={onPrimary}>{primaryText}</ButtonItem>
     <ButtonItem layout="below" label={secondaryLabel} disabled={primaryDisabled} onClick={onSecondary}>{secondaryText}</ButtonItem>
   </div>;
@@ -1764,6 +1774,7 @@ function FirstRunSetup({ status, setStatus, onClose }: {
   const [preset, setPreset] = useState<DisplayPreset>("immersive-plus");
   const [location, setLocation] = useState<WeatherLocation | null>(status.weather_location);
   const [nightEnabled, setNightEnabled] = useState(Boolean(status.weather_location));
+  const [dayBrightness, setDayBrightness] = useState(status.light_bar_day_brightness || 9);
   const [nightBrightness, setNightBrightness] = useState(status.night_mode_brightness || 35);
   const [cityQuery, setCityQuery] = useState("");
   const [countryQuery, setCountryQuery] = useState("");
@@ -1772,6 +1783,32 @@ function FirstRunSetup({ status, setStatus, onClose }: {
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
   const selected = ONBOARDING_PRESETS.find((item) => item.data === preset) ?? ONBOARDING_PRESETS[3];
+  const livePreviewColors = status.provider.startsWith("audio-sync") ? status.audio_sync.colors
+    : status.provider.startsWith("screen-sync") ? status.screen_sync.colors
+      : status.provider.startsWith("customization:") ? status.customization.colors
+        : status.provider === "blackout" ? Array.from({ length: 17 }, () => [0, 0, 0] as RGB)
+          : status.provider.startsWith("artwork") ? (status.artwork.colors ?? []) : [];
+
+  useEffect(() => {
+    if (!status.display_preset_preview.active) return;
+    const timer = window.setInterval(() => {
+      void getStatus().then(setStatus).catch(console.warn);
+    }, 250);
+    return () => window.clearInterval(timer);
+  }, [status.display_preset_preview.active, setStatus]);
+
+  const choosePreset = async (nextPreset: DisplayPreset) => {
+    setPreset(nextPreset);
+    setMessage("");
+    try { setStatus(await previewDisplayPreset(nextPreset)); }
+    catch (error) { setMessage(`Preset preview failed: ${String(error)}`); }
+  };
+
+  const previewBrightness = async (mode: "day" | "night", key: "light_bar_day_brightness" | "night_mode_brightness", value: number) => {
+    try {
+      setStatus(await setLightBarBrightness(key, value, mode));
+    } catch (error) { setMessage(`Brightness preview failed: ${String(error)}`); }
+  };
 
   const findCity = async () => {
     setSearching(true);
@@ -1805,6 +1842,7 @@ function FirstRunSetup({ status, setStatus, onClose }: {
     setMessage("");
     try {
       let next = await setSetting("display_preset", preset);
+      next = await setSetting("light_bar_day_brightness", dayBrightness);
       if (location) next = await setSetting("weather_location", location);
       next = await setSetting("night_mode_brightness", nightBrightness);
       next = await setSetting("night_mode_enabled", Boolean(nightEnabled && location));
@@ -1834,8 +1872,8 @@ function FirstRunSetup({ status, setStatus, onClose }: {
     }
   };
 
-  if (step === 1) return <SetupFrame step={1} title="Choose your lighting style"
-    description="Start with one complete setup for the 17-LED light bar. Every individual option remains editable later.">
+  if (step === 1) return <SetupFrame step={1} title="Choose your experience"
+    description="Choose a complete Home and in-game experience. Brightness is configured separately and never changes with the preset.">
     <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 14 }}>
       {ONBOARDING_PRESETS.map((item) => <div key={item.data} style={{
         padding: 14,
@@ -1844,22 +1882,35 @@ function FirstRunSetup({ status, setStatus, onClose }: {
         border: item.data === preset ? "1px solid rgba(104,199,255,.58)" : "1px solid rgba(255,255,255,.08)",
       }}>
         <ButtonItem layout="below" label={`${item.data === preset ? "✓ " : ""}${item.label}`}
-          description={item.detail} onClick={() => setPreset(item.data)}>
+          description={item.detail} onClick={() => void choosePreset(item.data)}>
           {item.data === preset ? "Selected" : "Choose"}
         </ButtonItem>
-        <div style={{ marginTop: 8 }}><PalettePreview colors={onboardingPreview(item.colors)} /></div>
       </div>)}
     </div>
     <div style={{ marginTop: 20, padding: "14px 16px", borderRadius: 12, background: "rgba(255,255,255,.05)", lineHeight: 1.45 }}>
       <b>{selected.label}</b><span style={{ opacity: .72 }}> · {selected.detail}</span>
+      <div style={{ marginTop: 12 }}><PalettePreview colors={livePreviewColors.length ? livePreviewColors : onboardingPreview(selected.colors)} /></div>
+      <div style={{ marginTop: 7, fontSize: ".78em", opacity: .7 }}>
+        {status.display_preset_preview.active
+          ? `Live engine preview on the real bar · ${Math.ceil(status.display_preset_preview.remaining_s)} s`
+          : "Choose the preset again to run its real 10-second Home preview on the light bar."}
+      </div>
     </div>
+    {message ? <div style={{ marginTop: 12, color: "#ffbc9e" }}>{message}</div> : null}
     <SetupActions primaryLabel="Continue" primaryText="Set up night mode" onPrimary={() => setStep(2)}
       secondaryLabel="Skip guided setup" secondaryText={saving ? "Saving…" : "Keep recommended defaults"}
       primaryDisabled={saving} onSecondary={() => void skip()} />
   </SetupFrame>;
 
-  if (step === 2) return <SetupFrame step={2} title="Make nights more comfortable"
-    description="Choose a city manually. GabeCubeAura uses its exact sunrise and sunset times without IP geolocation.">
+  if (step === 2) return <SetupFrame step={2} title="Set your brightness"
+    description="Set the direct hardware brightness for daytime, then optionally dim it automatically using exact local sunset and sunrise times.">
+    <SliderField label="Day brightness" value={dayBrightness} min={1} max={255} step={1} showValue valueSuffix=" / 255"
+      onChange={(value) => { setDayBrightness(value); void previewBrightness("day", "light_bar_day_brightness", value); }} />
+    <div style={{ margin: "8px 0 18px", fontSize: ".8em", opacity: .7 }}>Recommended starting value: 9/255. The real bar previews every change immediately.</div>
+    <ToggleField label="Dim automatically after sunset"
+      description="Use a chosen city's exact solar times. No IP geolocation."
+      checked={nightEnabled} onChange={setNightEnabled} />
+    {nightEnabled ? <>
     {location ? <div style={{ padding: "16px 18px", borderRadius: 14, background: "rgba(38,159,255,.11)", border: "1px solid rgba(104,199,255,.3)" }}>
       <div style={{ fontSize: "1.08em", fontWeight: 700 }}>{location.name}, {location.country}</div>
       <div style={{ marginTop: 5, opacity: .72 }}>Sunrise and sunset are calculated for this exact location.</div>
@@ -1879,19 +1930,21 @@ function FirstRunSetup({ status, setStatus, onClose }: {
       </div> : null}
     </>}
     {location ? <div style={{ marginTop: 16 }}>
-      <ToggleField label="Automatic night mode" description="Dim ordinary lighting after sunset and restore it at sunrise."
-        checked={nightEnabled} onChange={setNightEnabled} />
       <div style={{ marginTop: 12 }}><SliderField label="Night brightness" value={nightBrightness}
-        min={10} max={100} step={5} showValue valueSuffix="%" onChange={setNightBrightness} /></div>
+        description={`${Math.max(1, Math.round(dayBrightness * nightBrightness / 100))}/255 at the current day setting.`}
+        min={10} max={100} step={5} showValue valueSuffix="%" onChange={(value) => {
+          setNightBrightness(value); void previewBrightness("night", "night_mode_brightness", value);
+        }} /></div>
       <div style={{ marginTop: 12 }}><ButtonItem layout="below" label="Change city" onClick={() => {
-        setLocation(null); setNightEnabled(false); setCityResults([]); setMessage("");
+        setLocation(null); setCityResults([]); setMessage("");
       }}>Choose another</ButtonItem></div>
     </div> : <div style={{ marginTop: 16, opacity: .72, lineHeight: 1.45 }}>
       You can continue without a city. Automatic night mode will remain off and can be configured later in Weather settings.
     </div>}
+    </> : null}
     {message ? <div style={{ marginTop: 14, color: message.includes("failed") || message.includes("No matching") ? "#ffbc9e" : "#a9ddff" }}>{message}</div> : null}
     <div style={{ marginTop: 18, opacity: .68, fontSize: ".82em" }}>
-      Playtime warnings stay fully visible. Thermal protection always remains active.
+      Important alerts temporarily use day brightness. Thermal protection always returns complete control to Valve.
     </div>
     <SetupActions primaryLabel="Continue" primaryText="Review setup" onPrimary={() => setStep(3)}
       secondaryLabel="Back" secondaryText="Lighting style" onSecondary={() => setStep(1)} />
@@ -1900,10 +1953,11 @@ function FirstRunSetup({ status, setStatus, onClose }: {
   return <SetupFrame step={3} title="Ready to start"
     description="Review the choices that will be saved. You can change all of them later from GabeCubeAura settings.">
     <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 12 }}>
-      {[{ label: "Lighting preset", value: selected.label }, {
-        label: "Night mode", value: nightEnabled && location
-          ? `${location.name} · ${nightBrightness}%` : "Off",
-      }, { label: "Updates", value: "Stable · every 24 hours" }].map((item) => <div key={item.label} style={{
+      {[{ label: "Lighting preset", value: selected.label },
+      { label: "Day brightness", value: `${dayBrightness}/255` }, {
+        label: "Night brightness", value: nightEnabled && location
+          ? `${location.name} · ${nightBrightness}% · ${Math.max(1, Math.round(dayBrightness * nightBrightness / 100))}/255` : "Off",
+      }].map((item) => <div key={item.label} style={{
         minHeight: 92,
         padding: "16px 18px",
         borderRadius: 14,
@@ -1920,7 +1974,7 @@ function FirstRunSetup({ status, setStatus, onClose }: {
     {message ? <div style={{ marginTop: 14, color: "#ffbc9e" }}>{message}</div> : null}
     <SetupActions primaryLabel="Apply setup" primaryText={saving ? "Saving…" : "Start GabeCubeAura"}
       primaryDisabled={saving} onPrimary={() => void finish()}
-      secondaryLabel="Back" secondaryText="Night mode" onSecondary={() => setStep(2)} />
+      secondaryLabel="Back" secondaryText="Brightness" onSecondary={() => setStep(2)} />
   </SetupFrame>;
 }
 
@@ -2426,7 +2480,7 @@ function Content({ page = "quick" }: { page?: Page }) {
         : null}
 
       {showPage("routing") ? <>
-        <PanelSection title="Display routing">
+        <PanelSection title="GabeCubeAura">
           <PanelSectionRow><ToggleField label="Enable GabeCubeAura"
             description="Turns off every GabeCubeAura light without deleting display routes, launch effects, or per-game choices."
             checked={status.signalbar_enabled}
@@ -2438,6 +2492,9 @@ function Content({ page = "quick" }: { page?: Page }) {
           {routingMessage ? <PanelSectionRow><div style={{ fontSize: ".78em", color: "#ffd27a" }}>
             {routingMessage}
           </div></PanelSectionRow> : null}
+        </PanelSection>
+        <LightBarBrightness status={status} setStatus={setStatus} />
+        <PanelSection title="Display routing">
           <PanelSectionRow><DropdownItem label="Steam ownership"
             description={VALVE_OWNERSHIP_DESCRIPTIONS[status.valve_ownership_policy] ?? VALVE_OWNERSHIP_DESCRIPTIONS.cooperative}
             rgOptions={VALVE_OWNERSHIP_OPTIONS} selectedOption={status.valve_ownership_policy}
@@ -2457,7 +2514,6 @@ function Content({ page = "quick" }: { page?: Page }) {
             <b>GabeCubeAura Off</b> releases the permanent display to Steam. <b>Blackout</b> actively holds all 17 LEDs off while keeping GabeCubeAura ownership. Temporary GabeCubeAura layers still follow the selected preset. The master switch releases everything. Weather requires a city.
           </div></PanelSectionRow>
         </PanelSection>
-        <LightBarCalibration status={status} setStatus={setStatus} />
         {status.game.appid > 0 ? <PanelSection title="Current game override">
           <PanelSectionRow><DropdownItem label={status.game.title || `AppID ${status.game.appid}`}
             description="Saved for this AppID only."

@@ -1148,6 +1148,38 @@ class PersistenceTests(unittest.TestCase):
             self.assertEqual((first / "brightness_scale").read_text(), "72")
             self.assertFalse(recovery.exists())
 
+    def test_dynamic_brightness_transition_restores_original_steam_gain(self):
+        with tempfile.TemporaryDirectory() as directory:
+            paths = []
+            for index in range(17):
+                path = Path(directory) / f"valve-leds[{index}]"
+                path.mkdir()
+                (path / "multi_intensity").write_text("0 0 0")
+                (path / "brightness").write_text("255")
+                paths.append(str(path))
+            first = Path(paths[0])
+            (first / "effect").write_text("normal")
+            (first / "enabled").write_text("1")
+            (first / "brightness_scale").write_text("77")
+            recovery = Path(directory) / "brightness-recovery.json"
+            clock = ManualClock(100)
+            renderer = Renderer(
+                ValveLedHardware(paths), brightness_recovery_path=str(recovery), clock=clock,
+            )
+            renderer.set_output_brightness_scale(9)
+            self.assertTrue(renderer.render(BLUE))
+            renderer.set_output_brightness_scale(3)
+            clock.advance(.051)
+            self.assertTrue(renderer.render(BLUE))
+            self.assertEqual((first / "brightness_scale").read_text(), "3")
+            payload = json.loads(recovery.read_text())
+            self.assertEqual(payload["protocol"], 2)
+            self.assertEqual(payload["saved_brightness_scale"], 77)
+            self.assertEqual(payload["expected_brightness_scales"], [3])
+            self.assertTrue(renderer.relinquish(True))
+            self.assertEqual((first / "brightness_scale").read_text(), "77")
+            self.assertFalse(recovery.exists())
+
     def test_calibrated_output_recovers_after_an_interrupted_renderer(self):
         with tempfile.TemporaryDirectory() as directory:
             paths = []

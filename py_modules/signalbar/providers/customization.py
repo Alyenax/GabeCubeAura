@@ -156,6 +156,9 @@ class CustomizationProvider:
         self._preview_until = 0.0
         self._calibration_started_at = 0.0
         self._calibration_until = 0.0
+        self._brightness_preview_started_at = 0.0
+        self._brightness_preview_until = 0.0
+        self._brightness_preview_mode = "day"
 
     def preview(self, seconds=8.0):
         with self._lock:
@@ -170,11 +173,21 @@ class CustomizationProvider:
             self._calibration_until = now + duration
         return True
 
+    def preview_brightness(self, mode="day", seconds=3.0):
+        mode = "night" if mode == "night" else "day"
+        with self._lock:
+            now = self.clock()
+            self._brightness_preview_started_at = now
+            self._brightness_preview_until = now + max(1.0, min(10.0, float(seconds)))
+            self._brightness_preview_mode = mode
+        return True
+
     def stop_preview(self):
         with self._lock:
             self._preview_until = 0.0
             self._calibration_started_at = 0.0
             self._calibration_until = 0.0
+            self._brightness_preview_until = 0.0
 
     def output(self, values, enabled=False):
         with self._lock:
@@ -182,6 +195,15 @@ class CustomizationProvider:
             preview = now < self._preview_until
             calibration = now < self._calibration_until
             calibration_elapsed = max(0.0, now - self._calibration_started_at)
+            brightness_preview = now < self._brightness_preview_until
+            brightness_elapsed = max(0.0, now - self._brightness_preview_started_at)
+            brightness_mode = self._brightness_preview_mode
+        if brightness_preview:
+            return ProviderOutput(
+                f"customization:brightness-preview:{brightness_mode}",
+                calibration_frame(brightness_elapsed, 210),
+                f"{brightness_mode.title()} brightness hardware preview",
+            )
         if calibration:
             return ProviderOutput(
                 "customization:calibration",
@@ -207,10 +229,14 @@ class CustomizationProvider:
             preview = now < self._preview_until
             calibration = now < self._calibration_until
             calibration_elapsed = max(0.0, now - self._calibration_started_at)
+            brightness_preview = now < self._brightness_preview_until
+            brightness_elapsed = max(0.0, now - self._brightness_preview_started_at)
+            brightness_mode = self._brightness_preview_mode
         count = max(1, min(3, int(values.get("customization_colour_count", 1))))
         colours = [values[f"customization_colour_{index}"] for index in range(1, count + 1)]
         status_frame = (
-            calibration_frame(calibration_elapsed, values.get("audio_sync_brightness", 160))
+            calibration_frame(brightness_elapsed, 210)
+            if brightness_preview else calibration_frame(calibration_elapsed, values.get("audio_sync_brightness", 160))
             if calibration else customization_frame(
                 values.get("customization_pattern", "steady"), colours, self.clock(),
                 values.get("customization_brightness", 128),
@@ -221,6 +247,9 @@ class CustomizationProvider:
         return {
             "preview_active": preview,
             "calibration_preview_active": calibration,
+            "brightness_preview_active": brightness_preview,
+            "brightness_preview_mode": brightness_mode,
+            "brightness_preview_remaining_s": max(0.0, self._brightness_preview_until - now),
             "calibration_stage": calibration_stage(calibration_elapsed) if calibration else "idle",
             "calibration_remaining_s": max(0.0, self._calibration_until - now),
             "colors": [list(pixel) for pixel in status_frame],

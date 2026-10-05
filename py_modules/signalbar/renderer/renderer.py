@@ -27,6 +27,7 @@ class Renderer:
         self._failed = False
         self._writes = 0
         self._output_brightness_scale: Optional[int] = None
+        self._applied_brightness_scale: Optional[int] = None
         self._saved_brightness_scale: Optional[int] = None
         self._brightness_override_active = False
         self._brightness_recovery_path = brightness_recovery_path
@@ -67,7 +68,7 @@ class Renderer:
             return None
         return reader()
 
-    def _write_recovery(self, saved: int, reference: int):
+    def _write_recovery(self, saved: int, *expected: int):
         if not self._brightness_recovery_path:
             return
         path = os.path.abspath(self._brightness_recovery_path)
@@ -76,9 +77,9 @@ class Renderer:
         temporary = f"{path}.tmp"
         with open(temporary, "w", encoding="utf-8") as handle:
             json.dump({
-                "protocol": 1,
+                "protocol": 2,
                 "saved_brightness_scale": int(saved),
-                "reference_brightness_scale": int(reference),
+                "expected_brightness_scales": sorted({int(value) for value in expected}),
             }, handle, sort_keys=True)
             handle.write("\n")
         os.replace(temporary, path)
@@ -98,18 +99,26 @@ class Renderer:
         try:
             with open(path, encoding="utf-8") as handle:
                 payload = json.load(handle)
-            if not isinstance(payload, dict) or payload.get("protocol") != 1:
+            if not isinstance(payload, dict) or payload.get("protocol") not in {1, 2}:
                 self._clear_recovery()
                 return
             saved = max(0, min(255, int(payload["saved_brightness_scale"])))
-            reference = max(0, min(255, int(payload["reference_brightness_scale"])))
+            if payload.get("protocol") == 1:
+                expected = [max(0, min(255, int(payload["reference_brightness_scale"])))]
+            else:
+                expected = [
+                    max(0, min(255, int(value)))
+                    for value in payload["expected_brightness_scales"]
+                ]
+                if not expected:
+                    raise ValueError("empty expected brightness set")
             current = self._read_brightness_scale()
             restorer = getattr(self.hardware, "restore_brightness_scale_if", None)
-            if current == reference and callable(restorer):
-                self._startup_brightness_recovered = bool(restorer(reference, saved))
+            if current in expected and callable(restorer):
+                self._startup_brightness_recovered = bool(restorer(current, saved))
             # A different current value means Steam or the user already took
             # over. Never replace it with stale recovery data.
-            if current != reference or self._startup_brightness_recovered:
+            if current not in expected or self._startup_brightness_recovered:
                 self._clear_recovery()
         except (OSError, TypeError, ValueError, json.JSONDecodeError, KeyError):
             # Keep a valid-looking recovery file for the next startup if the
@@ -148,13 +157,27 @@ class Renderer:
                 return
             self._saved_brightness_scale = current
             self._write_recovery(current, reference)
+        elif self._applied_brightness_scale != reference and self._saved_brightness_scale is not None:
+            # Either side of a sysfs transition can survive a sudden stop.
+            # Both are therefore safe recovery sentinels until the write is
+            # confirmed, after which the record is collapsed to the new one.
+            self._write_recovery(
+                self._saved_brightness_scale,
+                self._applied_brightness_scale,
+                reference,
+            )
         if setter(reference):
             self._brightness_override_active = True
+            self._applied_brightness_scale = reference
+            if self._saved_brightness_scale is not None:
+                self._write_recovery(self._saved_brightness_scale, reference)
 
     def _release_brightness_override(self, expected: Optional[int] = None):
         if not self._brightness_override_active and self._saved_brightness_scale is None:
             return False
-        reference = self._output_brightness_scale if expected is None else expected
+        reference = self._applied_brightness_scale
+        if reference is None:
+            reference = self._output_brightness_scale if expected is None else expected
         saved = self._saved_brightness_scale
         current = self._read_brightness_scale()
         restored = False
@@ -167,6 +190,7 @@ class Renderer:
         if restored or current is None or current != reference:
             self._clear_recovery()
         self._saved_brightness_scale = None
+        self._applied_brightness_scale = None
         self._brightness_override_active = False
         return restored
 
@@ -177,6 +201,7 @@ class Renderer:
                 "supported": current is not None,
                 "detected_brightness": current,
                 "reference_brightness": self._output_brightness_scale,
+                "applied_brightness": self._applied_brightness_scale,
                 "saved_steam_brightness": self._saved_brightness_scale,
                 "override_active": self._brightness_override_active,
                 "startup_recovered": self._startup_brightness_recovered,
@@ -239,6 +264,7 @@ class Renderer:
                 if restored:
                     self._clear_recovery()
                     self._saved_brightness_scale = None
+                    self._applied_brightness_scale = None
                     self._brightness_override_active = False
                 else:
                     self._release_brightness_override()

@@ -22,9 +22,10 @@ DEFAULTS = {
     "display_preset": "immersive-plus",
     "display_preset_restore": {},
     "valve_ownership_policy": "downloads",
-    # Approved 1.3.2 reference configuration. The renderer restores Steam's
-    # saved hardware gain before every normal ownership handoff.
+    # Legacy import/export field. Runtime brightness is now entirely owned by
+    # the explicit day value below.
     "led_output_calibration_mode": "consistent",
+    "light_bar_day_brightness": 9,
     "screen_sync_style": "panorama",
     "screen_sync_brightness": 160,
     "screen_sync_reactivity": "balanced",
@@ -187,7 +188,6 @@ VALID_DISPLAY_PRESETS = {
     "atmosphere", "signals", "immersive", "immersive-plus", "festive",
 }
 VALID_VALVE_OWNERSHIP_POLICIES = {"cooperative", "downloads", "critical"}
-VALID_LED_OUTPUT_CALIBRATION_MODES = {"follow", "consistent"}
 VALID_SCREEN_SYNC_STYLES = {"panorama", "ambient"}
 VALID_SCREEN_SYNC_REACTIVITY = {"calm", "balanced", "fast"}
 VALID_SCREEN_SYNC_COLOUR_INTENSITY = {"natural", "vivid"}
@@ -678,8 +678,16 @@ class SettingsStore:
             self._data["display_preset"] = DEFAULTS["display_preset"]
         if self._data.get("valve_ownership_policy") not in VALID_VALVE_OWNERSHIP_POLICIES:
             self._data["valve_ownership_policy"] = DEFAULTS["valve_ownership_policy"]
-        if self._data.get("led_output_calibration_mode") not in VALID_LED_OUTPUT_CALIBRATION_MODES:
-            self._data["led_output_calibration_mode"] = DEFAULTS["led_output_calibration_mode"]
+        # Compatibility key retained for older configuration exports. Follow
+        # Steam is intentionally retired because Steam cannot change this gain
+        # while GabeCubeAura owns the bar.
+        self._data["led_output_calibration_mode"] = "consistent"
+        try:
+            self._data["light_bar_day_brightness"] = max(
+                1, min(255, int(round(float(self._data["light_bar_day_brightness"]))))
+            )
+        except (TypeError, ValueError, OverflowError):
+            self._data["light_bar_day_brightness"] = DEFAULTS["light_bar_day_brightness"]
         raw_restore = self._data.get("display_preset_restore")
         self._data["display_preset_restore"] = (
             {

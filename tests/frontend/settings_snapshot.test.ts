@@ -10,6 +10,9 @@ const sampleStatus = {
     current_display: "performance",
     led_output_calibration_mode: "consistent",
     led_output_calibration: { reference_brightness: 9, detected_brightness: 9 },
+    light_bar_day_brightness: 9,
+    light_bar_brightness: { control_mode: "hardware" },
+    night_mode_brightness: 35,
     game: { appid: 42, title: "Example Game" },
     artwork_default_source: "hero", artwork_default_mode: "auto", artwork_default_manual_y: .5, artwork_default_vibrance: 100,
     artwork_source: "header", artwork_mode: "manual", artwork_manual_y: .83, artwork_vibrance: 145, artwork_custom: true,
@@ -74,7 +77,7 @@ test("debug snapshot includes every settings group and distinguishes defaults fr
     "In-game pattern stereo-lanterns", "Palette artwork", "automatic level matching", "strength 125%", "edge reach 140%",
     "#6387E9", "#0B5E8E",
     "background 70%", "colour intensity 145%", "Weather LED brightness 65%", "Extra dark LEDs 2",
-    "Consistent output 9/255"]) {
+    "Light bar Day 9/255 · Night 35% · hardware"]) {
     assert.ok(text.includes(expected), expected);
   }
   assert.ok(!text.includes("/private/device/path"));

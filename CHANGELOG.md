@@ -1,5 +1,54 @@
 # Changelog
 
+## 1.3.3-lab.3 - 2026-10-05
+
+### NEW FEATURE — One brightness control for the whole light bar
+
+- Add a global **Day brightness** from 1 to 255, independent of Home and
+  in-game routes. The shipped and migrated Consistent output remains exactly
+  `9/255`.
+- Apply **Night brightness** as a percentage of the chosen day value. At the
+  default 35%, `9/255` becomes `3/255` after sunset.
+- Show the active output, next sunrise, selected city, hardware support and
+  exact Steam brightness saved for the next handoff in Display routing.
+- Remove the misleading Follow Steam Brightness choice. Steam's value is now
+  only the exact value restored whenever Valve regains the bar.
+
+### NEW FEATURE — Real hardware previews during first setup
+
+- Turn preset selection into a ten-second preview of the real Home recipe on
+  the physical 17-LED bar. Audio Sync uses the live audio engine; the Decky
+  preview mirrors the engine's 17 pixels instead of inventing another
+  animation.
+- Preview Day and Night slider changes immediately on the physical bar with a
+  bounded three-second calibration frame.
+- Rework the guided setup into Experience, Brightness and Review. The review
+  includes the day gain and the computed night gain.
+
+### Major fixes
+
+- Move all sunset dimming from per-frame RGB multiplication to the single
+  hardware gain layer. Changing a display preset or route can no longer alter
+  the chosen global brightness.
+- Make dynamic day/night gain changes crash-safe. Recovery records accept both
+  sides of an in-progress transition and always restore the original Steam
+  value after a verified handoff or interrupted session.
+- Keep playtime and low-controller alerts at day brightness. Thermal
+  protection still bypasses every preview and immediately returns complete
+  control to Valve.
+- Put the full-screen setup inside Decky's native scrolling panel and reserve
+  156 pixels below its final controls for Steam's Menu / A Select / B Back
+  footer.
+
+### Minor fixes
+
+- Use the previous RGB attenuation path only when the driver does not expose
+  `brightness_scale`, and identify that fallback clearly in the interface.
+- Move city and automatic night controls into the global Light bar brightness
+  section while Weather keeps the same shared location and solar data.
+- Keep existing users out of onboarding and preserve Stable updates every 24
+  hours with no stored Private Lab authorization on a completed first setup.
+
 ## 1.3.3-lab.2 - 2026-10-05
 
 ### Full-screen first-run setup

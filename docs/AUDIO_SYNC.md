@@ -8,13 +8,13 @@ no audio is discarded merely because PipeWire's requested 50 ms cadence differs
 from the 60 ms analysis hop. Audio is never written to disk or sent over the
 network.
 
-Valve's Customization brightness remains a global hardware gain after these
-RGB calculations. The experimental Light bar calibration section in Display
-routing can temporarily use the 9 / 255 GabeCubeAura reference while the
-plugin owns the bar. Consistent output is selected by the approved 1.3.2
-configuration; Follow Steam remains available. Audio Sync's
-own Brightness control still sets the pattern's RGB ceiling. Automatic
-programme-level matching handles different source levels without a manual gain.
+GabeCubeAura's Light bar brightness remains a global hardware gain after these
+RGB calculations. Day brightness applies to every route; optional night
+brightness is a percentage of it. The default `9 / 255` preserves the approved
+1.3.2 output, and Steam's original value is restored exactly on every normal
+handoff. Audio Sync's own Brightness control still sets the pattern's RGB
+ceiling. Automatic programme-level matching handles different source levels
+without a manual gain.
 
 ## Modes
 

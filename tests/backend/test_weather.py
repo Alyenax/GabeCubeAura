@@ -13,7 +13,7 @@ from urllib.error import URLError
 import signalbar.providers.weather as weather_module
 from signalbar.arbiter import Arbiter
 from signalbar.backend import Engine
-from signalbar.backend.engine import apply_automatic_night_brightness
+from signalbar.backend.engine import apply_rgb_brightness_fallback, resolve_light_bar_brightness
 from signalbar.models import GameState, ProviderOutput, normalize_frame
 from signalbar.providers.weather import (
     CONDITIONS, VARIANT_NAMES, WeatherProvider, condition_for_code,
@@ -28,6 +28,26 @@ SAMPLE = {"weather_code": 2, "is_day": True, "condition": "breaks", "observed_at
 
 
 class WeatherTests(unittest.TestCase):
+    def test_global_brightness_resolves_day_night_alert_and_preview(self):
+        values = dict(DEFAULTS, light_bar_day_brightness=9, night_mode_brightness=35)
+        day = {"active": False}
+        night = {"active": True}
+        self.assertEqual(resolve_light_bar_brightness(values, "audio-sync", day), (9, "day"))
+        self.assertEqual(resolve_light_bar_brightness(values, "audio-sync", night), (3, "night"))
+        self.assertEqual(resolve_light_bar_brightness(values, "countdown", night), (9, "alert"))
+        self.assertEqual(resolve_light_bar_brightness(values, "controller:low", night), (9, "alert"))
+        self.assertEqual(resolve_light_bar_brightness(
+            values, "customization:brightness-preview:day", night,
+        ), (9, "day"))
+        self.assertEqual(resolve_light_bar_brightness(
+            values, "customization:brightness-preview:night", day,
+        ), (3, "night"))
+
+    def test_rgb_fallback_uses_nine_as_the_unchanged_reference(self):
+        frame = [(90, 45, 9)] * 17
+        self.assertEqual(apply_rgb_brightness_fallback(frame, 9), frame)
+        self.assertEqual(apply_rgb_brightness_fallback(frame, 3)[0], (30, 15, 3))
+
     def test_variant_catalogue_and_frame_bounds(self):
         self.assertEqual({key: len(names) for key, names in VARIANT_NAMES.items()}, WEATHER_VARIANT_COUNTS)
         self.assertEqual(set(CONDITIONS), set(VARIANT_NAMES))
@@ -231,13 +251,9 @@ class WeatherTests(unittest.TestCase):
                       night_mode_brightness=35)
         solar = provider.solar_status(values)
         self.assertTrue(solar["active"])
-        frame = [(200, 100, 40)] * 17
-        self.assertEqual(
-            apply_automatic_night_brightness(frame, "audio-sync", solar)[0],
-            (70, 35, 14),
-        )
-        self.assertIs(apply_automatic_night_brightness(frame, "countdown", solar), frame)
-        self.assertIs(apply_automatic_night_brightness(frame, "controller:low", solar), frame)
+        self.assertEqual(resolve_light_bar_brightness(values, "audio-sync", solar), (3, "night"))
+        self.assertEqual(resolve_light_bar_brightness(values, "countdown", solar), (9, "alert"))
+        self.assertEqual(resolve_light_bar_brightness(values, "controller:low", solar), (9, "alert"))
 
     def test_night_mode_requires_a_city_and_legacy_users_skip_onboarding(self):
         with tempfile.TemporaryDirectory() as folder:

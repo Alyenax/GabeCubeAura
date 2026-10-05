@@ -55,7 +55,8 @@ class Arbiter:
         if weather_base is not None and weather_base.provider == "weather:preview" and weather_base.frame is not None:
             return self._with_recording_marker(weather_base, recording_marker, recording_marker_isolation)
         if customization_base is not None \
-                and customization_base.provider in {"customization:preview", "customization:calibration"} \
+                and (customization_base.provider in {"customization:preview", "customization:calibration"}
+                     or customization_base.provider.startswith("customization:brightness-preview:")) \
                 and customization_base.frame is not None:
             return self._with_recording_marker(customization_base, recording_marker, recording_marker_isolation)
 

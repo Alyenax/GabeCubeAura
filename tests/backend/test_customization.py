@@ -54,6 +54,35 @@ class CustomizationTests(unittest.TestCase):
         clock.advance(3.4)
         self.assertEqual(provider.status(values)["calibration_stage"], "motion-contrast")
 
+    def test_brightness_preview_uses_real_seventeen_pixel_provider_and_priority(self):
+        clock = ManualClock(100)
+        provider = CustomizationProvider(clock=clock)
+        values = {
+            "audio_sync_brightness": 160,
+            "customization_colour_count": 1,
+            "customization_colour_1": [255, 120, 24],
+            "customization_pattern": "steady",
+            "customization_brightness": 128,
+            "customization_speed": 50,
+            "customization_direction": "forward",
+        }
+        provider.preview_brightness("night", 3)
+        output = provider.output(values)
+        self.assertEqual(output.provider, "customization:brightness-preview:night")
+        self.assertEqual(len(output.frame), 17)
+        status = provider.status(values)
+        self.assertTrue(status["brightness_preview_active"])
+        self.assertEqual(status["brightness_preview_mode"], "night")
+        empty = ProviderOutput("none", None, "")
+        decision = Arbiter().choose(
+            mode="performance", guard_allows=True, game=GameState(),
+            performance=empty, artwork=empty, idle=empty,
+            customization_base=output,
+        )
+        self.assertEqual(decision.provider, "customization:brightness-preview:night")
+        clock.advance(3.1)
+        self.assertFalse(provider.status(values)["brightness_preview_active"])
+
     def test_all_grouped_patterns_render_bounded_palette_locked_frames(self):
         self.assertEqual(len(CUSTOMIZATION_PATTERNS), 61)
         for pattern in CUSTOMIZATION_PATTERNS:
@@ -101,6 +130,12 @@ class CustomizationTests(unittest.TestCase):
             self.assertEqual(values["led_output_calibration_mode"], "consistent")
             values = store.update({"led_output_calibration_mode": "invalid"})
             self.assertEqual(values["led_output_calibration_mode"], "consistent")
+            values = store.update({"light_bar_day_brightness": 300})
+            self.assertEqual(values["light_bar_day_brightness"], 255)
+            values = store.update({"light_bar_day_brightness": 0})
+            self.assertEqual(values["light_bar_day_brightness"], 1)
+            values = store.update({"light_bar_day_brightness": "invalid"})
+            self.assertEqual(values["light_bar_day_brightness"], 9)
 
     def test_arbiter_selects_customization_as_a_permanent_base(self):
         arbiter = Arbiter()

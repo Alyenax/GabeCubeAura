@@ -46,7 +46,7 @@ export function buildSettingsSnapshot(status: Status): SettingsSnapshotSection[]
       title: "Display",
       lines: [
         `Home ${displayMode[status.home_display]} · In game ${displayMode[status.game_display]} · Current ${displayMode[status.current_display]} · Master ${onOff(status.signalbar_enabled)}`,
-        `Light bar ${status.led_output_calibration_mode === "consistent" ? `Consistent output ${status.led_output_calibration.reference_brightness}/255` : `Follow Steam ${status.led_output_calibration.detected_brightness == null ? "waiting" : `${status.led_output_calibration.detected_brightness}/255`}`}`,
+        `Light bar Day ${status.light_bar_day_brightness}/255 · Night ${status.night_mode_brightness}% · ${status.light_bar_brightness.control_mode}`,
         gameRunning
           ? `Game ${status.game.title || "Running game"} · Override ${status.display_override === "inherit" ? "Use in-game default" : displayMode[status.display_override]}`
           : "Home · Game override applies when a game runs",

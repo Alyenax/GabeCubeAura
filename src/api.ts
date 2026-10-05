@@ -28,6 +28,10 @@ export const submitArtwork = callable<[
 export const previewLaunchArtwork = callable<[], boolean>("preview_launch_artwork");
 export const previewCustomization = callable<[], boolean>("preview_customization");
 export const previewLightCalibration = callable<[], Status>("preview_light_calibration");
+export const setLightBarBrightness = callable<[
+  key: "light_bar_day_brightness" | "night_mode_brightness", value: number, mode: "day" | "night",
+], Status>("set_light_bar_brightness");
+export const previewDisplayPreset = callable<[preset: string], Status>("preview_display_preset");
 export interface SteamActivityPolicy {
   ownership_policy: "cooperative" | "downloads" | "critical";
   suppress_download_animation: boolean;

@@ -168,6 +168,21 @@ class Plugin:
         self.engine.preview_light_calibration()
         return self.engine.status()
 
+    async def preview_light_brightness(self, mode: str = "day"):
+        self.engine.preview_light_brightness(mode)
+        return self.engine.status()
+
+    async def set_light_bar_brightness(self, key: str, value, mode: str = "day"):
+        if key not in {"light_bar_day_brightness", "night_mode_brightness"}:
+            raise ValueError("Unsupported light bar brightness setting")
+        self.engine.update_settings({key: value})
+        self.engine.preview_light_brightness(mode)
+        return self.engine.status()
+
+    async def preview_display_preset(self, preset: str):
+        self.engine.preview_display_preset(preset, 10.0)
+        return self.engine.status()
+
     async def set_steam_activity(self, active: bool, reason: str = "Steam event"):
         return self.engine.set_steam_activity(active, reason)
 

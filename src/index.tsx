@@ -1157,6 +1157,9 @@ function LightBarBrightness({ status, setStatus }: {
     <PanelSectionRow><SliderField label="Day brightness" description="Direct hardware brightness. Moving the slider previews it immediately on the 17-LED bar."
       min={1} max={255} step={1} showValue valueSuffix=" / 255" value={status.light_bar_day_brightness}
       onChange={(value) => void preview("day", "light_bar_day_brightness", value)} /></PanelSectionRow>
+    {status.light_bar_day_brightness < 8 ? <PanelSectionRow>
+      <LowBrightnessWarning mode="Day" value={status.light_bar_day_brightness} />
+    </PanelSectionRow> : null}
     <PanelSectionRow><ToggleField label="Dim automatically after sunset"
       description={status.weather_location
         ? `Uses sunset and sunrise for ${status.weather_location.name}, ${status.weather_location.country}.`
@@ -1168,6 +1171,9 @@ function LightBarBrightness({ status, setStatus }: {
       description={`${status.night_mode_brightness}% of day brightness · ${nightOutput}/255. Moving the slider previews the night output immediately.`}
       min={10} max={100} step={5} showValue valueSuffix="%" value={status.night_mode_brightness}
       onChange={(value) => void preview("night", "night_mode_brightness", value)} /></PanelSectionRow>
+    {nightOutput < 8 ? <PanelSectionRow>
+      <LowBrightnessWarning mode="Night" value={nightOutput} />
+    </PanelSectionRow> : null}
     <PanelSectionRow><div style={{ width: "100%", fontSize: ".79em", lineHeight: 1.5 }}>
       <div>Current output: <b>{currentOutput}</b></div>
       <div>Location: <b>{status.weather_location ? `${status.weather_location.name}, ${status.weather_location.country}` : "Not set"}</b></div>

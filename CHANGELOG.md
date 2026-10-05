@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.3.3-lab.9 - 2026-10-05
+
+### Display Routing brightness warnings
+
+- Show the same red low-output warning from onboarding below Day brightness in
+  Display Routing whenever it is below `8/255`.
+- Show it below Night brightness whenever the computed effective night output
+  is below `8/255`, including when the day value itself remains higher.
+
 ## 1.3.3-lab.8 - 2026-10-05
 
 ### Skip setup correction

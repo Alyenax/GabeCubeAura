@@ -114,6 +114,10 @@ class PackagingTests(unittest.TestCase):
             panel.index('title="Current game override"'),
         )
         self.assertIn('Below 8/255, the lighting experience may be strongly affected.', panel)
+        self.assertEqual(panel.count('<LowBrightnessWarning mode="Day"'), 2)
+        self.assertEqual(panel.count('<LowBrightnessWarning mode="Night"'), 2)
+        self.assertIn('status.light_bar_day_brightness < 8 ? <PanelSectionRow>', panel)
+        self.assertIn('nightOutput < 8 ? <PanelSectionRow>', panel)
         self.assertIn('Recommended starting value: 9/255 effective output.', panel)
         self.assertIn('<LowBrightnessWarning mode="Night" value={effectiveNightBrightness} />', panel)
         self.assertIn('Scroll down for the buttons', panel)

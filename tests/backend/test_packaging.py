@@ -16,6 +16,7 @@ class PackagingTests(unittest.TestCase):
             "docs/RELEASE_NOTES_1.2.1-beta.1.md", "docs/AUDIO_SYNC.md",
             "docs/RELEASE_NOTES_1.3.0.md", "docs/RELEASE_NOTES_1.3.1.md",
             "docs/RELEASE_NOTES_1.3.2.md",
+            "docs/RELEASE_NOTES_1.4.0.md",
             "docs/PRIVATE_LAB_UPDATES.md",
         ):
             self.assertTrue((root / relative).is_file(), relative)

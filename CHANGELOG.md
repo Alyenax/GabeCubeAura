@@ -1,5 +1,79 @@
 # Changelog
 
+## 1.4.0 - 2026-10-05
+
+Stable release. Changes since 1.3.2:
+
+### NEW FEATURE: Guided first-time setup
+
+- Add a three-step, full-screen Decky setup for choosing an experience,
+  configuring brightness and reviewing the result before it is saved.
+- Offer Moderate, Atmosphere, Signals and Immersive with representative
+  previews on the physical 17-LED bar. Immersive uses a deterministic Slow
+  Prism and Screen Sync demonstration that does not require live capture.
+- Keep the final controls above Steam's `Menu / A Select / B Back` footer and
+  show a clear scroll cue until the user starts moving down the page.
+- Keep existing users out of onboarding. Skipping a new installation applies
+  the recommended Immersive preset and Day brightness `9/255`.
+
+### NEW FEATURE: One global Day/Night brightness control
+
+- Add one Day brightness from 1 to 255 for every Home and in-game route.
+  Presets and display routes never overwrite it.
+- Add optional Night brightness as a percentage of Day brightness, switched at
+  the exact sunset and sunrise times for a manually selected city. Weather does
+  not need to be the active display.
+- Preview both values immediately on the physical bar and show the effective
+  `/255` output, active period, next sunrise, location and hardware support.
+- Warn in red whenever Day or effective Night output is below `8/255`.
+  Important alerts temporarily return to Day brightness.
+
+### NEW FEATURE: Real thermal protection
+
+- Stop every GabeCubeAura animation and hardware write when either CPU or GPU
+  reaches 94°C, then return complete light-bar control to Valve immediately.
+- Stay disabled until both coherent readings remain strictly below 90°C for 30
+  continuous seconds. Missing, stale, non-finite or implausible data during an
+  active alert keeps the plugin disabled.
+- Show `Désactivé temporairement : protection thermique` while the interlock is
+  active. Fixed red is once again an ordinary usable colour.
+
+### NEW FEATURE: Weather-first Atmosphere
+
+- Make Weather the Home display for Atmosphere. If no current weather frame is
+  available, fall back automatically to Slow Prism with Screen Sync colours.
+- Return Weather to priority as soon as a valid frame is available, without
+  changing the selected preset or brightness.
+
+### Major fixes
+
+- Remove the misleading Follow Steam Brightness mode. GabeCubeAura now owns the
+  selected gain while it owns the bar and restores Steam's exact saved value on
+  every verified Valve handoff.
+- Make Day/Night gain transitions crash-safe. Recovery accepts either side of
+  an interrupted hardware change without overwriting a newer Steam value.
+- Keep thermal protection above every preview and temporary layer. Playtime
+  and low-controller alerts continue to use Day brightness.
+- Make Signals preview its real two-controller animation before a controller is
+  paired, and make Immersive preview independent from Audio Sync, artwork and
+  Gamescope availability.
+- Preserve every existing user's routing and visual settings during migration.
+  Completed setup restores Stable updates every 24 hours and removes saved
+  Private Lab authorization.
+
+### Minor fixes
+
+- Reorder presets as Lights out, Essential, Focus, Moderate, Atmosphere,
+  Signals, Immersive, Immersive+, Festive and Custom.
+- Clarify that Lights out excludes even Valve's download animation, while
+  Essential still hands confirmed downloads to Valve.
+- Move Light bar brightness to the end of Display Routing, after the optional
+  current-game override.
+- Hide TW3-SteamRGB, StripMine ownership and per-display StripMine priorities
+  behind one collapsed compatibility toggle in Advanced settings.
+- Report the RGB attenuation fallback clearly when the hardware driver does not
+  expose `brightness_scale`.
+
 ## 1.3.3-lab.9 - 2026-10-05
 
 ### Display Routing brightness warnings
@@ -53,7 +127,7 @@
 
 ## 1.3.3-lab.4 - 2026-10-05
 
-### NEW FEATURE — Weather-first Atmosphere
+### NEW FEATURE: Weather-first Atmosphere
 
 - Make Weather the Home display for Atmosphere. If no city, network result or
   fresh weather frame is available, the same preset automatically falls back
@@ -82,7 +156,7 @@
 
 ## 1.3.3-lab.3 - 2026-10-05
 
-### NEW FEATURE — One brightness control for the whole light bar
+### NEW FEATURE: One brightness control for the whole light bar
 
 - Add a global **Day brightness** from 1 to 255, independent of Home and
   in-game routes. The shipped and migrated Consistent output remains exactly
@@ -94,7 +168,7 @@
 - Remove the misleading Follow Steam Brightness choice. Steam's value is now
   only the exact value restored whenever Valve regains the bar.
 
-### NEW FEATURE — Real hardware previews during first setup
+### NEW FEATURE: Real hardware previews during first setup
 
 - Turn preset selection into a ten-second preview of the real Home recipe on
   the physical 17-LED bar. Audio Sync uses the live audio engine; the Decky

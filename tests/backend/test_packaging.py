@@ -103,6 +103,11 @@ class PackagingTests(unittest.TestCase):
             panel.index('title="Current game override"'),
         )
         self.assertIn('Below 8/255, the lighting experience may be strongly affected.', panel)
+        self.assertIn('Recommended starting value: 9/255 effective output.', panel)
+        self.assertIn('<LowBrightnessWarning mode="Night" value={effectiveNightBrightness} />', panel)
+        self.assertIn('Scroll down for the buttons', panel)
+        self.assertIn('onScrollCapture={() => setScrollCueVisible(false)}', panel)
+        self.assertEqual(panel.count('showScrollCue title='), 3)
         for preset in ('moderate', 'atmosphere', 'signals', 'immersive'):
             self.assertIn(f'{{ data: "{preset}"', panel)
         self.assertNotIn('Open light bar calibration', panel)

@@ -1708,21 +1708,29 @@ function onboardingPreview(colors: RGB[]): RGB[] {
   ));
 }
 
-function SetupFrame({ step, title, description, children }: {
+function SetupFrame({ step, title, description, children, showScrollCue = false }: {
   step: 1 | 2 | 3;
   title: string;
   description: string;
   children: ReactNode;
+  showScrollCue?: boolean;
 }) {
   const steps = ["Experience", "Brightness", "Review"];
+  const [scrollCueVisible, setScrollCueVisible] = useState(showScrollCue);
+
+  useEffect(() => {
+    setScrollCueVisible(showScrollCue);
+  }, [showScrollCue, step]);
+
   return <Focusable aria-label={`GabeCubeAura setup, step ${step} of 3`} style={{
     width: "100%",
     height: "100%",
     maxHeight: "100%",
     boxSizing: "border-box",
     overflow: "hidden",
+    position: "relative",
     background: "radial-gradient(circle at 16% 0%, rgba(26,159,255,.18), transparent 38%), linear-gradient(145deg, #101821 0%, #11151b 52%, #090d12 100%)",
-  }}>
+  }} onScrollCapture={() => setScrollCueVisible(false)}>
     <ScrollPanel><div style={{ width: "100%", maxWidth: 1040, margin: "0 auto", boxSizing: "border-box", padding: "40px clamp(32px, 6vw, 88px) 156px" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 28 }}>
         <TbCubeSpark size={36} color="#55b9f3" />
@@ -1760,7 +1768,35 @@ function SetupFrame({ step, title, description, children }: {
         boxShadow: "0 24px 70px rgba(0,0,0,.25)",
       }}>{children}</div>
     </div></ScrollPanel>
+    {scrollCueVisible ? <div role="note" style={{
+      position: "absolute",
+      left: "50%",
+      bottom: 172,
+      zIndex: 20,
+      transform: "translateX(-50%)",
+      pointerEvents: "none",
+      display: "flex",
+      alignItems: "center",
+      gap: 9,
+      whiteSpace: "nowrap",
+      padding: "10px 16px",
+      borderRadius: 999,
+      color: "#e9f7ff",
+      background: "rgba(12, 23, 34, .94)",
+      border: "1px solid rgba(104, 199, 255, .55)",
+      boxShadow: "0 10px 28px rgba(0, 0, 0, .42)",
+      fontSize: ".82em",
+      fontWeight: 700,
+    }}><span aria-hidden="true" style={{ fontSize: "1.35em", lineHeight: 1 }}>↓</span> Scroll down for the buttons</div> : null}
   </Focusable>;
+}
+
+function LowBrightnessWarning({ mode, value }: { mode: "Day" | "Night"; value: number }) {
+  if (value >= 8) return null;
+  return <div style={{ margin: "0 0 18px", padding: "11px 14px", borderRadius: 10,
+    color: "#ff8f8f", background: "rgba(190, 32, 42, .16)", border: "1px solid rgba(255, 92, 102, .52)", fontWeight: 700 }}>
+    {mode} output is {value}/255. Below 8/255, the lighting experience may be strongly affected.
+  </div>;
 }
 
 function SetupActions({ primaryLabel, primaryText, primaryDisabled = false, onPrimary, secondaryLabel, secondaryText, onSecondary }: {
@@ -1795,6 +1831,7 @@ function FirstRunSetup({ status, setStatus, onClose }: {
   const [searching, setSearching] = useState(false);
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
+  const effectiveNightBrightness = Math.max(1, Math.round(dayBrightness * nightBrightness / 100));
   const selected = ONBOARDING_PRESETS.find((item) => item.data === preset) ?? ONBOARDING_PRESETS[3];
   const livePreviewColors = status.provider.startsWith("audio-sync") ? status.audio_sync.colors
     : status.provider.startsWith("screen-sync") ? status.screen_sync.colors
@@ -1885,7 +1922,7 @@ function FirstRunSetup({ status, setStatus, onClose }: {
     }
   };
 
-  if (step === 1) return <SetupFrame step={1} title="Choose your experience"
+  if (step === 1) return <SetupFrame step={1} showScrollCue title="Choose your experience"
     description="Choose a complete Home and in-game experience. Brightness is configured separately and never changes with the preset.">
     <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 14 }}>
       {ONBOARDING_PRESETS.map((item) => <div key={item.data} style={{
@@ -1915,15 +1952,12 @@ function FirstRunSetup({ status, setStatus, onClose }: {
       primaryDisabled={saving} onSecondary={() => void skip()} />
   </SetupFrame>;
 
-  if (step === 2) return <SetupFrame step={2} title="Set your brightness"
+  if (step === 2) return <SetupFrame step={2} showScrollCue title="Set your brightness"
     description="Set the direct hardware brightness for daytime, then optionally dim it automatically using exact local sunset and sunrise times.">
     <SliderField label="Day brightness" value={dayBrightness} min={1} max={255} step={1} showValue valueSuffix=" / 255"
       onChange={(value) => { setDayBrightness(value); void previewBrightness("day", "light_bar_day_brightness", value); }} />
     <div style={{ margin: "8px 0 18px", fontSize: ".8em", opacity: .7 }}>Recommended starting value: 9/255. The real bar previews every change immediately.</div>
-    {dayBrightness < 8 ? <div style={{ margin: "0 0 18px", padding: "11px 14px", borderRadius: 10,
-      color: "#ff8f8f", background: "rgba(190, 32, 42, .16)", border: "1px solid rgba(255, 92, 102, .52)", fontWeight: 700 }}>
-      Below 8/255, the lighting experience may be strongly affected.
-    </div> : null}
+    <LowBrightnessWarning mode="Day" value={dayBrightness} />
     <ToggleField label="Dim automatically after sunset"
       description="Use a chosen city's exact solar times. No IP geolocation."
       checked={nightEnabled} onChange={setNightEnabled} />
@@ -1948,10 +1982,14 @@ function FirstRunSetup({ status, setStatus, onClose }: {
     </>}
     {location ? <div style={{ marginTop: 16 }}>
       <div style={{ marginTop: 12 }}><SliderField label="Night brightness" value={nightBrightness}
-        description={`${Math.max(1, Math.round(dayBrightness * nightBrightness / 100))}/255 at the current day setting.`}
+        description={`${effectiveNightBrightness}/255 at the current day setting.`}
         min={10} max={100} step={5} showValue valueSuffix="%" onChange={(value) => {
           setNightBrightness(value); void previewBrightness("night", "night_mode_brightness", value);
         }} /></div>
+      <div style={{ margin: "8px 0 18px", fontSize: ".8em", opacity: .7 }}>
+        Recommended starting value: 9/255 effective output. Current night output: {effectiveNightBrightness}/255.
+      </div>
+      <LowBrightnessWarning mode="Night" value={effectiveNightBrightness} />
       <div style={{ marginTop: 12 }}><ButtonItem layout="below" label="Change city" onClick={() => {
         setLocation(null); setCityResults([]); setMessage("");
       }}>Choose another</ButtonItem></div>
@@ -1967,13 +2005,13 @@ function FirstRunSetup({ status, setStatus, onClose }: {
       secondaryLabel="Back" secondaryText="Lighting style" onSecondary={() => setStep(1)} />
   </SetupFrame>;
 
-  return <SetupFrame step={3} title="Ready to start"
+  return <SetupFrame step={3} showScrollCue title="Ready to start"
     description="Review the choices that will be saved. You can change all of them later from GabeCubeAura settings.">
     <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 12 }}>
       {[{ label: "Lighting preset", value: selected.label },
       { label: "Day brightness", value: `${dayBrightness}/255` }, {
         label: "Night brightness", value: nightEnabled && location
-          ? `${location.name} · ${nightBrightness}% · ${Math.max(1, Math.round(dayBrightness * nightBrightness / 100))}/255` : "Off",
+          ? `${location.name} · ${nightBrightness}% · ${effectiveNightBrightness}/255` : "Off",
       }].map((item) => <div key={item.label} style={{
         minHeight: 92,
         padding: "16px 18px",

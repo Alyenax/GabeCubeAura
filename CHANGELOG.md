@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.3.3-lab.6 - 2026-10-05
+
+### Onboarding clarity
+
+- Apply the same `9/255` recommended starting value to the effective Night
+  brightness. Show its computed `/255` output and a red warning whenever it
+  falls below `8/255`.
+- Add a floating `Scroll down for the buttons` cue above Steam's footer on all
+  three setup steps. It disappears as soon as the user starts scrolling.
+
 ## 1.3.3-lab.5 - 2026-10-05
 
 ### Advanced settings cleanup

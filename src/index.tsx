@@ -1833,7 +1833,8 @@ function FirstRunSetup({ status, setStatus, onClose }: {
   const [saving, setSaving] = useState(false);
   const effectiveNightBrightness = Math.max(1, Math.round(dayBrightness * nightBrightness / 100));
   const selected = ONBOARDING_PRESETS.find((item) => item.data === preset) ?? ONBOARDING_PRESETS[3];
-  const livePreviewColors = status.provider.startsWith("audio-sync") ? status.audio_sync.colors
+  const livePreviewColors = status.display_preset_preview.colors.length ? status.display_preset_preview.colors
+    : status.provider.startsWith("audio-sync") ? status.audio_sync.colors
     : status.provider.startsWith("screen-sync") ? status.screen_sync.colors
       : status.provider.startsWith("customization:") ? status.customization.colors
         : status.provider === "blackout" ? Array.from({ length: 17 }, () => [0, 0, 0] as RGB)
@@ -1942,8 +1943,12 @@ function FirstRunSetup({ status, setStatus, onClose }: {
       <div style={{ marginTop: 12 }}><PalettePreview colors={livePreviewColors.length ? livePreviewColors : onboardingPreview(selected.colors)} /></div>
       <div style={{ marginTop: 7, fontSize: ".78em", opacity: .7 }}>
         {status.display_preset_preview.active
-          ? `Live engine preview on the real bar · ${Math.ceil(status.display_preset_preview.remaining_s)} s`
-          : "Choose the preset again to run its real 10-second Home preview on the light bar."}
+          ? status.display_preset_preview.preset === "immersive"
+            ? `Guided demo on the real bar · ${status.display_preset_preview.phase} · ${Math.ceil(status.display_preset_preview.remaining_s)} s`
+            : `Live engine preview on the real bar · ${Math.ceil(status.display_preset_preview.remaining_s)} s`
+          : selected.data === "immersive"
+            ? "Choose Immersive again for a synthetic Audio Sync and Screen Sync demo on the real bar."
+            : "Choose the preset again to run its real 10-second Home preview on the light bar."}
       </div>
     </div>
     {message ? <div style={{ marginTop: 12, color: "#ffbc9e" }}>{message}</div> : null}

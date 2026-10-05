@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.3.3-lab.7 - 2026-10-05
+
+### Immersive onboarding preview
+
+- Replace Immersive's source-dependent preview with a deterministic ten-second
+  sequence on the real light bar: a breathing synthetic Slow Prism in Sapphire,
+  followed by a moving synthetic Screen Sync panorama.
+- Keep Steam, thermal and companion-plugin ownership priorities above the demo.
+  The demo does not start PipeWire or Gamescope capture and does not alter the
+  real Immersive routes saved after setup.
+- Mirror the exact synthetic 17-pixel frame and current Audio Sync or Screen
+  Sync phase in the onboarding interface.
+
 ## 1.3.3-lab.6 - 2026-10-05
 
 ### Onboarding clarity

@@ -77,7 +77,13 @@ export interface Status {
   signalbar_enabled: boolean;
   onboarding_completed: boolean;
   display_preset: DisplayPreset;
-  display_preset_preview: { active: boolean; preset: string; remaining_s: number };
+  display_preset_preview: {
+    active: boolean;
+    preset: string;
+    remaining_s: number;
+    phase: "" | "Audio Sync" | "Screen Sync";
+    colors: RGB[];
+  };
   valve_ownership_policy: ValveOwnershipPolicy;
   led_output_calibration_mode: "follow" | "consistent";
   led_output_calibration: {

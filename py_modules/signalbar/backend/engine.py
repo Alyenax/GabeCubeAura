@@ -23,6 +23,7 @@ from signalbar.providers import (
 )
 from signalbar.providers.controller import ControllerProvider
 from signalbar.providers.audio_sync import ADAPTIVE_STYLES
+from signalbar.providers.onboarding import immersive_preview_output
 from signalbar.providers.weather import WeatherProvider
 from signalbar.renderer import Renderer
 from signalbar.settings.store import DISPLAY_PRESET_RECIPES
@@ -123,6 +124,7 @@ class Engine:
         self._native_priority_kind = ""
         self._native_priority_reason_text = ""
         self._display_preset_preview = ""
+        self._display_preset_preview_started_at = 0.0
         self._display_preset_preview_until = 0.0
         self._ignored_native_takeovers = 0
         self._effective_steam_priority = False
@@ -452,8 +454,10 @@ class Engine:
         if preset not in {"moderate", "atmosphere", "signals", "immersive"}:
             return False
         with self._lock:
+            now = time.monotonic()
             self._display_preset_preview = preset
-            self._display_preset_preview_until = time.monotonic() + max(3.0, min(20.0, float(seconds)))
+            self._display_preset_preview_started_at = now
+            self._display_preset_preview_until = now + max(3.0, min(20.0, float(seconds)))
         return True
 
     def trigger_event(self, kind, preview=False, variant=""):
@@ -938,6 +942,11 @@ class Engine:
                         self._display_preset_preview
                         if now < self._display_preset_preview_until else ""
                     )
+                    preview_started_at = self._display_preset_preview_started_at
+                    preview_duration = max(
+                        0.0,
+                        self._display_preset_preview_until - preview_started_at,
+                    )
                 display = self.settings.display_for(game.appid)
                 if preview_preset:
                     values.update(DISPLAY_PRESET_RECIPES[preview_preset])
@@ -959,6 +968,12 @@ class Engine:
                     }
                 values["mode"] = display["mode"]
                 current_display = display["selected"]
+                immersive_preview = (
+                    immersive_preview_output(
+                        now - preview_started_at, preview_duration,
+                    )
+                    if preview_preset == "immersive" else None
+                )
                 audio_context = "game" if game.running else "home"
                 values["audio_sync_style"] = values[f"audio_sync_{audio_context}_style"]
                 values["audio_sync_palette"] = values[f"audio_sync_{audio_context}_palette"]
@@ -1071,6 +1086,7 @@ class Engine:
                     values["mode"] == "screen_sync"
                     and current_display == "screen_sync"
                     and game.running
+                    and immersive_preview is None
                 )
                 activation_reason = self.screen_sync_activation.resolve(
                     game_route=game_screen_sync,
@@ -1087,7 +1103,7 @@ class Engine:
                 audio_sync_route = bool(
                     values["mode"] == "audio_sync" and current_display == "audio_sync"
                     or atmosphere_weather_fallback
-                )
+                ) and immersive_preview is None
                 # A Steam screensaver request is a hard mode handoff. Stop the
                 # audio reader as well as its LED output so Screen Sync owns the
                 # complete visual path until Steam dismisses the screensaver.
@@ -1155,6 +1171,11 @@ class Engine:
                         ),
                         artwork_colours=artwork_colours,
                     )
+                if immersive_preview is not None:
+                    if immersive_preview.provider.startswith("audio-sync"):
+                        audio_sync_base = immersive_preview
+                    else:
+                        screen_sync_base = immersive_preview
                 audio_palette_source = self.audio_sync.status(
                     values["audio_sync_reactivity"],
                 )["palette_source"]
@@ -1256,7 +1277,10 @@ class Engine:
                     audio_sync_base,
                 )) else 0.10
                 effective_mode = (
-                    "screen_sync" if screen_sync_requested
+                    "audio_sync" if immersive_preview is not None
+                    and immersive_preview.provider.startswith("audio-sync")
+                    else "screen_sync" if immersive_preview is not None
+                    else "screen_sync" if screen_sync_requested
                     else "audio_sync" if audio_sync_requested
                     else values["mode"]
                 )
@@ -1634,6 +1658,14 @@ class Engine:
                 max(0.0, now - self._decision_at) if self._decision_at else None
             )
             preset_preview_active = now < self._display_preset_preview_until
+            preset_preview_output = (
+                immersive_preview_output(
+                    now - self._display_preset_preview_started_at,
+                    self._display_preset_preview_until - self._display_preset_preview_started_at,
+                )
+                if preset_preview_active and self._display_preset_preview == "immersive"
+                else None
+            )
             return {
                 "version": __version__,
                 "available": self._available,
@@ -1652,6 +1684,15 @@ class Engine:
                     "active": preset_preview_active,
                     "preset": self._display_preset_preview if preset_preview_active else "",
                     "remaining_s": max(0.0, self._display_preset_preview_until - now),
+                    "phase": (
+                        "Audio Sync" if preset_preview_output is not None
+                        and preset_preview_output.provider.startswith("audio-sync")
+                        else "Screen Sync" if preset_preview_output is not None else ""
+                    ),
+                    "colors": (
+                        [list(pixel) for pixel in preset_preview_output.frame]
+                        if preset_preview_output is not None else []
+                    ),
                 },
                 "valve_ownership_policy": values["valve_ownership_policy"],
                 "led_output_calibration_mode": values["led_output_calibration_mode"],

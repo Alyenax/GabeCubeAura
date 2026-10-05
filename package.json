@@ -1,6 +1,6 @@
 {
   "name": "gabecubeaura",
-  "version": "1.3.3-lab.6",
+  "version": "1.3.3-lab.7",
   "description": "Real-time audio, screen colours, artwork, weather and live status lighting for the official Steam Machine",
   "type": "module",
   "packageManager": "pnpm@9.15.9",

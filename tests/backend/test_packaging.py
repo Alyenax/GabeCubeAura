@@ -87,6 +87,8 @@ class PackagingTests(unittest.TestCase):
             panel.index('Navigation.CloseSideMenus()', setup_navigation),
         )
         self.assertIn('setSetting("onboarding_completed", true)', panel)
+        self.assertIn('synthetic Audio Sync and Screen Sync demo', panel)
+        self.assertIn('status.display_preset_preview.colors.length', panel)
         self.assertIn('setUpdatePreferences(true, true, 1440, "stable")', panel)
         self.assertIn('disconnectPrivateUpdateAuthorization()', panel)
         self.assertIn('label="Dim automatically after sunset"', panel)

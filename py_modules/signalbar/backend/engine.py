@@ -29,6 +29,26 @@ from signalbar.renderer import Renderer
 LED_OUTPUT_REFERENCE_BRIGHTNESS = 9
 
 
+def apply_automatic_night_brightness(frame, provider, solar_status):
+    """Dim ordinary GabeCubeAura output after local sunset.
+
+    Playtime and low-battery warnings remain fully legible. Steam's critical
+    red pattern never reaches this function because GabeCubeAura yields before
+    rendering it.
+    """
+    if (frame is None or not solar_status.get("active")
+            or provider == "countdown" or provider.startswith("controller:low")):
+        return frame
+    try:
+        scale = max(10, min(100, int(solar_status.get("brightness", 35)))) / 100.0
+    except (TypeError, ValueError, OverflowError):
+        scale = 0.35
+    return [
+        tuple(max(0, min(255, round(channel * scale))) for channel in pixel)
+        for pixel in frame
+    ]
+
+
 class Engine:
     def __init__(self, settings, cache_path, logger=None, hardware_factory=ValveLedHardware,
                  event_lease=None, stripmine_claim=None, tw3_steamrgb_claim=None):
@@ -63,7 +83,10 @@ class Engine:
             initial["launch_artwork_animation_enabled"], initial["launch_artwork_pattern"],
             initial["launch_artwork_colour_count"], initial["launch_artwork_duration_seconds"],
         )
-        self.weather.configure(initial["weather_location"], initial["weather_display"], initial["weather_topbar_enabled"])
+        self.weather.configure(
+            initial["weather_location"], initial["weather_display"],
+            initial["weather_topbar_enabled"], initial["night_mode_enabled"],
+        )
         self.idle = IdleProvider()
         self.arbiter = Arbiter()
         self._lock = threading.RLock()
@@ -569,7 +592,10 @@ class Engine:
         if "launch_artwork_source" in changes:
             self.launch_palette.clear()
             self.launch_artwork.clear_palettes()
-        self.weather.configure(values["weather_location"], values["weather_display"], values["weather_topbar_enabled"])
+        self.weather.configure(
+            values["weather_location"], values["weather_display"],
+            values["weather_topbar_enabled"], values["night_mode_enabled"],
+        )
         self.events.set_variants(values)
         with self._lock:
             running = self._game.running
@@ -1241,8 +1267,12 @@ class Engine:
                         event_preempted_valve = True
                     elif not is_event:
                         event_preempted_valve = False
+                    output_frame = apply_automatic_night_brightness(
+                        decision.frame, decision.provider,
+                        self.weather.solar_status(values),
+                    )
                     wrote = renderer.render(
-                        decision.frame,
+                        output_frame,
                         force=(
                             ownership_policy != "cooperative"
                             and signature_mismatch
@@ -1438,6 +1468,7 @@ class Engine:
             )
             controller_status = self.controllers.status(status_values, self._game.running)
             weather_status = self.weather.status(status_values, self._game.running)
+            night_mode_status = self.weather.solar_status(status_values)
             customization_status = self.customization.status(values)
             screen_sync_status = self.screen_sync.status()
             audio_sync_status = self.audio_sync.status(values["audio_sync_reactivity"])
@@ -1500,6 +1531,7 @@ class Engine:
                 "default_mode": display["default"],
                 "display_override": display["override"],
                 "signalbar_enabled": values["signalbar_enabled"],
+                "onboarding_completed": values["onboarding_completed"],
                 "display_preset": values["display_preset"],
                 "valve_ownership_policy": values["valve_ownership_policy"],
                 "led_output_calibration_mode": values["led_output_calibration_mode"],
@@ -1611,6 +1643,9 @@ class Engine:
                 "weather_topbar_enabled": values["weather_topbar_enabled"],
                 "weather_icon_style": values["weather_icon_style"],
                 "weather_temperature_unit": values["weather_temperature_unit"],
+                "night_mode_enabled": values["night_mode_enabled"],
+                "night_mode_brightness": values["night_mode_brightness"],
+                "night_mode": night_mode_status,
                 "weather_brightness": values["weather_brightness"],
                 "weather_shadow_cutoff": values["weather_shadow_cutoff"],
                 "stripmine_integration_enabled": values["stripmine_integration_enabled"],

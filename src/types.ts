@@ -75,6 +75,7 @@ export interface Status {
   default_mode: HomeDisplay | GameDisplay;
   display_override: "inherit" | GameDisplay;
   signalbar_enabled: boolean;
+  onboarding_completed: boolean;
   display_preset: DisplayPreset;
   valve_ownership_policy: ValveOwnershipPolicy;
   led_output_calibration_mode: "follow" | "consistent";
@@ -196,6 +197,19 @@ export interface Status {
   weather_topbar_enabled: boolean;
   weather_icon_style: WeatherIconStyle;
   weather_temperature_unit: "celsius" | "fahrenheit";
+  night_mode_enabled: boolean;
+  night_mode_brightness: number;
+  night_mode: {
+    enabled: boolean;
+    active: boolean;
+    available: boolean;
+    location: WeatherLocation | null;
+    is_night: boolean | null;
+    sunrise_at: string;
+    sunset_at: string;
+    next_transition_at: string;
+    brightness: number;
+  };
   weather_brightness: number;
   weather_shadow_cutoff: number;
   stripmine_integration_enabled: boolean;
@@ -231,6 +245,12 @@ export interface Status {
     is_day: boolean | null;
     weather_code: number | null;
     observed_at: string;
+    sunrise_at: string;
+    sunset_at: string;
+    next_solar_transition_at: string;
+    night_mode_enabled: boolean;
+    night_mode_active: boolean;
+    night_mode_brightness: number;
     age_s: number | null;
     preview_active: boolean;
     preview_remaining_s: number;

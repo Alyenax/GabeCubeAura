@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.3.3-lab.1 - LOCAL LAB - 2026-10-05
+
+### New features
+
+- Add a three-step first-run setup that lets a fresh installation choose
+  Essential, Atmosphere, Immersive or Immersive+ before presenting the normal
+  quick panel. Existing installations are marked complete during migration and
+  are never interrupted by the new flow.
+- Make Immersive+ the explicit named preset for a fresh installation instead
+  of showing Custom for the same shipped routing.
+- Add an optional automatic night mode driven by sunrise and sunset for the
+  exact Weather location selected by the user. No IP-based location is used.
+- Add a 10% to 100% night brightness control. Ordinary GabeCubeAura frames are
+  reduced after sunset and restored after sunrise, while playtime warnings and
+  Steam's critical red safety pattern remain fully visible.
+
+### Lab fixes and safeguards
+
+- Request two days of Open-Meteo solar times and schedule a refresh at the next
+  sunrise or sunset instead of waiting for the normal fifteen-minute interval.
+- Disable automatic night mode if its saved Weather location is removed.
+- Keep legacy configurations on Custom and skip onboarding so an upgrade never
+  changes an existing user's routing or opens a first-run screen.
+
 ## 1.3.2 - 2026-10-04
 
 Stable release. Changes since 1.2.1:

@@ -678,7 +678,8 @@ class PersistenceTests(unittest.TestCase):
             expected = {
                 "mode": "audio_sync", "signalbar_enabled": True,
                 "home_display": "audio_sync", "game_display": "audio_sync",
-                "display_preset": "custom",
+                "display_preset": "immersive-plus",
+                "onboarding_completed": False,
                 "valve_ownership_policy": "downloads",
                 "led_output_calibration_mode": "consistent",
                 "screen_sync_screensaver_enabled": True,
@@ -709,6 +710,7 @@ class PersistenceTests(unittest.TestCase):
                 "reverse_led_order": True, "countdown_dark_edge_compensation": 2,
                 "weather_topbar_enabled": True, "weather_icon_style": "phosphor-duotone",
                 "weather_temperature_unit": "celsius",
+                "night_mode_enabled": False, "night_mode_brightness": 35,
                 "weather_brightness": 100, "weather_shadow_cutoff": 0,
                 "weather_cloud_variant": 3, "weather_snow_variant": 1,
                 "tw3_steamrgb_integration_enabled": True,

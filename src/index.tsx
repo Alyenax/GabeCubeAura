@@ -64,7 +64,7 @@ import { buildSettingsSnapshot } from "./settings_snapshot";
 import { WEATHER_CONDITIONS, WEATHER_VARIANTS } from "./weather_variants";
 import { WEATHER_ICON_STYLE_OPTIONS, weatherIconSvg } from "./weather_icon_sets";
 import { startWeatherTopBar } from "./weather_topbar";
-import type { ArtworkPayload, ArtworkSource, CompanionPriority, GameDisplay, HomeDisplay, RGB, Status, UpdateLabResult, UpdateStatus, WeatherCondition, WeatherIconStyle, WeatherLocation } from "./types";
+import type { ArtworkPayload, ArtworkSource, CompanionPriority, DisplayPreset, GameDisplay, HomeDisplay, RGB, Status, UpdateLabResult, UpdateStatus, WeatherCondition, WeatherIconStyle, WeatherLocation } from "./types";
 
 const HOME_DISPLAY_OPTIONS: { data: HomeDisplay; label: string }[] = [
   { data: "steam", label: "GabeCubeAura Off" },
@@ -348,6 +348,11 @@ function formatAge(seconds: number | null): string {
   if (seconds == null) return "never";
   if (seconds < 1) return `${Math.round(seconds * 1000)} ms ago`;
   return `${seconds.toFixed(1)} s ago`;
+}
+
+function formatSolarTime(value: string): string {
+  const match = String(value || "").match(/T(\d{2}:\d{2})/);
+  return match?.[1] ?? "waiting for solar times";
 }
 
 function formatUpdateDate(timestamp: number): string {
@@ -1012,6 +1017,34 @@ function WeatherPanel({ status, setStatus }: { status: Status; setStatus: (next:
         Current conditions refresh about every 15 minutes. The last reading can be reused for up to one hour; then weather yields the bar. No city, no network request. Data by <a href="https://open-meteo.com/" target="_blank" rel="noreferrer">Open-Meteo</a>.
       </div></PanelSectionRow>
     </PanelSection>
+    <PanelSection title="Automatic night mode">
+      <PanelSectionRow><ToggleField label="Follow local sunset and sunrise"
+        description={status.weather_location
+          ? `Use solar times for ${status.weather_location.name}, ${status.weather_location.country}. No approximate IP location.`
+          : "Choose a city above before enabling automatic night mode."}
+        disabled={!status.weather_location}
+        checked={status.night_mode_enabled}
+        onChange={async (enabled) => {
+          try {
+            setStatus(await setSetting("night_mode_enabled", enabled));
+            setMessage(enabled ? "Automatic night mode enabled." : "Automatic night mode disabled.");
+          } catch (error) { setMessage(`Could not change night mode: ${String(error)}`); }
+        }} /></PanelSectionRow>
+      <PanelSectionRow><SliderField label="Night brightness" min={10} max={100} step={5}
+        showValue valueSuffix="%" value={status.night_mode_brightness}
+        onChange={async (value) => setStatus(await setSetting("night_mode_brightness", value))} /></PanelSectionRow>
+      <PanelSectionRow><div style={{ fontSize: ".78em", opacity: .78 }}>
+        {!status.night_mode_enabled ? "Night mode is off."
+          : status.night_mode.active
+            ? `Night mode active at ${status.night_mode_brightness}%. Sunrise: ${formatSolarTime(status.night_mode.sunrise_at)}.`
+            : status.night_mode.available
+              ? `Daylight mode. Sunset: ${formatSolarTime(status.night_mode.sunset_at)}.`
+              : "Waiting for solar times from Open-Meteo."}
+        <div style={{ marginTop: 6, opacity: .76 }}>
+          Ordinary GabeCubeAura output is dimmed after sunset. Playtime warnings and Steam's critical red safety pattern remain fully visible.
+        </div>
+      </div></PanelSectionRow>
+    </PanelSection>
     <PanelSection title="Weather animations">
       <PanelSectionRow><DropdownItem label="Condition to configure" rgOptions={WEATHER_CONDITIONS}
         selectedOption={previewCondition} onChange={(option) => setPreviewCondition(option.data as WeatherCondition)} /></PanelSectionRow>
@@ -1638,6 +1671,160 @@ function SettingsPageEnd({ page, setStatus }: {
   </PanelSection>;
 }
 
+const ONBOARDING_PRESETS: { data: DisplayPreset; label: string; detail: string; colors: RGB[] }[] = [
+  { data: "essential", label: "Essential", detail: "Dark by default. Keep downloads and important signals.", colors: [[0, 0, 0], [0, 0, 0], [0, 0, 0]] },
+  { data: "atmosphere", label: "Atmosphere", detail: "Gentle Audio Sync at Home and Artwork in games.", colors: [[11, 94, 142], [8, 127, 191], [26, 159, 255]] },
+  { data: "immersive", label: "Immersive", detail: "Audio Sync at Home and Screen Sync in games.", colors: [[20, 65, 105], [35, 115, 175], [80, 185, 220]] },
+  { data: "immersive-plus", label: "Immersive+", detail: "Slow Prism with Screen Sync colours everywhere.", colors: [[11, 94, 142], [8, 127, 191], [106, 92, 210], [26, 159, 255]] },
+];
+
+function FirstRunSetup({ status, setStatus }: {
+  status: Status;
+  setStatus: (next: Status) => void;
+}) {
+  const [step, setStep] = useState(1);
+  const [preset, setPreset] = useState<DisplayPreset>("immersive-plus");
+  const [location, setLocation] = useState<WeatherLocation | null>(status.weather_location);
+  const [nightEnabled, setNightEnabled] = useState(Boolean(status.weather_location));
+  const [nightBrightness, setNightBrightness] = useState(status.night_mode_brightness || 35);
+  const [cityQuery, setCityQuery] = useState("");
+  const [countryQuery, setCountryQuery] = useState("");
+  const [cityResults, setCityResults] = useState<WeatherLocation[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [message, setMessage] = useState("");
+  const [saving, setSaving] = useState(false);
+  const selected = ONBOARDING_PRESETS.find((item) => item.data === preset) ?? ONBOARDING_PRESETS[3];
+
+  const findCity = async () => {
+    setSearching(true);
+    setMessage("");
+    try {
+      const city = cityQuery.trim();
+      const country = countryQuery.trim();
+      const response = await searchWeatherCities(country ? `${city}, ${country}` : city);
+      setCityResults(response.results);
+      if (response.error) setMessage(`City search failed: ${response.error}`);
+      else if (!response.results.length) setMessage("No matching city. Try the full city and country name.");
+    } catch (error) {
+      setCityResults([]);
+      setMessage(`City search failed: ${String(error)}`);
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  const chooseCity = (city: WeatherLocation) => {
+    setLocation(city);
+    setNightEnabled(true);
+    setCityResults([]);
+    setCityQuery(city.name);
+    setCountryQuery(city.country);
+    setMessage("City selected. Night mode will follow local sunset and sunrise.");
+  };
+
+  const finish = async () => {
+    setSaving(true);
+    setMessage("");
+    try {
+      let next = await setSetting("display_preset", preset);
+      if (location) next = await setSetting("weather_location", location);
+      next = await setSetting("night_mode_brightness", nightBrightness);
+      next = await setSetting("night_mode_enabled", Boolean(nightEnabled && location));
+      next = await setSetting("onboarding_completed", true);
+      setStatus(next);
+    } catch (error) {
+      setMessage(`Setup could not be saved: ${String(error)}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const skip = async () => {
+    setSaving(true);
+    try {
+      setStatus(await setSetting("onboarding_completed", true));
+    } catch (error) {
+      setMessage(`Setup could not be closed: ${String(error)}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (step === 1) return <>
+    <PanelSection title="Welcome to GabeCubeAura">
+      <PanelSectionRow><div style={{ fontSize: ".84em", opacity: .82 }}>
+        Choose a complete lighting style. Every detail remains editable later.
+      </div></PanelSectionRow>
+      {ONBOARDING_PRESETS.map((item) => <PanelSectionRow key={item.data}>
+        <ButtonItem label={`${item.data === preset ? "✓ " : ""}${item.label}`}
+          description={item.detail} onClick={() => setPreset(item.data)}>
+          {item.data === preset ? "Selected" : "Choose"}
+        </ButtonItem>
+      </PanelSectionRow>)}
+      <PanelSectionRow><div style={{ width: "100%", fontSize: ".78em", opacity: .8 }}>
+        <b>{selected.label} preview</b>
+        <PalettePreview colors={selected.colors} />
+        <div>{selected.detail}</div>
+      </div></PanelSectionRow>
+      <PanelSectionRow><ButtonItem label="Continue" onClick={() => setStep(2)}>Set up night mode</ButtonItem></PanelSectionRow>
+      <PanelSectionRow><ButtonItem label="Skip guided setup" disabled={saving}
+        onClick={() => void skip()}>Keep recommended defaults</ButtonItem></PanelSectionRow>
+    </PanelSection>
+  </>;
+
+  if (step === 2) return <>
+    <PanelSection title="Automatic night mode">
+      <PanelSectionRow><div style={{ fontSize: ".82em", opacity: .82 }}>
+        GabeCubeAura can reduce ordinary lighting after local sunset and restore it at sunrise. Playtime warnings and Steam's critical red safety pattern stay fully visible.
+      </div></PanelSectionRow>
+      {location ? <PanelSectionRow><div style={{ width: "100%", fontSize: ".82em" }}>
+        <b>{location.name}, {location.country}</b>
+        <div style={{ marginTop: 5, opacity: .72 }}>Sunrise and sunset are calculated for this exact location.</div>
+      </div></PanelSectionRow> : <>
+        <PanelSectionRow><TextField label="City or postal code" value={cityQuery}
+          onChange={(event) => setCityQuery(event.currentTarget.value)} /></PanelSectionRow>
+        <PanelSectionRow><TextField label="Country (optional)" value={countryQuery}
+          onChange={(event) => setCountryQuery(event.currentTarget.value)} /></PanelSectionRow>
+        <PanelSectionRow><ButtonItem label="Find city" disabled={searching || cityQuery.trim().length < 2}
+          onClick={() => void findCity()}>{searching ? "Searching…" : "Search"}</ButtonItem></PanelSectionRow>
+        {cityResults.map((city, index) => <PanelSectionRow key={`${city.latitude}:${city.longitude}:${index}`}>
+          <ButtonItem label={`${city.name}, ${city.country}`} onClick={() => chooseCity(city)}>Use this city</ButtonItem>
+        </PanelSectionRow>)}
+      </>}
+      {location ? <>
+        <PanelSectionRow><ToggleField label="Automatic night mode" checked={nightEnabled}
+          onChange={setNightEnabled} /></PanelSectionRow>
+        <PanelSectionRow><SliderField label="Night brightness" value={nightBrightness}
+          min={10} max={100} step={5} showValue valueSuffix="%"
+          onChange={setNightBrightness} /></PanelSectionRow>
+        <PanelSectionRow><ButtonItem label="Change city" onClick={() => {
+          setLocation(null); setNightEnabled(false); setCityResults([]); setMessage("");
+        }}>Choose another</ButtonItem></PanelSectionRow>
+      </> : null}
+      {message ? <PanelSectionRow><div style={{ fontSize: ".78em", opacity: .82 }}>{message}</div></PanelSectionRow> : null}
+      <PanelSectionRow><ButtonItem label="Continue" onClick={() => setStep(3)}>Review setup</ButtonItem></PanelSectionRow>
+      <PanelSectionRow><ButtonItem label="Back" onClick={() => setStep(1)}>Lighting style</ButtonItem></PanelSectionRow>
+    </PanelSection>
+  </>;
+
+  return <>
+    <PanelSection title="Ready to start">
+      <PanelSectionRow><div style={{ width: "100%", fontSize: ".84em", lineHeight: 1.5 }}>
+        <div><b>Lighting preset:</b> {selected.label}</div>
+        <div><b>Night mode:</b> {nightEnabled && location
+          ? `Automatic for ${location.name} · ${nightBrightness}%`
+          : "Off"}</div>
+        <div><b>Updates:</b> Stable · every 24 hours</div>
+      </div></PanelSectionRow>
+      {message ? <PanelSectionRow><div style={{ fontSize: ".78em", opacity: .82 }}>{message}</div></PanelSectionRow> : null}
+      <PanelSectionRow><ButtonItem label="Apply setup" disabled={saving}
+        onClick={() => void finish()}>{saving ? "Saving…" : "Start GabeCubeAura"}</ButtonItem></PanelSectionRow>
+      <PanelSectionRow><ButtonItem label="Back" disabled={saving}
+        onClick={() => setStep(2)}>Night mode</ButtonItem></PanelSectionRow>
+    </PanelSection>
+  </>;
+}
+
 function Content({ page = "quick" }: { page?: Page }) {
   const [status, setStatusState] = useState<Status | null>(null);
   const [hero, setHero] = useState<ArtworkPayload | null>(null);
@@ -1864,6 +2051,9 @@ function Content({ page = "quick" }: { page?: Page }) {
         </PanelSectionRow>
       </PanelSection>
     );
+  }
+  if (page === "quick" && !status.onboarding_completed) {
+    return <FirstRunSetup status={status} setStatus={setStatus} />;
   }
 
   const changeArtworkSetting = async (key: string, value: unknown) => {

@@ -12,6 +12,7 @@ import os
 import ssl
 import threading
 import time
+from datetime import datetime
 from urllib.error import URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
@@ -141,9 +142,10 @@ def fetch_current(location, read_json=_read_json):
     url = "https://api.open-meteo.com/v1/forecast?" + urlencode({
         "latitude": location["latitude"], "longitude": location["longitude"],
         "current": "weather_code,is_day,temperature_2m", "timezone": "auto",
-        "forecast_days": 1,
+        "daily": "sunrise,sunset", "forecast_days": 2,
     })
-    current = read_json(url).get("current")
+    payload = read_json(url)
+    current = payload.get("current")
     if not isinstance(current, dict):
         raise ValueError("weather service returned no current conditions")
     code = int(current["weather_code"])
@@ -154,9 +156,38 @@ def fetch_current(location, read_json=_read_json):
             temperature = None
     except (KeyError, TypeError, ValueError, OverflowError):
         temperature = None
+    observed_at = str(current.get("time", ""))[:32]
+    sunrise_at = ""
+    sunset_at = ""
+    next_transition_at = ""
+    seconds_until_transition = None
+    daily = payload.get("daily")
+    if isinstance(daily, dict):
+        sunrises = daily.get("sunrise")
+        sunsets = daily.get("sunset")
+        if isinstance(sunrises, list) and isinstance(sunsets, list):
+            sunrise_at = str(sunrises[0])[:32] if sunrises else ""
+            sunset_at = str(sunsets[0])[:32] if sunsets else ""
+            try:
+                observed = datetime.fromisoformat(observed_at)
+                transitions = []
+                for value in [*sunrises[:2], *sunsets[:2]]:
+                    parsed = datetime.fromisoformat(str(value))
+                    if parsed > observed:
+                        transitions.append(parsed)
+                if transitions:
+                    upcoming = min(transitions)
+                    next_transition_at = upcoming.isoformat(timespec="minutes")
+                    seconds_until_transition = max(
+                        0.0, (upcoming - observed).total_seconds()
+                    )
+            except (TypeError, ValueError, OverflowError):
+                pass
     return {"weather_code": code, "is_day": day,
             "condition": condition_for_code(code, day), "temperature_c": temperature,
-            "observed_at": str(current.get("time", ""))[:32]}
+            "observed_at": observed_at, "sunrise_at": sunrise_at,
+            "sunset_at": sunset_at, "next_solar_transition_at": next_transition_at,
+            "seconds_until_solar_transition": seconds_until_transition}
 
 
 def _clamp(value):
@@ -200,8 +231,8 @@ class WeatherProvider:
         self._fetching = False
         self._preview = None
 
-    def configure(self, location, display, topbar_enabled=False):
-        enabled = (display != "off" or topbar_enabled) and location is not None
+    def configure(self, location, display, topbar_enabled=False, night_mode_enabled=False):
+        enabled = (display != "off" or topbar_enabled or night_mode_enabled) and location is not None
         with self._lock:
             if location != self._location or enabled != self._enabled:
                 self._location = dict(location) if location else None
@@ -256,7 +287,14 @@ class WeatherProvider:
                         self._sample = sample
                         self._fetched_at = self._clock()
                         self._error = ""
-                        self._next_fetch = self._clock() + REFRESH_SECONDS
+                        transition = sample.get("seconds_until_solar_transition")
+                        transition_wait = (
+                            max(10.0, float(transition) + 1.0)
+                            if isinstance(transition, (int, float)) else REFRESH_SECONDS
+                        )
+                        self._next_fetch = self._clock() + min(
+                            REFRESH_SECONDS, transition_wait
+                        )
                     else:
                         self._error = error or "weather unavailable"
                         self._next_fetch = self._clock() + RETRY_SECONDS
@@ -303,6 +341,26 @@ class WeatherProvider:
         frame = self._frame(sample, variant, elapsed, values)
         return ProviderOutput("weather:preview" if preview else "weather", frame, sample["condition"])
 
+    def solar_status(self, values, now=None):
+        now = self._clock() if now is None else now
+        with self._lock:
+            sample, fetched = self._sample, self._fetched_at
+            location = self._location
+        fresh = bool(sample and fetched and now - fetched < MAX_SAMPLE_AGE_SECONDS)
+        enabled = bool(values.get("night_mode_enabled"))
+        is_night = bool(fresh and not sample["is_day"])
+        return {
+            "enabled": enabled,
+            "active": bool(enabled and is_night),
+            "available": fresh,
+            "location": dict(location) if location else None,
+            "is_night": is_night if fresh else None,
+            "sunrise_at": sample.get("sunrise_at", "") if sample else "",
+            "sunset_at": sample.get("sunset_at", "") if sample else "",
+            "next_transition_at": sample.get("next_solar_transition_at", "") if sample else "",
+            "brightness": values.get("night_mode_brightness", 35),
+        }
+
     def status(self, values, game_running=False):
         now = self._clock()
         with self._lock:
@@ -311,6 +369,7 @@ class WeatherProvider:
         current, variant, elapsed, preview = self._current(values, now)
         frame = (self._frame(current, variant, elapsed, values)
                  if current else None)
+        solar = self.solar_status(values, now)
         return {"location": location, "display": values["weather_display"],
                 "phase": "loading" if fetching else "ready" if sample and fetched and now - fetched < MAX_SAMPLE_AGE_SECONDS
                 else "error" if error else "waiting" if enabled else "off",
@@ -320,6 +379,12 @@ class WeatherProvider:
                 "weather_code": sample["weather_code"] if sample else None,
                 "temperature_c": sample.get("temperature_c") if sample and fetched and now - fetched < MAX_SAMPLE_AGE_SECONDS else None,
                 "observed_at": sample["observed_at"] if sample else "",
+                "sunrise_at": sample.get("sunrise_at", "") if sample else "",
+                "sunset_at": sample.get("sunset_at", "") if sample else "",
+                "next_solar_transition_at": sample.get("next_solar_transition_at", "") if sample else "",
+                "night_mode_enabled": solar["enabled"],
+                "night_mode_active": solar["active"],
+                "night_mode_brightness": values.get("night_mode_brightness", 35),
                 "age_s": max(0.0, now - fetched) if fetched else None,
                 "preview_active": preview,
                 "preview_remaining_s": max(0.0, weather_loop_seconds(current["condition"], variant) - elapsed)

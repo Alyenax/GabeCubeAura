@@ -11,12 +11,15 @@ from copy import deepcopy
 from signalbar.providers.customization import CUSTOMIZATION_PATTERNS
 
 DEFAULTS = {
+    # Only genuinely fresh installations see the guided setup. Existing
+    # configuration files without this key are migrated to completed below.
+    "onboarding_completed": False,
     "mode": "audio_sync",
     "signalbar_enabled": True,
     "home_display": "audio_sync",
     "game_display": "audio_sync",
     "display_profiles": {},
-    "display_preset": "custom",
+    "display_preset": "immersive-plus",
     "display_preset_restore": {},
     "valve_ownership_policy": "downloads",
     # Approved 1.3.2 reference configuration. The renderer restores Steam's
@@ -143,6 +146,8 @@ DEFAULTS = {
     "weather_topbar_enabled": True,
     "weather_icon_style": "phosphor-duotone",
     "weather_temperature_unit": "celsius",
+    "night_mode_enabled": False,
+    "night_mode_brightness": 35,
     "weather_brightness": 100,
     "weather_shadow_cutoff": 0,
     "weather_sequence_revision": 12,
@@ -540,6 +545,13 @@ class SettingsStore:
                     for key in DEFAULTS:
                         if key in raw:
                             self._data[key] = raw[key]
+                    if "onboarding_completed" not in raw:
+                        # Do not interrupt existing users after an upgrade.
+                        self._data["onboarding_completed"] = True
+                    if "display_preset" not in raw:
+                        # A legacy configuration is not guaranteed to match
+                        # the new fresh-install Immersive+ recipe.
+                        self._data["display_preset"] = "custom"
                     # Lab 20 splits the Audio Sync pattern and palette by
                     # context. Existing installations must look identical in
                     # both contexts until the user deliberately changes one.
@@ -659,6 +671,9 @@ class SettingsStore:
             return dict(self._data)
 
     def _validate(self):
+        self._data["onboarding_completed"] = bool(
+            self._data["onboarding_completed"]
+        )
         if self._data.get("display_preset") not in VALID_DISPLAY_PRESETS:
             self._data["display_preset"] = DEFAULTS["display_preset"]
         if self._data.get("valve_ownership_policy") not in VALID_VALVE_OWNERSHIP_POLICIES:
@@ -868,11 +883,20 @@ class SettingsStore:
             self._data["weather_display"] = DEFAULTS["weather_display"]
         if not isinstance(self._data["weather_topbar_enabled"], bool):
             self._data["weather_topbar_enabled"] = DEFAULTS["weather_topbar_enabled"]
+        self._data["night_mode_enabled"] = bool(self._data["night_mode_enabled"])
+        try:
+            self._data["night_mode_brightness"] = max(
+                10, min(100, int(round(float(self._data["night_mode_brightness"]))))
+            )
+        except (TypeError, ValueError, OverflowError):
+            self._data["night_mode_brightness"] = DEFAULTS["night_mode_brightness"]
         if self._data["weather_icon_style"] not in VALID_WEATHER_ICON_STYLES:
             self._data["weather_icon_style"] = DEFAULTS["weather_icon_style"]
         if self._data["weather_temperature_unit"] not in {"celsius", "fahrenheit"}:
             self._data["weather_temperature_unit"] = DEFAULTS["weather_temperature_unit"]
         self._data["weather_location"] = _valid_weather_location(self._data["weather_location"])
+        if self._data["weather_location"] is None:
+            self._data["night_mode_enabled"] = False
         if self._data["weather_location"] is None:
             if self._data["home_display"] == "weather":
                 self._data["home_display"] = "steam"
@@ -1112,10 +1136,11 @@ class SettingsStore:
                 changes.get("weather_display") not in (None, "off")
                 or changes.get("home_display") == "weather"
                 or changes.get("game_display") == "weather"
+                or changes.get("night_mode_enabled") is True
             )
             if (wants_weather
                     and _valid_weather_location(changes.get("weather_location", self._data["weather_location"])) is None):
-                raise ValueError("Choose a weather city before enabling weather")
+                raise ValueError("Choose a city before enabling Weather or automatic night mode")
             if "mode" in changes:
                 legacy_mode = changes["mode"]
                 if legacy_mode == "disabled":

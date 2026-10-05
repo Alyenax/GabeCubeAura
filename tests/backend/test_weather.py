@@ -13,6 +13,7 @@ from urllib.error import URLError
 import signalbar.providers.weather as weather_module
 from signalbar.arbiter import Arbiter
 from signalbar.backend import Engine
+from signalbar.backend.engine import apply_automatic_night_brightness
 from signalbar.models import GameState, ProviderOutput, normalize_frame
 from signalbar.providers.weather import (
     CONDITIONS, VARIANT_NAMES, WeatherProvider, condition_for_code,
@@ -195,6 +196,7 @@ class WeatherTests(unittest.TestCase):
                                                   "time": "2026-09-23T10:00"}})[1])
         self.assertEqual(sample["condition"], "storm")
         self.assertIn("temperature_2m", requested[0])
+        self.assertIn("daily=sunrise%2Csunset", requested[0])
         self.assertEqual(sample["temperature_c"], 12.4)
         no_temp = fetch_current(CITY, lambda url: {"current": {"weather_code": 0, "is_day": 1}})
         self.assertIsNone(no_temp["temperature_c"])
@@ -204,6 +206,59 @@ class WeatherTests(unittest.TestCase):
         self.assertEqual(condition_for_code(3, 1), "cloud")
         self.assertEqual(condition_for_code(75, 1), "snow")
         self.assertEqual(search_cities("Paris", lambda url: {"results": [CITY]}), [CITY])
+
+    def test_service_exposes_local_solar_transition_and_night_mode_dims_safely(self):
+        payload = {
+            "current": {"weather_code": 0, "is_day": 0, "temperature_2m": 9,
+                        "time": "2026-10-05T20:15"},
+            "daily": {
+                "sunrise": ["2026-10-05T07:58", "2026-10-06T07:59"],
+                "sunset": ["2026-10-05T19:24", "2026-10-06T19:22"],
+            },
+        }
+        sample = fetch_current(CITY, lambda url: payload)
+        self.assertFalse(sample["is_day"])
+        self.assertEqual(sample["sunset_at"], "2026-10-05T19:24")
+        self.assertEqual(sample["next_solar_transition_at"], "2026-10-06T07:59")
+        self.assertGreater(sample["seconds_until_solar_transition"], 0)
+
+        now = [100.0]
+        provider = WeatherProvider(clock=lambda: now[0])
+        provider._location = dict(CITY)
+        provider._sample = sample
+        provider._fetched_at = now[0]
+        values = dict(DEFAULTS, weather_location=CITY, night_mode_enabled=True,
+                      night_mode_brightness=35)
+        solar = provider.solar_status(values)
+        self.assertTrue(solar["active"])
+        frame = [(200, 100, 40)] * 17
+        self.assertEqual(
+            apply_automatic_night_brightness(frame, "audio-sync", solar)[0],
+            (70, 35, 14),
+        )
+        self.assertIs(apply_automatic_night_brightness(frame, "countdown", solar), frame)
+        self.assertIs(apply_automatic_night_brightness(frame, "controller:low", solar), frame)
+
+    def test_night_mode_requires_a_city_and_legacy_users_skip_onboarding(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "settings.json"
+            fresh = SettingsStore(str(path))
+            self.assertFalse(fresh.all()["onboarding_completed"])
+            self.assertEqual(fresh.all()["display_preset"], "immersive-plus")
+            with self.assertRaisesRegex(ValueError, "city"):
+                fresh.update({"night_mode_enabled": True})
+            enabled = fresh.update({"weather_location": CITY, "night_mode_enabled": True,
+                                    "night_mode_brightness": 42})
+            self.assertTrue(enabled["night_mode_enabled"])
+            self.assertEqual(enabled["night_mode_brightness"], 42)
+            enabled = fresh.update({"weather_location": None})
+            self.assertFalse(enabled["night_mode_enabled"])
+
+            legacy_path = Path(folder) / "legacy.json"
+            legacy_path.write_text(json.dumps({"signalbar_enabled": True}), encoding="utf-8")
+            legacy = SettingsStore(str(legacy_path)).all()
+            self.assertTrue(legacy["onboarding_completed"])
+            self.assertEqual(legacy["display_preset"], "custom")
 
     def test_tls_failure_retries_with_verified_system_ca_bundle(self):
         missing_issuer = URLError(ssl.SSLCertVerificationError("missing issuer"))

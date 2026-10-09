@@ -673,6 +673,18 @@ class PersistenceTests(unittest.TestCase):
             self.assertEqual(values["weather_display"], "home")
             self.assertIsNone(values["weather_location"])
 
+    def test_change_refused_for_a_missing_weather_city_leaves_settings_untouched(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = SettingsStore(str(Path(directory) / "config.json"))
+            store.update({"display_preset": "immersive-plus"})
+            before = store.all()
+            for change in ({"home_display": "weather"}, {"night_mode_enabled": True}):
+                with self.subTest(change=change):
+                    with self.assertRaisesRegex(ValueError, "Choose a city before enabling Weather"):
+                        store.update(change)
+                    self.assertEqual(store.all(), before)
+                    self.assertEqual(store.all()["display_preset"], "immersive-plus")
+
     def test_blackout_and_ownership_values_are_validated(self):
         with tempfile.TemporaryDirectory() as directory:
             store = SettingsStore(str(Path(directory) / "config.json"))

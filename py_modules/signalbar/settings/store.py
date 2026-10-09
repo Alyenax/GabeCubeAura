@@ -1093,6 +1093,18 @@ class SettingsStore:
                 if legacy_key in changes:
                     changes.setdefault(f"audio_sync_home_colour_{role}", changes[legacy_key])
                     changes.setdefault(f"audio_sync_game_colour_{role}", changes[legacy_key])
+            # Refuse before touching anything: the preset handling below
+            # changes the stored values, and a refused change must leave the
+            # settings exactly as they were.
+            wants_weather = (
+                changes.get("weather_display") not in (None, "off")
+                or changes.get("home_display") == "weather"
+                or changes.get("game_display") == "weather"
+                or changes.get("night_mode_enabled") is True
+            )
+            if (wants_weather
+                    and _valid_weather_location(changes.get("weather_location", self._data["weather_location"])) is None):
+                raise ValueError("Choose a city before enabling Weather or automatic night mode")
             requested_preset = changes.pop("display_preset", None)
             if requested_preset is not None:
                 if requested_preset not in VALID_DISPLAY_PRESETS:
@@ -1144,15 +1156,6 @@ class SettingsStore:
                     **deepcopy(AUDIO_SYNC_STYLE_TUNING[requested_audio_style]),
                     **changes,
                 }
-            wants_weather = (
-                changes.get("weather_display") not in (None, "off")
-                or changes.get("home_display") == "weather"
-                or changes.get("game_display") == "weather"
-                or changes.get("night_mode_enabled") is True
-            )
-            if (wants_weather
-                    and _valid_weather_location(changes.get("weather_location", self._data["weather_location"])) is None):
-                raise ValueError("Choose a city before enabling Weather or automatic night mode")
             if "mode" in changes:
                 legacy_mode = changes["mode"]
                 if legacy_mode == "disabled":

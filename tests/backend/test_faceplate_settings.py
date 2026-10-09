@@ -125,6 +125,21 @@ class FaceplateEntryTests(unittest.TestCase):
         configured = plugin.faceplate.configure.call_args[0][0]
         self.assertEqual(configured["brightness"], 40)
 
+    def test_claim_for_pixel_faceplate_follows_the_mode(self):
+        module, plugin = self.load_plugin()
+        claim_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(claim_dir.cleanup)
+        plugin.faceplate_settings_dir = claim_dir.name
+        claim = os.path.join(claim_dir.name, "faceplate-claim.json")
+        with patch.object(module, "PowerEvents"):
+            asyncio.run(plugin.set_faceplate_setting("mode", "clock"))
+            self.assertTrue(os.path.exists(claim))
+            asyncio.run(plugin.set_faceplate_setting("mode", "off"))
+            self.assertFalse(os.path.exists(claim))
+            asyncio.run(plugin.set_faceplate_setting("mode", "artwork"))
+            plugin._stop_faceplate()  # what _unload and _uninstall call
+            self.assertFalse(os.path.exists(claim))
+
     def test_bad_value_is_refused(self):
         _, plugin = self.load_plugin()
         with self.assertRaises(ValueError):

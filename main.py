@@ -14,6 +14,7 @@ sys.path.insert(0, os.path.join(PLUGIN_DIR, "py_modules"))
 from signalbar.backend import Engine  # noqa: E402
 from signalbar.faceplate import FaceplateService, PowerEvents  # noqa: E402
 from signalbar.faceplate import options as faceplate_options  # noqa: E402
+from signalbar import faceplate_claim  # noqa: E402
 from signalbar.settings import SettingsStore  # noqa: E402
 from signalbar.settings.export import (  # noqa: E402
     configuration_export_path, read_configuration_import, write_configuration_export,
@@ -28,6 +29,7 @@ class Plugin:
     # Set in _main; None until then (and in tests that build a bare Plugin).
     faceplate = None
     faceplate_power = None
+    faceplate_settings_dir = None
 
     @staticmethod
     def _migrate_legacy_settings(settings_directory: str):
@@ -64,6 +66,7 @@ class Plugin:
             faceplate_options.unprefixed(self.engine.settings.all()), decky.logger,
             counter_path=os.path.join(decky.DECKY_PLUGIN_SETTINGS_DIR, "faceplate-writes.json"),
         )
+        self.faceplate_settings_dir = decky.DECKY_PLUGIN_SETTINGS_DIR
         self.faceplate.start()
         self._sync_faceplate()
         self.update_manager = UpdateManager(
@@ -91,6 +94,11 @@ class Plugin:
         elif values["mode"] == "off" and self.faceplate_power is not None:
             self.faceplate_power.stop()
             self.faceplate_power = None
+        if self.faceplate_settings_dir:
+            if values["mode"] != "off":
+                faceplate_claim.claim(self.faceplate_settings_dir)
+            else:
+                faceplate_claim.release(self.faceplate_settings_dir)
 
     def _stop_faceplate(self):
         if self.faceplate is None:
@@ -98,6 +106,8 @@ class Plugin:
         if self.faceplate_power is not None:
             self.faceplate_power.stop()
             self.faceplate_power = None
+        if self.faceplate_settings_dir:
+            faceplate_claim.release(self.faceplate_settings_dir)
         self.faceplate.stop()
 
     async def _unload(self):

@@ -1105,6 +1105,9 @@ class SettingsStore:
             if (wants_weather
                     and _valid_weather_location(changes.get("weather_location", self._data["weather_location"])) is None):
                 raise ValueError("Choose a city before enabling Weather or automatic night mode")
+            # Everything below edits the settings in place; a change that cannot be saved must not
+            # stay live in memory (as replace_configuration does it).
+            previous = deepcopy(self._data)
             requested_preset = changes.pop("display_preset", None)
             if requested_preset is not None:
                 if requested_preset not in VALID_DISPLAY_PRESETS:
@@ -1189,8 +1192,12 @@ class SettingsStore:
             for key, value in changes.items():
                 if key in DEFAULTS:
                     self._data[key] = value
-            self._validate()
-            self.save()
+            try:
+                self._validate()
+                self.save()
+            except Exception:
+                self._data = previous
+                raise
             return dict(self._data)
 
     def replace_configuration(self, global_values: dict, display_profiles: dict,

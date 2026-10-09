@@ -685,6 +685,22 @@ class PersistenceTests(unittest.TestCase):
                     self.assertEqual(store.all(), before)
                     self.assertEqual(store.all()["display_preset"], "immersive-plus")
 
+    def test_change_that_cannot_be_saved_leaves_settings_untouched(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = SettingsStore(str(Path(directory) / "config.json"))
+            store.update({"display_preset": "immersive-plus"})
+            before = store.all()
+            for change in ({"light_bar_day_brightness": 40}, {"home_display": "blackout"},
+                           {"display_preset": "focus"}):
+                with self.subTest(change=change):
+                    with patch.object(store, "save", side_effect=OSError("disk full")):
+                        with self.assertRaises(OSError):
+                            store.update(change)
+                    self.assertEqual(store.all(), before)
+                    self.assertEqual(store.all()["display_preset"], "immersive-plus")
+            store.update({"light_bar_day_brightness": 40})  # and the next save works normally
+            self.assertEqual(store.all()["light_bar_day_brightness"], 40)
+
     def test_blackout_and_ownership_values_are_validated(self):
         with tempfile.TemporaryDirectory() as directory:
             store = SettingsStore(str(Path(directory) / "config.json"))

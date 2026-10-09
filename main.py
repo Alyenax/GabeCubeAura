@@ -12,6 +12,9 @@ PLUGIN_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(PLUGIN_DIR, "py_modules"))
 
 from signalbar.backend import Engine  # noqa: E402
+from signalbar.faceplate import FaceplateService, PowerEvents  # noqa: E402
+from signalbar.faceplate import options as faceplate_options  # noqa: E402
+from signalbar import faceplate_claim  # noqa: E402
 from signalbar.settings import SettingsStore  # noqa: E402
 from signalbar.settings.export import (  # noqa: E402
     configuration_export_path, read_configuration_import, write_configuration_export,
@@ -23,6 +26,11 @@ from signalbar.updates import UpdateManager  # noqa: E402
 
 
 class Plugin:
+    # Set in _main; None until then (and in tests that build a bare Plugin).
+    faceplate = None
+    faceplate_power = None
+    faceplate_settings_dir = None
+
     @staticmethod
     def _migrate_legacy_settings(settings_directory: str):
         """Copy legacy settings once when GabeCubeAura is installed as a new plugin."""
@@ -61,17 +69,62 @@ class Plugin:
             decky.logger,
         )
         self.update_manager.start()
+        # The faceplate is optional hardware: a failure here must never stop
+        # the light bar or the updater.
+        try:
+            self.faceplate = FaceplateService(
+                faceplate_options.unprefixed(self.engine.settings.all()), decky.logger,
+                counter_path=os.path.join(decky.DECKY_PLUGIN_SETTINGS_DIR, "faceplate-writes.json"),
+            )
+            self.faceplate_settings_dir = decky.DECKY_PLUGIN_SETTINGS_DIR
+            self.faceplate.start()
+            self._sync_faceplate()
+        except Exception as error:  # noqa: BLE001
+            decky.logger.warning(f"[GabeCubeAura] faceplate support unavailable: {error}")
+            self.faceplate = None
         if migrated_from:
             decky.logger.info(f"[GabeCubeAura] imported legacy {migrated_from} settings")
         decky.logger.info("[GabeCubeAura] loaded")
 
+    def _sync_faceplate(self):
+        """Hand the faceplate its current settings after anything may have changed them."""
+        if self.faceplate is None:
+            return
+        values = faceplate_options.unprefixed(self.engine.settings.all())
+        self.faceplate.configure(values)
+        # The sleep/shutdown hook holds a logind delay lock, so it only runs
+        # while the faceplate is in use, never for light-bar-only setups.
+        if values["mode"] != "off" and self.faceplate_power is None:
+            self.faceplate_power = PowerEvents(self.faceplate.power_event, decky.logger)
+            self.faceplate_power.start()
+        elif values["mode"] == "off" and self.faceplate_power is not None:
+            self.faceplate_power.stop()
+            self.faceplate_power = None
+        if self.faceplate_settings_dir:
+            if values["mode"] != "off":
+                faceplate_claim.claim(self.faceplate_settings_dir)
+            else:
+                faceplate_claim.release(self.faceplate_settings_dir)
+
+    def _stop_faceplate(self):
+        if self.faceplate is None:
+            return
+        if self.faceplate_power is not None:
+            self.faceplate_power.stop()
+            self.faceplate_power = None
+        if self.faceplate_settings_dir:
+            faceplate_claim.release(self.faceplate_settings_dir)
+        self.faceplate.stop()
+
     async def _unload(self):
         self.update_manager.stop()
+        self._stop_faceplate()
         self.engine.stop()
         decky.logger.info("[GabeCubeAura] unloaded; LED ownership released")
 
     async def _uninstall(self):
         self.update_manager.stop()
+        self._stop_faceplate()
         self.engine.stop()
 
     async def get_status(self):
@@ -91,10 +144,12 @@ class Plugin:
         self.engine.import_configuration(
             global_values, display_profiles, artwork_profiles, launch_artwork_profiles,
         )
+        self._sync_faceplate()
         return self.engine.status()
 
     async def reset_configuration(self):
         self.engine.reset_configuration()
+        self._sync_faceplate()
         return self.engine.status()
 
     async def set_mode(self, mode: str):
@@ -107,6 +162,8 @@ class Plugin:
 
     async def set_setting(self, key: str, value):
         self.engine.update_settings({key: value})
+        if key.startswith(faceplate_options.PREFIX) or key == "reverse_led_order":
+            self._sync_faceplate()
         return self.engine.status()
 
     async def set_artwork_setting(self, appid: int, key: str, value):
@@ -134,7 +191,47 @@ class Plugin:
     async def game_changed(self, appid: int = 0, title: str = "", launch: bool = False,
                            source: str = ""):
         self.engine.set_game(appid, title, launch, source)
+        if self.faceplate is not None:
+            try:
+                current = max(0, int(appid))
+            except (TypeError, ValueError):
+                current = 0
+            self.faceplate.game_event(current, bool(current))
         return self.engine.status()
+
+    def _require_faceplate(self):
+        if self.faceplate is None:
+            raise RuntimeError("Faceplate support is not running")
+        return self.faceplate
+
+    async def get_faceplate_status(self):
+        return self._require_faceplate().status()
+
+    async def set_faceplate_setting(self, key: str, value):
+        self._require_faceplate()
+        cleaned = faceplate_options.clean(key, value)
+        self.engine.update_settings({faceplate_options.PREFIX + key: cleaned})
+        self._sync_faceplate()
+        return self.faceplate.status()
+
+    async def set_faceplate_game_settings(self, appid: int, changes: dict = None):
+        """One game's own art style and logo position; None returns it to the global choice."""
+        self._require_faceplate()
+        if int(appid) <= 0:
+            raise ValueError("A game profile needs a game")
+        key = str(int(appid))
+        values = faceplate_options.unprefixed(self.engine.settings.all())
+        profiles = dict(values["game_profiles"])
+        if changes is None:
+            profiles.pop(key, None)
+        else:
+            # A new profile starts as a copy of the global choice, so turning
+            # it on does not change the picture until something is edited.
+            base = profiles.get(key) or {name: values[name] for name in faceplate_options.GAME_KEYS}
+            profiles[key] = faceplate_options.game_profile(dict(base, **changes))
+        self.engine.update_settings({faceplate_options.PREFIX + "game_profiles": profiles})
+        self._sync_faceplate()
+        return self.faceplate.status()
 
     async def get_artwork(self, appid: int = 0, source: str = "hero", purpose: str = "artwork"):
         result = get_library_artwork(appid, source)

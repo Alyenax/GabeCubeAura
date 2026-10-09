@@ -102,3 +102,48 @@ export interface ControllerBatteryUpdate {
   level: number | null;
   charging: boolean | null;
 }
+
+export type FaceplateArtStyle = "logo_dim" | "logo" | "art" | "logo_only";
+export type FaceplateLogoPosition = "bottom" | "centre" | "top";
+
+// The settings a single game can override.
+export type FaceplateGameProfile = Pick<FaceplateSettings, "art_style" | "logo_position">;
+
+export interface FaceplateSettings {
+  mode: "off" | "artwork" | "clock" | "aura" | "image";
+  brightness: number;
+  artwork_idle: "steam" | "clock" | "keep";
+  art_style: FaceplateArtStyle;
+  logo_position: FaceplateLogoPosition;
+  clock_24h: boolean;
+  clock_colour: string;
+  aura_interval: number;
+  image_path: string;
+  sleep_action: "off" | "dim" | "keep";
+  shutdown_action: "off" | "dim" | "keep";
+  rotate: boolean;
+  game_profiles: Record<string, FaceplateGameProfile>;
+}
+
+export interface FaceplateStatus {
+  phase: "starting" | "off" | "waiting" | "running" | "asleep" | "busy" | "error";
+  detail: string;
+  connected: boolean;
+  port: string;
+  uploads: number;
+  lifetime_uploads: number;
+  upload_ms: number;
+  brightness_applied: number | null;
+  appid: number;
+  last_error: string;
+  settings: FaceplateSettings;
+}
+
+export const getFaceplateStatus = callable<[], FaceplateStatus>("get_faceplate_status");
+export const setFaceplateSetting = callable<[key: keyof FaceplateSettings, value: unknown], FaceplateStatus>(
+  "set_faceplate_setting",
+);
+// null drops the game's own choices so it follows the global ones again.
+export const setFaceplateGameSettings = callable<[
+  appid: number, changes: Partial<FaceplateGameProfile> | null,
+], FaceplateStatus>("set_faceplate_game_settings");

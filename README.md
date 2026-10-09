@@ -290,13 +290,10 @@ stays powered during sleep.
 
 The panel keeps every picture in its own flash memory and shows it again at
 power on. GabeCubeAura therefore sends a picture only when it changes, at most
-once a second, and the status section counts every write. A brightness cap
-prevents very bright pictures from overloading a USB-A port. Faceplate is off
-until you choose a mode. If the standalone
-[Pixel Faceplate](https://github.com/hodapp/pixel-faceplate) plugin is
-installed, GabeCubeAura imports its settings once; version 0.2.1 and later
-then hands the panel over and asks to be uninstalled. Its repository also
-documents the panel's USB protocol.
+once a second, and the status section counts every write; the clock costs one
+write a minute. A brightness cap prevents very bright pictures from
+overloading a USB-A port. Faceplate is off until you choose a mode. Settings
+from the standalone Pixel Faceplate plugin are imported once.
 
 ## How priorities work
 
@@ -501,6 +498,9 @@ exported JSON or the artwork cache; both stop a running personal timer.
 - A userspace guard that yields when Steam or another process changes the bar
 - A CPU/GPU thermal interlock that yields completely to Valve at 94°C and only
   resumes after both coherent readings stay below 90°C for 30 seconds
+- Faceplate support opens no device and starts no helper process until a
+  faceplate mode is chosen. It then holds a short logind sleep delay so the
+  panel can be switched off before the Steam Machine sleeps.
 
 GabeCubeAura only restores a previous frame when the hardware still matches its
 own last verified write. Missing or incoherent sensor data during a thermal

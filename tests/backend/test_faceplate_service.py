@@ -134,7 +134,7 @@ class ServiceTests(unittest.TestCase):
     def test_already_stored_is_not_counted(self):
         svc = make("clock")
         svc.step()
-        svc.last_hash = None  # e.g. a reconnect: we resend, the panel skips it
+        svc.last_hash = None  # e.g. a reconnect: sent again, the panel skips it
         svc.step()
         self.assertEqual(svc.uploads, 1)
         self.assertEqual(svc.counter.total, 1)
@@ -230,6 +230,54 @@ class ServiceTests(unittest.TestCase):
             svc.step()
         self.assertEqual(len(sent), 2)
         self.assertEqual(sent[1], render.rotate(sent[0]))
+
+    def test_ch340_that_does_not_answer_is_left_alone(self):
+        class SilentLink(FakeLink):
+            def command(self, data, timeout=1.0, retries=3):
+                raise LinkError("no reply")
+
+        svc = service.FaceplateService(dict(DEFAULTS, mode="clock"), link_factory=SilentLink)
+        svc.step()
+        self.assertEqual(svc.phase, "error")
+        self.assertIn("no faceplate answered", svc.detail)
+        self.assertIsNone(svc.link)
+        self.assertEqual(SilentLink.instances[0].gifs, [])
+        svc.step()
+        self.assertEqual(len(SilentLink.instances), 1)  # not reopened straight away
+
+    def test_reconnect_assumes_a_bright_picture_again(self):
+        svc = make("clock", brightness=100)
+        svc.step()
+        self.assertLess(svc.shown_load, 0.5)  # the clock is mostly black
+        FakeLink.port = "/dev/ttyUSB1"  # replugged
+        try:
+            with mock.patch.object(service, "find_port", lambda: "/dev/ttyUSB1"):
+                svc._ensure_link()
+        finally:
+            FakeLink.port = "/dev/ttyUSB0"
+        self.assertEqual(svc.shown_load, 1.0)
+
+    def test_sleep_does_not_wait_behind_an_upload(self):
+        import threading
+        svc = make("clock")
+        svc.step()
+        held, release = threading.Event(), threading.Event()
+
+        def hold():
+            with svc.link_lock:
+                held.set()
+                release.wait(5)
+
+        worker = threading.Thread(target=hold)
+        worker.start()
+        held.wait(1)
+        try:
+            with mock.patch.object(service, "POWER_LOCK_WAIT", 0.05):
+                svc.power_event("sleep", True)
+            self.assertTrue(svc.asleep)
+        finally:
+            release.set()
+            worker.join()
 
     def test_busy_port_waits_without_an_error(self):
         class BusyLink(FakeLink):
@@ -347,6 +395,7 @@ class RenderTests(unittest.TestCase):
                     with open(os.path.join(d, name), "w") as handle:
                         handle.write(value)
             self.assertEqual(render.read_lightbar(root), [(128, 0, 0), (0, 0, 128)])
+            self.assertEqual(render.read_lightbar(root, reverse=True), [(0, 0, 128), (128, 0, 0)])
 
 
 if __name__ == "__main__":

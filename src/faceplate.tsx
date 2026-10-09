@@ -8,7 +8,7 @@ import {
   ToggleField,
 } from "@decky/ui";
 import { FileSelectionType, openFilePicker } from "@decky/api";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   getFaceplateStatus,
@@ -22,6 +22,8 @@ import {
 } from "./api";
 
 const POLL_MS = 1000;
+// Brightness reaches the panel once the slider settles, not at every step.
+const SLIDER_SETTLE_MS = 400;
 
 const MODES = [
   { data: "off", label: "Off (leave the panel alone)" },
@@ -77,16 +79,20 @@ function gameTitle(appid: number): string {
 
 export function FaceplatePanel() {
   const [status, setStatus] = useState<FaceplateStatus | null>(null);
+  // A failed save stays visible; a successful poll only clears its own error.
   const [error, setError] = useState("");
+  const [pollError, setPollError] = useState("");
+  const [brightness, setBrightness] = useState<number | null>(null);
+  const brightnessTimer = useRef<number | undefined>(undefined);
 
   useEffect(() => {
     let cancelled = false;
     const refresh = () => getFaceplateStatus()
-      .then((next) => { if (!cancelled) { setStatus(next); setError(""); } })
-      .catch((e) => { if (!cancelled) setError(String(e)); });
+      .then((next) => { if (!cancelled) { setStatus(next); setPollError(""); } })
+      .catch((e) => { if (!cancelled) setPollError(String(e)); });
     void refresh();
     const timer = window.setInterval(refresh, POLL_MS);
-    return () => { cancelled = true; window.clearInterval(timer); };
+    return () => { cancelled = true; window.clearInterval(timer); window.clearTimeout(brightnessTimer.current); };
   }, []);
 
   const apply = async (call: () => Promise<FaceplateStatus>) => {
@@ -104,7 +110,7 @@ export function FaceplatePanel() {
 
   if (!status) {
     return <PanelSection title="Faceplate">
-      <PanelSectionRow><Field label={error ? `Backend error: ${error}` : "Loading..."} focusable={false} /></PanelSectionRow>
+      <PanelSectionRow><Field label={error || pollError ? `Backend error: ${error || pollError}` : "Loading..."} focusable={false} /></PanelSectionRow>
     </PanelSection>;
   }
 
@@ -115,8 +121,13 @@ export function FaceplatePanel() {
   const art = profile ?? s;
   const saveArt = (changes: Partial<FaceplateGameProfile>) => profile
     ? saveGame(appid, changes)
-    : apply(() => setFaceplateSetting(Object.keys(changes)[0] as keyof FaceplateGameProfile,
-      Object.values(changes)[0] as string));
+    : apply(async () => {
+      let next = status;
+      for (const [key, value] of Object.entries(changes)) {
+        next = await setFaceplateSetting(key as keyof FaceplateGameProfile, value);
+      }
+      return next;
+    });
   const pickImage = async () => {
     try {
       const picked = await openFilePicker(FileSelectionType.FILE, s.image_path || "/home/deck/Pictures",
@@ -142,8 +153,13 @@ export function FaceplatePanel() {
           onChange={(option) => void save("mode", option.data)} />
       </PanelSectionRow>
       <PanelSectionRow>
-        <SliderField label="Brightness" value={s.brightness} min={0} max={100} step={5} showValue
-          onChange={(value) => void save("brightness", value)} />
+        <SliderField label="Brightness" value={brightness ?? s.brightness} min={0} max={100} step={5} showValue
+          onChange={(value) => {
+            setBrightness(value);
+            window.clearTimeout(brightnessTimer.current);
+            brightnessTimer.current = window.setTimeout(
+              () => void save("brightness", value).finally(() => setBrightness(null)), SLIDER_SETTLE_MS);
+          }} />
       </PanelSectionRow>
       {status.brightness_applied !== null && status.brightness_applied < s.brightness && <PanelSectionRow>
         <Field label={`Running at ${status.brightness_applied}%`}
@@ -236,8 +252,8 @@ export function FaceplatePanel() {
           {status.uploads} / {status.lifetime_uploads}
         </Field>
       </PanelSectionRow>
-      {(error || status.last_error) && <PanelSectionRow>
-        <Field label="Error" description={error || status.last_error} focusable={false} />
+      {(error || pollError || status.last_error) && <PanelSectionRow>
+        <Field label="Error" description={error || pollError || status.last_error} focusable={false} />
       </PanelSectionRow>}
       <PanelSectionRow>
         <ButtonItem label="End of Faceplate settings"

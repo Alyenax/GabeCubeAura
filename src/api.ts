@@ -106,10 +106,8 @@ export interface ControllerBatteryUpdate {
 export type FaceplateArtStyle = "logo_dim" | "logo" | "art" | "logo_only";
 export type FaceplateLogoPosition = "bottom" | "centre" | "top";
 
-export interface FaceplateGameProfile {
-  art_style: FaceplateArtStyle;
-  logo_position: FaceplateLogoPosition;
-}
+// The settings a single game can override.
+export type FaceplateGameProfile = Pick<FaceplateSettings, "art_style" | "logo_position">;
 
 export interface FaceplateSettings {
   mode: "off" | "artwork" | "clock" | "aura" | "image";

@@ -9,10 +9,8 @@
 - Choose the artwork style and logo position globally or for one game, flip
   the picture for an upside-down mount, and turn the panel off or dim it at
   sleep and shutdown.
-- Send a picture only when it changes, cap brightness for bright pictures, and
-  count flash writes.
-- Import the standalone Pixel Faceplate plugin's settings once. Pixel
-  Faceplate 0.2.1 and later steps aside when this support is installed.
+- Send a picture only when it changes and cap brightness for bright pictures.
+- Import the standalone Pixel Faceplate plugin's settings once.
 
 ## 1.4.0 - 2026-10-05
 

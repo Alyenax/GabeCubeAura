@@ -26,7 +26,7 @@ class LinkError(Exception):
 
 
 class LinkBusy(LinkError):
-    """Another program holds the faceplate (usually the standalone Pixel Faceplate plugin)."""
+    """Another program holds the faceplate."""
 
 
 def find_port():
@@ -57,14 +57,13 @@ class Link:
             raise LinkError("faceplate not found (no CH340 ttyUSB)")
         fd = os.open(self.port, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
         # Two writers on one port interleave packets and the panel rejects
-        # both. Anything that drives the faceplate takes an exclusive flock on
-        # the tty first (the standalone Pixel Faceplate plugin does the same).
-        # TIOCEXCL won't do: it doesn't stop root, and GabeCubeAura runs as root.
+        # both, so the port is taken with an exclusive flock. TIOCEXCL would
+        # not do: it does not stop root, and GabeCubeAura runs as root.
         try:
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except OSError:
             os.close(fd)
-            raise LinkBusy("faceplate in use by another app (the Pixel Faceplate plugin?)")
+            raise LinkBusy("faceplate in use by another program")
         try:
             attrs = termios.tcgetattr(fd)
             iflag, oflag, cflag, lflag, _, _, cc = attrs

@@ -20,6 +20,7 @@ def clean_environment():
     env = dict(os.environ)
     for name in ("LD_LIBRARY_PATH", "LD_PRELOAD", "PYTHONHOME", "PYTHONPATH"):
         env.pop(name, None)
+    env["LD_LIBRARY_PATH"] = ""
     return env
 
 # 3x5 digits for the date line and 5x7 digits drawn at 2x for the time.
@@ -95,8 +96,8 @@ def clock(now=None, colour=(255, 140, 20), use_24h=False):
     return canvas.bytes()
 
 
-def read_lightbar(root="/sys/class/leds"):
-    """Colours of the Steam Machine light bar, left to right, scaled by brightness."""
+def read_lightbar(root="/sys/class/leds", reverse=False):
+    """Colours of the Steam Machine light bar in sysfs index order (reversed if asked), scaled by brightness."""
     leds = []
     for path in glob.glob(os.path.join(root, "valve-leds[[]*[]]")):
         try:
@@ -110,7 +111,8 @@ def read_lightbar(root="/sys/class/leds"):
         except (OSError, ValueError, IndexError):
             continue
         leds.append((index, tuple(min(255, c * level // top) for c in rgb)))
-    return [c for _, c in sorted(leds)]
+    colours = [c for _, c in sorted(leds)]
+    return colours[::-1] if reverse else colours
 
 
 def aura(colours):
@@ -167,16 +169,19 @@ def _gst_decode(path, width, height, alpha=False, timeout=5.0):
     if not gst or not os.path.isfile(path):
         return None
     fmt = "RGBA" if alpha else "RGB"
+    # The image goes in on stdin, never as text in the pipeline: gst-launch
+    # parses its arguments, so a crafted file name could add elements.
     argv = [
-        gst, "-q", "filesrc", "location=%s" % path, "!", "decodebin", "!", "videoconvert",
+        gst, "-q", "fdsrc", "fd=0", "!", "decodebin", "!", "videoconvert",
         # method=3 is Lanczos: much crisper than bilinear at this size (seen).
         "!", "videoscale", "method=3", "add-borders=false",
         "!", "video/x-raw,format=%s,width=%d,height=%d,pixel-aspect-ratio=1/1" % (fmt, width, height),
         "!", "imagefreeze", "num-buffers=1", "!", "fdsink", "fd=1",
     ]
     try:
-        result = subprocess.run(argv, capture_output=True, timeout=timeout, check=False,
-                                env=clean_environment())
+        with open(path, "rb") as image:
+            result = subprocess.run(argv, stdin=image, capture_output=True, timeout=timeout,
+                                    check=False, env=clean_environment())
     except (OSError, subprocess.SubprocessError):
         return None
     # GStreamer pads every raw video row to a multiple of 4 bytes. RGB rows of
@@ -372,7 +377,9 @@ def find_art(appid, kind):
     Same lookup as the light bar's Artwork, so both pick the same picture:
     custom grid art first (SteamGridDB writes there), then the library cache.
     """
-    path = find_library_logo(appid) if kind == "logo" else find_library_artwork(appid, kind)
+    if kind == "logo":
+        return find_library_logo(appid)
+    path = find_library_artwork(appid, kind)
     return str(path) if path else None
 
 

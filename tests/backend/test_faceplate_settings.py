@@ -63,6 +63,40 @@ class FaceplateStoreTests(unittest.TestCase):
             self.assertEqual(values["faceplate_mode"], "off")
             self.assertFalse(os.path.exists(path))
 
+    def test_unreadable_configuration_is_never_overwritten(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "GabeCubeAura", "config.json")
+            os.makedirs(os.path.dirname(path))
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write('{"mode": "artwork", "light_bar_day_brightness": 2')  # cut off mid-write
+            write_json(os.path.join(tmp, "Pixel-Faceplate", "settings.json"), {"mode": "clock"})
+            SettingsStore(path)
+            with open(path, encoding="utf-8") as handle:
+                self.assertTrue(handle.read().endswith(": 2"))
+
+    def test_one_bad_game_profile_does_not_cost_the_others(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "GabeCubeAura", "config.json")
+            write_json(path, {"faceplate_mode": "artwork", "faceplate_game_profiles": {
+                "10": {"art_style": "art"}, "0": {"art_style": "art"}, "11": {"brightness": 5},
+            }})
+            self.assertEqual(SettingsStore(path).all()["faceplate_game_profiles"], {"10": {"art_style": "art"}})
+
+    def test_import_from_another_machine_drops_a_missing_image(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = SettingsStore(os.path.join(tmp, "GabeCubeAura", "config.json"))
+            values = store.replace_configuration(
+                {"faceplate_mode": "image", "faceplate_image_path": "/home/deck/Pictures/gone.png",
+                 "faceplate_clock_colour": "FF0000"}, {}, {}, {},
+            )
+        self.assertEqual(values["faceplate_mode"], "image")
+        self.assertEqual(values["faceplate_image_path"], "")
+        self.assertEqual(values["faceplate_clock_colour"], "#ff0000")
+
+    def test_service_view_carries_the_light_bar_orientation(self):
+        self.assertTrue(options.unprefixed({})["light_bar_reversed"])
+        self.assertFalse(options.unprefixed({"reverse_led_order": False})["light_bar_reversed"])
+
     def test_options_reject_what_cannot_be_per_game(self):
         with self.assertRaises(ValueError):
             options.game_profile({"brightness": 10})
@@ -155,6 +189,15 @@ class FaceplateEntryTests(unittest.TestCase):
         self.assertEqual(plugin.engine.settings.all()["faceplate_game_profiles"]["1931770"]["logo_position"], "top")
         asyncio.run(plugin.set_faceplate_game_settings(1931770, None))
         self.assertEqual(plugin.engine.settings.all()["faceplate_game_profiles"], {})
+        with self.assertRaises(ValueError):
+            asyncio.run(plugin.set_faceplate_game_settings(0, {}))
+
+    def test_without_faceplate_support_the_calls_say_so(self):
+        _, plugin = self.load_plugin()
+        plugin.faceplate = None
+        with self.assertRaises(RuntimeError):
+            asyncio.run(plugin.get_faceplate_status())
+        asyncio.run(plugin.game_changed(10))  # still fine for the light bar
 
     def test_game_changes_reach_the_faceplate(self):
         _, plugin = self.load_plugin()

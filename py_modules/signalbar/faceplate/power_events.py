@@ -2,8 +2,8 @@
 panel goes on showing its last picture all night.
 
 logind announces PrepareForSleep and PrepareForShutdown on the system bus
-before either happens. This listens with `gdbus monitor` and hold a delay lock
-with `systemd-inhibit`, so logind waits for us (up to InhibitDelayMaxSec)
+before either happens. This listens with `gdbus monitor` and holds a delay lock
+with `systemd-inhibit`, so logind waits for the plugin (up to InhibitDelayMaxSec)
 before going down. Both tools ship with SteamOS; Decky's bundled Python has
 no dbus module.
 """
@@ -21,10 +21,17 @@ from .render import clean_environment
 MONITOR = ["monitor", "--system", "--dest", "org.freedesktop.login1", "--object-path", "/org/freedesktop/login1"]
 # The helpers carry these so a fresh start can find strays left by an old
 # plugin process (Decky's restart kills the backend without calling _unload).
-# They differ from the standalone Pixel Faceplate plugin's, so neither plugin
-# ever stops the other's helpers.
 MONITOR_NAME = "gabecubeaura-faceplate-login1"
 INHIBIT_WHO = "--who=GabeCubeAura faceplate"
+
+
+# Looked up once here: the child of a multithreaded fork must not import or
+# dlopen anything, or it can deadlock on a lock another thread held.
+try:
+    import ctypes
+    _PRCTL = ctypes.CDLL("libc.so.6", use_errno=True).prctl
+except (OSError, AttributeError):
+    _PRCTL = None
 
 
 def die_with_parent():
@@ -34,15 +41,12 @@ def die_with_parent():
     (Decky's event loop thread and the listener thread) live as long as the
     plugin, and start() also clears strays in case one slips through.
     """
-    try:
-        import ctypes
-        ctypes.CDLL("libc.so.6", use_errno=True).prctl(1, signal.SIGTERM)  # PR_SET_PDEATHSIG
-    except (OSError, AttributeError):
-        pass
+    if _PRCTL is not None:
+        _PRCTL(1, signal.SIGTERM)  # PR_SET_PDEATHSIG
 
 
 def stray_helpers(proc_root="/proc", uid=None, own_children=()):
-    """PIDs of our own helpers that outlived the process that started them."""
+    """PIDs of this plugin's helpers that outlived the process that started them."""
     uid = os.getuid() if uid is None else uid
     found = []
     for entry in os.listdir(proc_root):
@@ -136,7 +140,7 @@ class PowerEvents:
                 pass
         self.stopping.clear()
         self.take()
-        self.thread = threading.Thread(target=self._run, name="pixel-faceplate-power", daemon=True)
+        self.thread = threading.Thread(target=self._run, name="gabecubeaura-faceplate-power", daemon=True)
         self.thread.start()
 
     def stop(self):
@@ -154,7 +158,7 @@ class PowerEvents:
     def handle(self, kind, starting):
         try:
             self.handler(kind, starting)
-        except Exception as error:  # never keep the system waiting on our bug
+        except Exception as error:  # never keep the system waiting on a bug here
             self._log("error", "%s handler failed: %s" % (kind, error))
         if starting:
             self.release()  # let the system go to sleep / power off now

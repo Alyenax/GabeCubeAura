@@ -124,18 +124,57 @@ def stored_defaults():
     return {PREFIX + key: value for key, value in DEFAULTS.items()}
 
 
+def _valid_profiles(value):
+    """Game profiles with any malformed entry dropped on its own, not the whole set."""
+    profiles = {}
+    for appid, profile in (value.items() if isinstance(value, dict) else ()):
+        try:
+            profiles[str(_int(appid, "app ID", 1, 0xFFFFFFFF))] = game_profile(profile)
+        except ValueError:
+            continue
+    return profiles
+
+
 def validate_stored(data):
     """Clean every faceplate_ key in a store dict in place; bad values fall back to defaults."""
     for key, default in DEFAULTS.items():
+        value = data.get(PREFIX + key, default)
+        if key == "game_profiles":
+            data[PREFIX + key] = _valid_profiles(value)
+            continue
         try:
-            data[PREFIX + key] = clean(key, data.get(PREFIX + key, default))
+            data[PREFIX + key] = clean(key, value)
         except ValueError:
             data[PREFIX + key] = json.loads(json.dumps(default))
 
 
+def normalise_import(values):
+    """Adjust an imported configuration in place before it is checked strictly.
+
+    The image path names a file on the machine that exported it, so a missing
+    file is dropped rather than failing the whole import, and colours are
+    accepted in any case or with or without '#'.
+    """
+    path = values.get(PREFIX + "image_path")
+    if isinstance(path, str) and path and not os.path.isfile(os.path.expanduser(path)):
+        values[PREFIX + "image_path"] = ""
+    colour = values.get(PREFIX + "clock_colour")
+    if colour is not None:
+        try:
+            values[PREFIX + "clock_colour"] = clean("clock_colour", colour)
+        except ValueError:
+            pass  # left as it is, so the strict check reports it
+
+
 def unprefixed(values):
-    """The service's view of the store: faceplate settings without their prefix."""
-    return {key: values.get(PREFIX + key, default) for key, default in DEFAULTS.items()}
+    """The service's view of the store: faceplate settings without their prefix.
+
+    Light bar glow also needs the bar's orientation: GabeCubeAura's logical
+    left is the highest sysfs index while reverse_led_order is on.
+    """
+    view = {key: values.get(PREFIX + key, default) for key, default in DEFAULTS.items()}
+    view["light_bar_reversed"] = bool(values.get("reverse_led_order", True))
+    return view
 
 
 def for_game(values, appid):

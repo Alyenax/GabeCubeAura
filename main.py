@@ -62,13 +62,6 @@ class Plugin:
             os.environ.get("DECKY_USER_HOME"),
         )
         self.engine.start()
-        self.faceplate = FaceplateService(
-            faceplate_options.unprefixed(self.engine.settings.all()), decky.logger,
-            counter_path=os.path.join(decky.DECKY_PLUGIN_SETTINGS_DIR, "faceplate-writes.json"),
-        )
-        self.faceplate_settings_dir = decky.DECKY_PLUGIN_SETTINGS_DIR
-        self.faceplate.start()
-        self._sync_faceplate()
         self.update_manager = UpdateManager(
             __version__, self.engine.settings,
             decky.DECKY_PLUGIN_RUNTIME_DIR,
@@ -76,6 +69,19 @@ class Plugin:
             decky.logger,
         )
         self.update_manager.start()
+        # The faceplate is optional hardware: a failure here must never stop
+        # the light bar or the updater.
+        try:
+            self.faceplate = FaceplateService(
+                faceplate_options.unprefixed(self.engine.settings.all()), decky.logger,
+                counter_path=os.path.join(decky.DECKY_PLUGIN_SETTINGS_DIR, "faceplate-writes.json"),
+            )
+            self.faceplate_settings_dir = decky.DECKY_PLUGIN_SETTINGS_DIR
+            self.faceplate.start()
+            self._sync_faceplate()
+        except Exception as error:  # noqa: BLE001
+            decky.logger.warning(f"[GabeCubeAura] faceplate support unavailable: {error}")
+            self.faceplate = None
         if migrated_from:
             decky.logger.info(f"[GabeCubeAura] imported legacy {migrated_from} settings")
         decky.logger.info("[GabeCubeAura] loaded")
@@ -156,6 +162,8 @@ class Plugin:
 
     async def set_setting(self, key: str, value):
         self.engine.update_settings({key: value})
+        if key.startswith(faceplate_options.PREFIX) or key == "reverse_led_order":
+            self._sync_faceplate()
         return self.engine.status()
 
     async def set_artwork_setting(self, appid: int, key: str, value):
@@ -184,13 +192,23 @@ class Plugin:
                            source: str = ""):
         self.engine.set_game(appid, title, launch, source)
         if self.faceplate is not None:
-            self.faceplate.game_event(appid, bool(appid))
+            try:
+                current = max(0, int(appid))
+            except (TypeError, ValueError):
+                current = 0
+            self.faceplate.game_event(current, bool(current))
         return self.engine.status()
 
+    def _require_faceplate(self):
+        if self.faceplate is None:
+            raise RuntimeError("Faceplate support is not running")
+        return self.faceplate
+
     async def get_faceplate_status(self):
-        return self.faceplate.status()
+        return self._require_faceplate().status()
 
     async def set_faceplate_setting(self, key: str, value):
+        self._require_faceplate()
         cleaned = faceplate_options.clean(key, value)
         self.engine.update_settings({faceplate_options.PREFIX + key: cleaned})
         self._sync_faceplate()
@@ -198,6 +216,9 @@ class Plugin:
 
     async def set_faceplate_game_settings(self, appid: int, changes: dict = None):
         """One game's own art style and logo position; None returns it to the global choice."""
+        self._require_faceplate()
+        if int(appid) <= 0:
+            raise ValueError("A game profile needs a game")
         key = str(int(appid))
         values = faceplate_options.unprefixed(self.engine.settings.all())
         profiles = dict(values["game_profiles"])

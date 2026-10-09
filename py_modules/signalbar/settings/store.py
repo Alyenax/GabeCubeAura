@@ -8,7 +8,9 @@ import os
 import threading
 from copy import deepcopy
 
-from signalbar.faceplate.options import import_pixel_faceplate, stored_defaults, validate_stored
+from signalbar.faceplate.options import (
+    import_pixel_faceplate, normalise_import, stored_defaults, validate_stored,
+)
 from signalbar.providers.customization import CUSTOMIZATION_PATTERNS
 
 DEFAULTS = {
@@ -542,6 +544,7 @@ class SettingsStore:
     def load(self):
         with self._lock:
             raw = None
+            missing = False
             try:
                 with open(self.path, encoding="utf-8") as handle:
                     raw = json.load(handle)
@@ -669,12 +672,16 @@ class SettingsStore:
                     # migration. Artwork sampling choices remain preserved.
                     if legacy_routing and raw.get("mode") in {"events", "disabled"}:
                         self._data["display_profiles"] = {}
+            except FileNotFoundError:
+                missing = True
             except (OSError, ValueError, TypeError):
                 pass
             imported = {}
-            if not isinstance(raw, dict) or "faceplate_mode" not in raw:
-                # Faceplate support began as the standalone Pixel Faceplate
-                # plugin. Bring its choices across once, then they are ours.
+            # Faceplate support began as the standalone Pixel Faceplate plugin.
+            # Its choices are copied once, into a new configuration or one
+            # without faceplate settings. A configuration that failed to load
+            # is never written here, so it stays on disk to be recovered.
+            if missing or (isinstance(raw, dict) and "faceplate_mode" not in raw):
                 imported = import_pixel_faceplate(os.path.dirname(self.path))
                 self._data.update(imported)
             self._validate()
@@ -1272,6 +1279,7 @@ class SettingsStore:
                         DEFAULTS[f"audio_sync_{context}_colour_{role}"],
                     )),
                 )
+        normalise_import(imported)
         imported["display_profiles"] = deepcopy(display_profiles)
         imported["artwork_profiles"] = deepcopy(artwork_profiles)
         imported["launch_artwork_profiles"] = deepcopy(launch_artwork_profiles)

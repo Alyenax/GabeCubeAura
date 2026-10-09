@@ -265,6 +265,39 @@ GabeCubeAura previews, alerts, Game launches and playtime countdowns remain
 above the game HUD. The former experimental Witcher Lab is not bundled with
 GabeCubeAura 1.4.0.
 
+### JSAUX Pixel Matrix Faceplate
+
+The JSAUX Pixel Matrix Faceplate is a 64x54 RGB panel that replaces the Steam
+Machine's front plate. GabeCubeAura drives it directly over its USB cable, so
+JSAUX's beta software is not needed. Open **Faceplate** in the detailed
+settings and choose a mode:
+
+- **Game artwork** shows the running game's Library Hero with its logo. The
+  artwork comes from the same lookup as the light bar's Artwork, including
+  SteamGridDB custom art. Choose artwork and logo with or without a shaded band
+  behind the logo, artwork only, or the logo alone on black, and put the logo
+  at the top, centre or bottom. While a game is running, **Just for** keeps a
+  separate style for that game. Between games the panel shows the Steam logo,
+  the clock or the last game's picture.
+- **Clock** draws large digits in a choice of colour, 12 or 24 hour.
+- **Light bar glow** copies the light bar's colours onto the panel.
+- **Custom image** shows any PNG, JPG, GIF or BMP on the Steam Machine.
+
+**Upside down** flips every picture for a faceplate mounted with its cable on
+the right; the included cable does not reach that side. The panel can be
+turned off or dimmed when the Steam Machine sleeps or shuts down, because USB
+stays powered during sleep.
+
+The panel keeps every picture in its own flash memory and shows it again at
+power on. GabeCubeAura therefore sends a picture only when it changes, at most
+once a second, and the status section counts every write. A brightness cap
+prevents very bright pictures from overloading a USB-A port. Faceplate is off
+until you choose a mode. If the standalone
+[Pixel Faceplate](https://github.com/hodapp/pixel-faceplate) plugin is
+installed, GabeCubeAura imports its settings once; version 0.2.1 and later
+then hands the panel over and asks to be uninstalled. Its repository also
+documents the panel's USB protocol.
+
 ## How priorities work
 
 GabeCubeAura follows a strict order:
@@ -491,6 +524,9 @@ user colour; colour alone is never treated as a thermal warning.
   controller and connection type yet.
 - No Internet artwork fallback, FPS, network, storage, Moonlight, or Sunshine
   provider yet
+- The JSAUX faceplate is tested with the RGB Pixel Matrix model, not the e-ink
+  one. Artwork decoding uses `gst-launch-1.0`, and the serial port must not be
+  held by JSAUX's own daemon.
 
 ## Support GabeCubeAura
 

@@ -209,6 +209,35 @@ becomes constant pure red; circulation remains the sole animation until the
 final eight seconds. Then a three-white-flash pattern repeats until zero before
 the arbiter returns immediately to the unchanged base provider.
 
+## Faceplate flow
+
+The JSAUX faceplate is a second, independent display. It does not take part in
+light-bar arbitration and never touches `valve-leds`. `FaceplateService`
+(`py_modules/signalbar/faceplate`) runs its own worker thread and is the only
+component holding the serial port, a CH340 adapter found by USB ID at 1 Mbaud.
+It takes an exclusive `flock` on the tty, so the standalone Pixel Faceplate
+plugin and GabeCubeAura cannot write to the panel at the same time; whichever
+loses reports `busy` and retries. Mode Off closes the port.
+
+The panel has no raw-frame command. Every picture is a one-frame GIF stored in
+its SPI flash. The service hashes each 64x54 frame, skips identical frames,
+waits at least one second between uploads and treats the panel's
+already-stored reply as no write. Brightness is lowered before a bright frame
+is uploaded, because the panel replays the stored picture at the stored
+brightness when it powers on and a white frame at full brightness browns out a
+USB-A port.
+
+Settings live in the main store with a `faceplate_` prefix and are validated
+in `faceplate/options.py`, so configuration export and import include them.
+`main.py` passes the unprefixed view to the service after every change and
+forwards `game_changed`. The service also reads `/proc` for a running
+`SteamLaunch AppId=` as a fallback. Artwork uses `find_library_artwork` and
+`find_library_logo` and is decoded by a short-lived `gst-launch-1.0` process.
+
+Sleep and shutdown use logind's `PrepareForSleep` and `PrepareForShutdown`
+through `gdbus monitor`, with a `systemd-inhibit` delay lock. Both helpers run
+only while the faceplate mode is not Off, and both die with the plugin process.
+
 ## Runtime diagnostics
 
 Frontend lifecycle milestones are reported to the backend without influencing

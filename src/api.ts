@@ -1,7 +1,7 @@
 import { callable } from "@decky/api";
 import type { ArtworkPayload, Status, UpdateLabResult, UpdateStatus, WeatherLocation, WeatherCondition } from "./types";
 import type { ControllerTelemetry } from "./controller_monitor";
-import type { MqttLevel } from "./home_assistant_levels";
+import type { MqttTier } from "./home_assistant_tiers";
 import type { ConnectionStatus } from "./home_assistant_status";
 
 export const getStatus = callable<[], Status>("get_status");
@@ -113,8 +113,10 @@ export interface MqttConfig {
   username: string;
   discovery_prefix: string;
   base_topic: string;
-  light_bar_level: MqttLevel;
-  faceplate_level: MqttLevel;
+  light_bar_tier: MqttTier;
+  faceplate_tier: 1 | 2;
+  // Tiers 3-5 drop to Help out while Home Assistant is unreachable.
+  ha_fallback: boolean;
   turbo: boolean;
   has_password: boolean;
   load_error: string;
@@ -130,6 +132,9 @@ export interface MqttBridgeStatus extends ConnectionStatus {
   faceplate_controls: boolean;
   // Why Home Assistant's last command was refused or changed; "" once that command later applies.
   command_error: string;
+  // The light bar's tier in effect: 2 while falling_back, 1 at Watch only or with the bridge off.
+  tier: number;
+  falling_back: boolean;
 }
 
 export interface MqttState {

@@ -1,10 +1,13 @@
-import { ButtonItem, DropdownItem, Field, PanelSection, PanelSectionRow, TextField, ToggleField } from "@decky/ui";
+import {
+  ButtonItem, ConfirmModal, DropdownItem, Field, PanelSection, PanelSectionRow, TextField, ToggleField, showModal,
+} from "@decky/ui";
 import { useEffect, useRef, useState } from "react";
 
 import { getMqttStatus, setMqttConfig, setSetting, type MqttBridgeStatus, type MqttState } from "./api";
 import {
-  DRIVE_NOTE, FACEPLATE_LEVEL_OPTIONS, LEVEL_OPTIONS, PRESET_NOTE, levelRows, type MqttLevel,
-} from "./home_assistant_levels";
+  FACEPLATE_EXPLAINERS, FACEPLATE_TIER_OPTIONS, FALLBACK_LABEL, FALLBACK_NOTE, PRESET_NOTE,
+  TIER_OPTIONS, fallbackLine, lightBarTierChange, lightNote, showsFallback, tierDescription, tierRows, type MqttTier,
+} from "./home_assistant_tiers";
 import { connectionLine } from "./home_assistant_status";
 
 const POLL_MS = 2000;
@@ -72,6 +75,20 @@ export function HomeAssistantPanel() {
     }
   };
 
+  const chooseLightBarTier = (tier: MqttTier) => {
+    const { changes, confirm } = lightBarTierChange(tier, config.ha_fallback);
+    if (!confirm) {
+      void save(changes, null);
+      return;
+    }
+    // Cancelling leaves the dropdown on the saved tier, since it shows config.
+    let modal: ReturnType<typeof showModal> | undefined;
+    modal = showModal(<ConfirmModal strTitle="Full control" strDescription={confirm}
+      strOKButtonText="Continue" strCancelButtonText="Cancel" bDestructiveWarning
+      onCancel={() => modal?.Close()}
+      onOK={() => { modal?.Close(); void save(changes, null); }} />);
+  };
+
   const setAlerts = async (enabled: boolean) => {
     try {
       await setSetting("ha_alerts_enabled", enabled);
@@ -91,7 +108,9 @@ export function HomeAssistantPanel() {
 
   const { config, status } = state;
   const port = Number.parseInt(draft.port, 10);
-  const rows = levelRows(status);
+  const rows = tierRows(status);
+  const tier = config.light_bar_tier;
+  const fallback = fallbackLine(status);
   const shownError = error || pollError || config.load_error;
 
   return <>
@@ -144,26 +163,29 @@ export function HomeAssistantPanel() {
 
     {rows.visible && <PanelSection title="What Home Assistant can do">
       <PanelSectionRow>
-        <DropdownItem label="Light bar" rgOptions={LEVEL_OPTIONS} selectedOption={config.light_bar_level}
-          disabled={rows.disabled} description={rows.note || undefined}
-          onChange={(option) => void save({ light_bar_level: option.data as MqttLevel }, null)} />
+        <DropdownItem label="Light bar" rgOptions={TIER_OPTIONS} selectedOption={tier}
+          disabled={rows.disabled} description={tierDescription(rows.note, fallback, tier)}
+          onChange={(option) => chooseLightBarTier(option.data as MqttTier)} />
       </PanelSectionRow>
+      {showsFallback(tier) && <PanelSectionRow>
+        <ToggleField label={FALLBACK_LABEL} checked={config.ha_fallback} disabled={rows.disabled}
+          description={FALLBACK_NOTE} onChange={(value) => void save({ ha_fallback: value }, null)} />
+      </PanelSectionRow>}
       {rows.faceplate && <PanelSectionRow>
-        <DropdownItem label="Faceplate" rgOptions={FACEPLATE_LEVEL_OPTIONS} selectedOption={config.faceplate_level}
-          disabled={rows.disabled}
-          onChange={(option) => void save({ faceplate_level: option.data as MqttLevel }, null)} />
+        <DropdownItem label="Faceplate" rgOptions={FACEPLATE_TIER_OPTIONS} selectedOption={config.faceplate_tier}
+          disabled={rows.disabled} description={FACEPLATE_EXPLAINERS[config.faceplate_tier]}
+          onChange={(option) => void save({ faceplate_tier: option.data as 1 | 2 }, null)} />
       </PanelSectionRow>}
       <PanelSectionRow>
         <div style={{ width: "100%", fontSize: ".78em", opacity: .75 }}>
-          Home Assistant always receives GabeCubeAura's state. With "Home Assistant controls settings" it can
-          also change those settings, checked the same way as on this page. {PRESET_NOTE}
-          {config.light_bar_level === "drive" ? ` ${DRIVE_NOTE}` : ""}
+          Home Assistant always receives GabeCubeAura's state. From Help out up it can also change settings,
+          checked the same way as on this page. {[PRESET_NOTE, lightNote(tier)].filter(Boolean).join(" ")}
         </div>
       </PanelSectionRow>
-      {config.light_bar_level === "drive" && <PanelSectionRow>
+      {tier >= 2 && <PanelSectionRow>
         <ToggleField label="Home Assistant alerts" checked={state.ha_alerts_enabled} disabled={rows.disabled}
-          description={"Short flashes, pulses and sweeps in a colour Home Assistant picks. They interrupt the "
-            + "display like Steam notifications and need Light Events on. Only this page can turn them on."}
+          description={"Short flashes, pulses and sweeps in a colour Home Assistant picks. They need "
+            + "Light Events on. Only this page can turn them on."}
           onChange={(value) => void setAlerts(value)} />
       </PanelSectionRow>}
       {status.command_error && <PanelSectionRow>

@@ -72,17 +72,17 @@ class BridgeTestCase(unittest.TestCase):
         self.applied.append((key, value))
         self.store.update({key: value})
 
-    def connect(self, level="settings", bridge=None):
+    def connect(self, tier=2, bridge=None):
         bridge = bridge or self.bridge
-        self.config.update({"enabled": True, "host": "192.0.2.10", "username": "gca", "light_bar_level": level},
+        self.config.update({"enabled": True, "host": "192.0.2.10", "username": "gca", "light_bar_tier": tier},
                            password="pw")
         bridge.start()
         bridge.client.go_online()
         bridge.step()
         return bridge.client
 
-    def online(self, level="report"):
-        client = self.connect(level)
+    def online(self, tier=1):
+        client = self.connect(tier)
         client.published.clear()
         return client
 
@@ -101,7 +101,7 @@ class BridgeTestCase(unittest.TestCase):
 
 class PublishingTests(BridgeTestCase):
     def test_connect_publishes_retained_discovery_availability_and_state_without_private_values(self):
-        client = self.connect("report")
+        client = self.connect(1)
         self.assertEqual(client.kwargs["will"], (AVAILABILITY, "offline", True))
         self.assertEqual(client.payloads(AVAILABILITY), ["online"])
         self.assertIn(f"{ROOT}/state/game", self.topics(client))
@@ -233,10 +233,10 @@ class SettingsEntityTests(BridgeTestCase):
     def empties(client):
         return sorted(t for t, p, _ in client.published if p == "")
 
-    def test_the_settings_level_describes_every_control_once_then_the_state(self):
-        client = self.connect()
-        for level in ("drive", "settings"):
-            self.config.update({"light_bar_level": level})
+    def test_help_out_describes_every_control_once_then_the_state(self):
+        client = self.connect(2)
+        for tier in (3, 4, 5):
+            self.config.update({"light_bar_tier": tier})
             self.bridge.step()
         topics = self.topics(client)
         for topic in self.everything - {SETTINGS}:
@@ -246,10 +246,10 @@ class SettingsEntityTests(BridgeTestCase):
         self.assertEqual(set(state), set(self.controls) | store_module.LOCAL_ONLY_SETTINGS)
         self.assertEqual(self.on_disk(), self.everything)
 
-    def test_dropping_to_report_only_clears_exactly_what_was_advertised_configs_first(self):
-        client = self.connect()
+    def test_leaving_for_watch_only_clears_exactly_what_was_advertised_configs_first(self):
+        client = self.connect(2)
         client.published.clear()
-        self.config.update({"light_bar_level": "report"})
+        self.config.update({"light_bar_tier": 1})
         self.bridge.step()
         cleared = [t for t, p, _ in client.published if p == ""]
         self.assertEqual((sorted(cleared), len(client.published)), (sorted(self.everything), len(self.everything)))
@@ -260,7 +260,7 @@ class SettingsEntityTests(BridgeTestCase):
         self.bridge.step()
         self.assertEqual(self.empties(client), [])
 
-    def test_a_start_at_report_only_clears_what_an_interrupted_earlier_run_left(self):
+    def test_a_start_at_watch_only_clears_what_an_interrupted_earlier_run_left(self):
         sent = []
 
         class DropsAfterTen(FakeClient):
@@ -271,13 +271,13 @@ class SettingsEntityTests(BridgeTestCase):
                 return super().publish(topic, payload, retain)
 
         first = self.make_bridge(DropsAfterTen)
-        self.connect("settings", first)
-        self.config.update({"light_bar_level": "report"})
+        self.connect(2, first)
+        self.config.update({"light_bar_tier": 1})
         first.step()
         first.stop()
         remaining = self.on_disk()
         self.assertEqual(len(self.everything) - len(remaining), 10)
-        client = self.connect("report", self.make_bridge())
+        client = self.connect(1, self.make_bridge())
         self.assertEqual(self.empties(client), sorted(remaining))
         self.assertEqual(self.on_disk(), frozenset())
 
@@ -319,18 +319,18 @@ class SettingsCommandTests(BridgeTestCase):
 
     def test_refusals_say_why_and_change_nothing(self):
         cases = (
-            ("report", "home_display", b"blackout", "home_display: Light bar is set to Report only"),
-            ("settings", "weather_location", b"{}", "weather_location: not a setting Home Assistant can change"),
-            ("settings", "updates_channel", b"beta", "updates_channel: can only be changed on the Steam Machine"),
-            ("settings", "Home/../x", b"1", "(unreadable): not a setting Home Assistant can change"),
-            ("settings", "home_display", b"<b>nope</b>", "home_display: not one of the allowed options"),
-            ("settings", "light_bar_day_brightness", b"999", "light_bar_day_brightness: must be 1-255"),
-            ("settings", "signalbar_enabled", b"true", "signalbar_enabled: expected ON or OFF"),
+            (1, "home_display", b"blackout", "home_display: Light bar is set to Watch only"),
+            (2, "weather_location", b"{}", "weather_location: not a setting Home Assistant can change"),
+            (2, "updates_channel", b"beta", "updates_channel: can only be changed on the Steam Machine"),
+            (2, "Home/../x", b"1", "(unreadable): not a setting Home Assistant can change"),
+            (2, "home_display", b"<b>nope</b>", "home_display: not one of the allowed options"),
+            (2, "light_bar_day_brightness", b"999", "light_bar_day_brightness: must be 1-255"),
+            (2, "signalbar_enabled", b"true", "signalbar_enabled: expected ON or OFF"),
         )
         client = self.connect()
-        for level, key, payload, expected in cases:
+        for tier, key, payload, expected in cases:
             with self.subTest(key=key, payload=payload):
-                self.config.update({"light_bar_level": level})
+                self.config.update({"light_bar_tier": tier})
                 self.send(client, key, payload)
                 self.settle()
                 self.assertEqual(self.last(client, f"{ROOT}/state/bridge")["last_error"], expected)
@@ -340,13 +340,13 @@ class SettingsCommandTests(BridgeTestCase):
         # Plus two keys that would otherwise be controls, one of them preset-controlled.
         local = store_module.LOCAL_ONLY_SETTINGS | {"home_display", "light_bar_day_brightness"}
         bridge = self.make_bridge(schema=build_schema(local_only=local))
-        client = self.connect("settings", bridge)
+        client = self.connect(2, bridge)
         state = self.last(client, SETTINGS)
         for key in ("home_display", "light_bar_day_brightness", "updates_auto_check", "valve_ownership_policy"):
             self.assertFalse(any(f"_setting_{key}/" in t for t in self.topics(client)), key)
             self.assertEqual(state[key], self.store.all()[key], key)
-            for level in ("settings", "report"):
-                self.config.update({"light_bar_level": level})
+            for tier in (2, 1):
+                self.config.update({"light_bar_tier": tier})
                 self.send(client, key, b"OFF")
                 self.assertEqual(bridge.status()["command_error"], f"{key}: can only be changed on the Steam Machine")
         self.assertEqual(self.applied, [])

@@ -699,7 +699,7 @@ class PersistenceTests(unittest.TestCase):
                             store.update(change)
                     self.assertEqual(store.all(), before)
                     self.assertEqual(store.all()["display_preset"], "immersive-plus")
-            store.update({"light_bar_day_brightness": 40})  # and the next save works normally
+            store.update({"light_bar_day_brightness": 40})
             self.assertEqual(store.all()["light_bar_day_brightness"], 40)
 
     def test_blackout_and_ownership_values_are_validated(self):

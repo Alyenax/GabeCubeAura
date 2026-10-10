@@ -304,9 +304,13 @@ between polls.
 
 ## Home Assistant settings control
 
-Each device has a level in `mqtt.json`: `light_bar_level` is `report`,
-`settings` or `drive`, and `faceplate_level` is `report` or `settings`. Levels
-are set only on the Steam Machine and applied without reconnecting.
+Each device has a tier in `mqtt.json` (`config.DEVICE_TIERS`):
+`light_bar_tier` is 1 to 5 and `faceplate_tier` 1 or 2, beside the
+`ha_fallback` switch. They are set only on the Steam Machine and applied
+without reconnecting. A file from before tiers holds `light_bar_level` and
+`faceplate_level`: `report` reads as 1, `settings` and `drive` as 2, and the
+next save drops the old keys. A missing or unreadable tier is 2, and a tier
+the device does not offer yet becomes its highest.
 
 `schema.py` builds the controllable settings from the settings store. Bool keys
 become switches. Keys with a `VALID_*` set, or an `EVENT_VARIANTS` or
@@ -319,35 +323,36 @@ The settings store, rather than the bridge, decides what only the Steam Machine
 itself may change. `LOCAL_ONLY_SETTINGS` in `settings/store.py` holds updates,
 the parental countdown, Valve ownership policy and guard timing, StripMine and
 TW3 SteamRGB integration, and onboarding. These are reported in
-`state/settings` but never controllable at any level, and a store test fails
+`state/settings` but never controllable at any tier, and a store test fails
 when a new `updates_`, `stripmine_` or `tw3_` key is missing from the list. A
 short deny list in `schema.py` covers the weather location, file paths,
 profiles, undo state, legacy and derived fields, and anything private by name;
 those keys are neither controllable nor reported. A test fails when a new
 settings key is not classified.
 
-At level `settings` the bridge publishes a switch, select or number per
-control, and one retained `state/settings` JSON with their values and the
-local-only ones, only when it changes. The retained display preset note goes
-out only when controls appear where none were described: on connect, after a
-Home Assistant restart, or when a level leaves report only. Adding `drive` to
-`settings` does not send it again. Every retained settings topic is first
-recorded in `advertised.json` next to `mqtt.json`. Only topic names are stored,
-and only topics shaped like the bridge's own are ever loaded. When a level goes
-back to report only, or a start finds recorded topics the current levels do not
-want, the bridge clears only those with empty retained payloads, so Home
-Assistant deletes the entities, and forgets each topic once its clear is sent.
-In that pass the entity configs go first and the empty state and preset note
-after them. The other way round, Home Assistant would render the entities
-against an empty state. With nothing recorded it sends nothing, and a clear cut
-short by a dropped connection finishes on the next connect.
+From tier 2 the bridge publishes a switch, select or number per control, and
+one retained `state/settings` JSON with their values and the local-only ones,
+only when it changes. A device without controls in this build publishes nothing
+at any tier. The retained display preset note goes out only when controls
+appear where none were described: on connect, after a Home Assistant restart,
+or when a tier leaves Watch only. Moving between tiers 2 to 5 sends nothing
+again. Every retained settings topic is first recorded in `advertised.json`
+next to `mqtt.json`. Only topic names are stored, and only topics shaped like
+the bridge's own are ever loaded. When a tier goes back to Watch only, or a
+start finds recorded topics the current tiers do not want, the bridge clears
+only those with empty retained payloads, so Home Assistant deletes the
+entities, and forgets each topic once its clear is sent. In that pass the
+entity configs go first and the empty state and preset note after them. The
+other way round, Home Assistant would render the entities against an empty
+state. With nothing recorded it sends nothing, and a clear cut short by a
+dropped connection finishes on the next connect.
 
 Commands arrive on `<root>/set/<key>`. Retained ones are ignored. Unknown keys,
-local-only keys, keys outside the level and malformed values are refused on the
-client thread, with the reason in `state/bridge` `last_error` (the Last command
-error sensor) and one log warning per new reason. Coalescing is a throttle: a
-change is applied after about a second, and rapid changes to one setting
-collapse to the latest.
+local-only keys, keys of a device at Watch only and malformed values are
+refused on the client thread, with the reason in `state/bridge` `last_error`
+(the Last command error sensor) and one log warning per new reason. Coalescing
+is a throttle: a change is applied after about a second, and rapid changes to
+one setting collapse to the latest.
 
 The worker then reads the settings, refusing the command if it cannot, and
 drops a value equal to the stored one, because the store treats any write of a
@@ -365,26 +370,24 @@ when the bridge stops or restarts is dropped.
 
 ## Home Assistant light and alerts
 
-Level `drive` is for the light bar only; `config.DEVICE_LEVELS` keeps the
-faceplate at `settings` until it has something to drive. It includes
-everything `settings` does and adds a JSON-schema light, three alert buttons
+The light bar's tiers 2 to 5 also have a JSON-schema light, three alert buttons
 and the light's retained `state/drive`, all recorded in `advertised.json` and
 cleared like the setting entities. Commands arrive on
 `<root>/drive/light|frame|alert`, never on `set/`. `drive.py` checks them on
-the client thread. Retained commands are ignored and logged; empty
-ones, which is how a retained topic is cleared, are ignored silently. A refusal
-stays in `last_error` until that same command (`drive/light`, `drive/frame` or
+the client thread. Retained commands are ignored and logged; empty ones, which
+is how a retained topic is cleared, are ignored silently. A refusal stays in
+`last_error` until that same command (`drive/light`, `drive/frame` or
 `drive/alert`) later applies, and turning the light off counts for
 `drive/light`.
 
 The worker applies the newest light or frame at most every 0.25 s to
 `providers/home_assistant.py`, a lock-guarded slot the engine reads while the
-`home_assistant` display is routed. An empty slot hands the bar back; it never
-falls through to another display. Turning the light on first selects that
-display for the current context through `set_setting` on Decky's loop, only
-when it is not already selected. The preset only flips when the display really
-changes.
-Turning it off, or leaving `drive`, puts back the display it replaced wherever
+`home_assistant` display is routed, and at any display from tier 3. An empty
+slot hands the bar back; it never falls through to another display. At tier 2,
+turning the light on first selects that display for the current context
+through `set_setting` on Decky's loop, only when it is not already selected.
+The preset only flips when the display really changes.
+Turning it off, or leaving tier 2, puts back the display it replaced wherever
 that is still `home_assistant`.
 
 Alerts are the `ha` kind in `EventProvider`, with their own colour and a length
@@ -395,7 +398,8 @@ bridge. `ha_alerts_enabled` (local only) and Light Events gate them, and each
 result is a `light_event` of kind `ha` with `result` shown or dropped. The
 engine's `home_assistant_refusal()` and the update phase refuse new content
 during thermal protection, with the light bar off, during a preset preview or
-while an update installs; off always applies.
+while an update installs; off always applies. At tier 5 only the light bar
+being off and an update refuse.
 
 The display the light replaced is recorded per key in `routed.json` next to
 `mqtt.json` before the write. The record is forgotten if the write fails,
@@ -420,6 +424,61 @@ already let go of Decky's loop, so that put-back raises RuntimeError and the
 record stays for the next start. A worker still running after `stop()` began
 never attaches the slot again and applies nothing more, and a detached slot
 ignores whatever reaches it.
+
+## Home Assistant tiers
+
+The tier decides who wins the light bar when Home Assistant and GabeCubeAura
+both want it. The bridge works out the effective tier on every step and hands
+it to `Engine.set_home_assistant_tier()`; Watch only, or stopping the bridge,
+hands it 1. A worker that outlived `stop()` hands nothing, so a stopped bridge
+always leaves the engine at 1. The engine starts at 1, so without MQTT nothing
+changes.
+
+`Arbiter.choose()` keeps its order at tiers 1 and 2, where the Home Assistant
+display is one display among GabeCubeAura's and its alerts share the event
+queue. From tier 3 `_home_assistant_first()` runs before anything except Light
+bar control being off. Steam priority, downloads included, goes first at all
+three, so Home Assistant's light waits until Steam's animation ends.
+Below tier 5 next come a `controller:low` alert and then Home Assistant's alert
+(`event:ha`), unless a countdown is in its last five minutes. Like
+GabeCubeAura's own short events, that alert can briefly play over a bar Valve
+owns. After that a bar Valve owns stays with Valve, then the critical countdown
+shows, then Home Assistant's light or frame. At tier 5 only Steam priority,
+the alert and then the light or frame count. At tier 3 a quiet Home Assistant
+falls through to the usual order. At 4 and 5 it returns `none`, and the
+existing relinquish path gives the bar to Steam.
+
+The engine passes the slot at every display from tier 3. GabeCubeAura's flashes
+are skipped at tiers 4 and 5, and at tier 3 while the light or a frame is on or
+a Home Assistant alert is playing or queued. Then `trigger_event` refuses the
+Steam kinds, and each tick cancels any already playing, and controller alerts
+other than low battery. The launch animation is not shown. Recording state
+still follows Steam. From tier 4 Screen Sync and Audio Sync stop capturing. At
+tier 5 thermal protection still latches and is reported but no longer suspends
+the loop, the countdown no longer counts as critical, a controller running low
+no longer cuts a Home Assistant alert short, and any other Valve write is
+taken back the way the protected ownership modes do it. Steam priority is
+kept: while it is set nothing is forced, so a download's animation plays
+without GabeCubeAura writing over it every tick.
+
+Routing happens only at tier 2. Above it the light wins by priority, so
+`home_display` and `game_display` are never written and the preset never flips.
+Leaving tier 2 for a higher one puts the replaced display back first; coming
+down to 2 routes on the next light or frame command. Only an effective tier 2
+offers the Home Assistant display (`status.home_assistant.offered`).
+
+Tiers 3 to 5 fall back to 2 when `ha_fallback` is on and Home Assistant has
+been unreachable for `FALLBACK_AFTER_S` (30 s). Unreachable means no broker
+connection, or `<discovery prefix>/status` saying `offline` since the bridge
+last connected. That status is not retained, so a new connection starts as
+reachable. The chosen tier returns on the first step that finds Home Assistant
+again. Falling back writes no settings and routes nothing. At a chosen tier 2
+the same outage empties the slot and puts back a routed display through the
+light-off path, once per outage. `bridge.status()` reports the effective `tier`
+and `falling_back`. While it falls back, the line under the page's dropdown
+says GabeCubeAura has taken over, beside "Reconnecting…" when the broker is
+down. Choosing tier 5 there asks first and turns `ha_fallback` off in the same
+save if it was on.
 
 ## Runtime diagnostics
 

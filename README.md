@@ -267,105 +267,88 @@ GabeCubeAura 1.4.0.
 
 ### Home Assistant
 
-Follow the Steam Machine from Home Assistant, and optionally let Home Assistant
-control the light bar. GabeCubeAura publishes over MQTT with discovery, so you
-need an MQTT broker and Home Assistant's MQTT integration with discovery turned
-on (the default).
+Follow the Steam Machine from Home Assistant and, if you allow it, let Home
+Assistant change settings and light the bar. GabeCubeAura talks to it over
+MQTT through a small server called a broker, and Home Assistant finds the
+Steam Machine by itself.
 
-Open **Home Assistant** in the detailed settings, enter your broker's address,
-username and password, then turn on **Connect to Home Assistant**. A
-"GabeCubeAura" device appears by itself, with the running game, its key art and
-session length, the light bar's owner, display and brightness, recording,
-downloads, controllers and their batteries, playtime countdowns, CPU and GPU
-load and temperature, thermal protection and weather. Game launches,
-achievements, screenshots, controller connections and thermal trips arrive as
-events for automations. Only the kind of event is sent, never the text of a
-notification or achievement.
+If you do not use Home Assistant or MQTT, you can safely skip this section.
+It is off by default and GabeCubeAura works exactly the same without it. If
+you do use them, nearly everything GabeCubeAura knows is published, and you
+choose how much of the light bar Home Assistant may run.
 
-Key art is the game's Library Hero, including custom artwork set for a game or
-non-Steam shortcut. **Header art**, **Cover art** and **Logo** images are also
-published, read from Steam's local library cache or your custom grid art. Each
-image is JPEG, PNG or WebP up to 2 MB, is sent once per game and stays empty
-when the game has none of that kind. For Steam games, the game's attributes
-also carry Steam's own addresses for all four.
+#### New to MQTT
 
-Home Assistant keeps every state change in its database, so GabeCubeAura sends
-what automations need rather than a live stream, and `configuration.yaml` never
-needs editing. CPU and GPU load and temperature update when they move by 5
-points or 2°C, at most every 30 seconds. Countdowns update in whole minutes, at
-most once a minute, and session length in 5-minute steps. Thermal protection
-and the start and end of a countdown are sent at once; everything else is sent
-as it changes. **Turbo mode** sends every change, up to once a second. Only
-turn it on if you need it and have set up Home Assistant's recorder for these
-sensors.
+Open **Settings > Apps** in Home Assistant. If it shows **Install app**,
+follow these steps:
 
-By default Home Assistant only watches. Once GabeCubeAura has connected to your
-broker, **What Home Assistant can do** appears on the same page. Choose **Home
-Assistant controls settings** for the light bar to get a switch, list or number
-for each setting GabeCubeAura can fully check: the display preset, Home and
-in-game displays, brightness, Audio Sync, Screen Sync, Customization+, artwork,
-Light Events, controller alerts, countdown and weather looks. A change goes
-through the same checks as the settings page and applies after about a second.
-Rapid changes, such as a dragged slider, collapse to the latest value, and a
-value that is already set changes nothing. As on the Steam Machine, changing a
-display setting switches GabeCubeAura to the Custom preset.
+1. Select **Install app**, choose **Mosquitto broker**, then **Install** and
+   **Start**.
+2. Go to **Settings > Devices & services**. Under **Discovered**, select
+   **Add** on the MQTT card, then **Submit**.
+3. Go to **Settings > People**, open **Users** and select **Add user**.
+   Enter `GabeCubeAura` as **Display name**, `gabecubeaura` as **Username**
+   and a new password twice. Leave **Local access only** and **Administrator**
+   off and select **Create**. The names `homeassistant` and `addons` are
+   reserved.
+4. Note Home Assistant's IP address under **Settings > System > Network**,
+   for example `192.168.1.20`. This is the broker host.
 
-Updates, the playtime countdown, Valve ownership, and StripMine or TW3 SteamRGB
-integration can only be changed on the Steam Machine, although their values are
-still published. Your weather city is never sent. If Home Assistant asks for
-something GabeCubeAura cannot do, such as a Weather display without a city, the
-**Last command error** sensor says why until that setting is next changed
-successfully from Home Assistant. Returning to **Report only** removes the
-controls; if you never allowed control, no settings are sent at all.
+If it shows "What is an app?" instead, your Home Assistant is Container or
+Core, which cannot run apps. Run Mosquitto
+yourself with a login for GabeCubeAura and add it to Home Assistant, as
+described in [the Home Assistant guide](docs/HOME_ASSISTANT.md#your-own-broker).
 
-**Home Assistant drives it** (light bar only) adds a **Light bar** light and
-three alert buttons. Turning the light on selects the **Home Assistant**
-display for whatever is on screen, Home or in-game, and shows the colour and
-brightness Home Assistant sends. This switches GabeCubeAura to the Custom
-preset once. Turning the light off, leaving Home Assistant drives it or turning
-off **Connect to Home Assistant** gives the bar back and restores your previous
-display. If GabeCubeAura restarts while the light is on, that display is
-restored at the next start. A game with its own display keeps it unless you
-choose Home Assistant for that game. Night brightness dims Home Assistant
-colours like everything else.
+#### Already using MQTT
 
-Automations can also send a whole 17-LED frame to `<topic root>/drive/frame` as
-a JSON list of 17 `[r, g, b]` values, and alerts to `<topic root>/drive/alert`,
-for example `{"variant": "pulse", "color": {"r": 255, "g": 80, "b": 0},
-"duration": 2}`. Alerts can flash, pulse or sweep for 0.5 to 4.85 seconds. The
-topic root is shown on the **Status** line after "publishing under". Retained
-and empty messages on these topics are ignored, and colours and frames apply at
-most four times a second.
+Open **Settings > Connectivity > MQTT > Connection** to see the broker Home
+Assistant uses, then close the dialog without submitting. Its password stays
+hidden, so give GabeCubeAura a new login. If the broker is `core-mosquitto`,
+that is the Mosquitto broker app: add a user as in step 3 and use Home
+Assistant's IP address. Otherwise add a login on your own broker and use the
+IP address of the machine it runs on. The guide covers
+[Zigbee2MQTT and other brokers](docs/HOME_ASSISTANT.md#a-broker-you-already-use).
 
-Home Assistant alerts behave like Steam notifications. They need Light Events,
-and Steam, controller low-battery alerts and the final five minutes of a
-playtime countdown keep priority. An alert less than 0.8 seconds after the
-previous one is dropped. **Home Assistant alerts** can only be turned on from
-the Steam Machine. New colours, frames and alerts are refused during thermal
-protection, a display preset preview or an update install, or while
-GabeCubeAura is switched off. Turning the light off always works.
+#### Connecting the Steam Machine
 
-The **Status** line follows the connection step by step. It shows
-"Connecting to <broker>…", where `<broker>` is the host:port you entered, then
-"Connected as <user>, publishing under <topic root>". After a failure it says
-what went wrong and counts down to the next attempt, for example "Wrong
-username or password, retrying in 12 s", "Nothing listening at <broker>" or
-"Broker name not found". A bad password usually reads "Not authorised (check
-the username and password)". TLS switched on against a plain MQTT port shows
-"TLS mismatch: check the port and the TLS switch"; the reverse shows "Broker
-closed the connection" or a timeout. The password is never shown.
+1. Press the **...** button, open Decky and choose **GabeCubeAura**. Under
+   **Now showing**, select **Open settings** beside **Detailed settings**,
+   then **Home Assistant** in the list. The page is headed **Home Assistant
+   (MQTT)**.
+2. Type the IP address in **Broker host**, without `http://` or `:8123`.
+   Leave **Port** at 1883, **Use TLS** off and **Discovery prefix** at
+   `homeassistant`.
+3. Enter the login in **Username** and **Password**.
+4. Press **Save connection**. Nothing typed above is used until you do.
+5. Turn on **Connect to Home Assistant**. Within a few seconds **Status**
+   reads "Connected as gabecubeaura, publishing under" and the topic root,
+   such as `gabecubeaura/steammachine`. In Home Assistant the device appears
+   under **Settings > Devices & services > MQTT** as **GabeCubeAura** followed
+   by the Steam Machine's hostname in brackets.
 
-GabeCubeAura also sends the rest of its own status, minus anything private.
-Your location, update tokens, the Private Lab account and its release notes,
-and private fields are never sent, and file paths are removed from known path
-fields and error text. Fast-changing values such as timers, counters and live
-audio and colour meters are left out too. Status values are capped at 400, with
-short lists only and text cut at 256 characters. This status, debug details
-included, goes to an MQTT topic that no entity records, at most once a minute
-(every second in Turbo mode), so Home Assistant's database stays small.
+If **Status** reads "Off" after step 5, no broker host was saved: press **Save
+connection**. Any other message names the problem; the guide lists
+[each message and its fix](docs/HOME_ASSISTANT.md#if-it-does-not-connect).
 
-MQTT is off until you turn it on. The password is kept in its own file and is
-never included in a configuration export.
+#### What Home Assistant can do
+
+Once connected, **What Home Assistant can do** appears below the connection.
+Its **Light bar** dropdown starts at Help out, so Home Assistant can already
+change settings and light the bar. Choose Watch only if you just want to
+follow the Steam Machine.
+
+- **Watch only**: Home Assistant sees everything and changes nothing.
+- **Help out** (default): it can change settings, send alerts and light the
+  bar. GabeCubeAura's own events and signals still win.
+- **Take the lead**: its light and alerts beat all but urgent warnings.
+- **In control**: only Home Assistant and urgent warnings use the bar.
+- **Full control**: Home Assistant takes the urgent warnings too, after asking.
+
+Steam's own animations, such as downloads, come first at every tier. Urgent
+warnings are Steam's other light bar indicators, thermal protection, a
+controller low on battery and the last five minutes of a playtime countdown.
+See [the Home Assistant guide](docs/HOME_ASSISTANT.md) for what Home Assistant
+receives, each tier in detail, automations and privacy.
 
 ## How priorities work
 
@@ -387,6 +370,10 @@ GabeCubeAura follows a strict order:
    provides the selected permanent display.
 9. A single native transition is allowed to settle before GabeCubeAura restores its
    expected display. Repeated native writes keep control with Steam.
+
+From **Take the lead** up, Home Assistant's light and alerts move above
+everything GabeCubeAura shows itself except the urgent warnings. See [Home
+Assistant](#home-assistant).
 
 ## Install
 
@@ -571,14 +558,10 @@ exported JSON or the artwork cache; both stop a running personal timer.
 - A CPU/GPU thermal interlock that yields completely to Valve at 94°C and only
   resumes after both coherent readings stay below 90°C for 30 seconds
 - Optional Home Assistant support, off by default, that connects only to the
-  broker you enter. It never publishes your weather location, update tokens,
-  private fields or notification text, and removes file paths from known path
-  fields and error text.
-- Home Assistant settings control only after you allow it on the Steam
-  Machine, never covering updates, your location, the playtime countdown or
-  plugin integrations. Light bar driving only at "Home Assistant drives it",
-  with no new colours, frames or alerts during thermal protection, a display
-  preset preview or an update install, or while GabeCubeAura is switched off.
+  broker you enter and keeps its password in its own file, never shown or
+  exported. Home Assistant can never change its own tier or the settings only
+  the Steam Machine may change; see
+  [what is never sent](docs/HOME_ASSISTANT.md#privacy).
 
 GabeCubeAura only restores a previous frame when the hardware still matches its
 own last verified write. Missing or incoherent sensor data during a thermal

@@ -9,10 +9,10 @@ What the bridge relies on:
 - The Faceplate sensor exists only while a faceplate service reports status.
 - Every entity sets has_entity_name, so names stay short ("CPU load") and
   entity IDs are scoped to the device.
-- Setting entities exist only at "settings" or "drive", the light and alert
-  buttons only at "drive". The bridge clears only the configs it recorded
-  when the level drops. Settings state is one retained topic, state/settings;
-  commands arrive on set/<key>, drive commands on drive/<name>.
+- Setting entities, the light and the alert buttons exist only above Watch
+  only. The bridge clears only the configs it recorded when the tier drops.
+  Settings state is one retained topic, state/settings; commands arrive on
+  set/<key>, drive commands on drive/<name>.
 """
 
 from __future__ import annotations

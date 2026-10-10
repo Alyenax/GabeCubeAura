@@ -1,9 +1,9 @@
 """The retained entity topics this plugin has put on the broker, remembered across restarts.
 
-Setting entities exist only while a device is at "settings" or "drive", and
-the light and alert buttons only at "drive". When a level drops, or the
-plugin starts at Report only after a session that had one, the bridge clears
-the topics recorded here and forgets them. With nothing recorded it
+Setting entities, and the light bar's light and alert buttons, exist only
+while a device is above Watch only. When a tier drops to it, or the plugin
+starts at Watch only after a session that had more, the bridge clears the
+topics recorded here and forgets them. With nothing recorded it
 sends nothing. Topics are recorded before they are published, so a crash in
 between still gets them cleared later.
 

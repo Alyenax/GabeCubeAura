@@ -2,7 +2,7 @@
 
 Turning the light on selects the Home Assistant display for what is on
 screen. The display it replaces is recorded here, per settings key, just
-before that write. Turning the light off, or leaving "drive", puts it back
+before that write. Turning the light off, or a tier change, puts it back
 and clears the record; if the plugin stops first, main.py does that at the
 next start, before the bridge runs.
 

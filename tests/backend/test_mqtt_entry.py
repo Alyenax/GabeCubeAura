@@ -64,7 +64,7 @@ class MqttEntryTests(unittest.TestCase):
         self.assertTrue(result["config"]["has_password"])
         self.assertNotIn("pw", repr(result))
         self.assertEqual(self.plugin.mqtt.reconfigure.call_count, 1)
-        for changes in ({"turbo": True}, {"light_bar_level": "drive"}, {"faceplate_level": "settings"}):
+        for changes in ({"turbo": True}, {"light_bar_tier": 5, "ha_fallback": False}, {"faceplate_tier": 1}):
             asyncio.run(self.plugin.set_mqtt_config(changes, None))
         self.assertEqual(self.plugin.mqtt.reconfigure.call_count, 1)
         asyncio.run(self.plugin.set_mqtt_config({"turbo": False}, "new"))  # a password always reconnects

@@ -19,7 +19,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { TbCubeSpark } from "react-icons/tb";
 
 import { HomeAssistantPanel } from "./home_assistant";
-import { HOME_ASSISTANT_DISPLAY, withHomeAssistantDisplay } from "./home_assistant_levels";
+import { HOME_ASSISTANT_DISPLAY, withHomeAssistantDisplay } from "./home_assistant_tiers";
 
 import {
   exportConfiguration,

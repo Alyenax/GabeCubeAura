@@ -1,15 +1,21 @@
 """Publish GabeCubeAura to Home Assistant over MQTT and apply what it may change.
 
-At Report only (the default) the bridge publishes state and events and
-refuses every command. At "settings" a device also gets a switch, select or
-number for each setting schema.py allows; commands arrive on <root>/set/<key>
-and are checked here, coalesced per key and applied through the UI's own
-set_setting on Decky's event loop.
+At Watch only the bridge publishes state and events and refuses every
+command. From Help out up a device also gets a switch, select or number for
+each setting schema.py allows; commands arrive on <root>/set/<key> and are
+checked here, coalesced per key and applied through the UI's own set_setting
+on Decky's event loop.
 
-"drive" (light bar only) adds a Home Assistant light and alert buttons on
-top. Their commands arrive on <root>/drive/<name>, are checked on the client
-thread and applied by the worker: colours and frames to the engine's Home
-Assistant display slot, alerts through the light event queue.
+The light bar also gets a Home Assistant light and alert buttons. Their
+commands arrive on <root>/drive/<name>, are checked on the client thread and
+applied by the worker: colours and frames to the engine's Home Assistant
+display slot, alerts through the light event queue.
+
+Each step hands the engine the light bar's tier, which decides who wins the
+bar. At Help out the light selects the Home Assistant display; above it the
+light wins by priority and no display is touched. Tiers 3-5 fall back to Help
+out while Home Assistant has been unreachable for FALLBACK_AFTER_S, if the
+user left that switch on; at Help out the same outage turns the light off.
 """
 
 from __future__ import annotations
@@ -26,7 +32,7 @@ from datetime import datetime, timezone
 
 from .advertised import AdvertisedTopics
 from .client import MqttClient
-from .config import CONTROL_LEVELS
+from .config import TIER_NAMES
 from .discovery import (
     BASE_EVENT_TYPES,
     DEFAULT_KEY_ART_TYPE,
@@ -60,6 +66,8 @@ COALESCE_S = 1.0
 PERFORMANCE_HOLD_S = 10.0
 ERROR_LIMIT = 200
 DRIVE_INTERVAL_S = 0.25
+# Long enough that restarting Home Assistant does not flip the bar.
+FALLBACK_AFTER_S = 30.0
 UPDATE_BUSY_PHASES = frozenset({"installing", "swap_started", "swapped", "restart_pending"})
 DRIVE_PARSERS = {"light": parse_light, "frame": parse_frame, "alert": parse_alert}
 ALERT_BACKLOG = 3
@@ -125,6 +133,13 @@ class MqttBridge:
         self._last_error_key = None
         self._last_logged = ""
         self._drive_attached = False
+        self._drive_tier = 1
+        self._routing = False
+        self._ha_offline = False
+        self._unreachable_since = None
+        self._outage = False
+        self._outage_cleared = False
+        self._falling_back = False
         self._drive_text = None
         self._drive_light = None
         self._drive_applied_at = None
@@ -204,6 +219,8 @@ class MqttBridge:
             self._commands.clear()
             self._drive_light = None
             self._drive_alerts.clear()
+            self._ha_offline = False
+        self._unreachable_since = None
         self._log_advertised_error()
         self.client = self._client_factory(
             settings["host"], settings["port"], f"gabecubeaura-{self.topics.node_id}",
@@ -212,7 +229,7 @@ class MqttBridge:
             on_connect=self._on_connect, on_message=self._on_message, logger=self.log,
         )
         self.client.subscribe(self.topics.ha_status)
-        # Subscribed even at Report only, so a refused command can say why.
+        # Subscribed even at Watch only, so a refused command can say why.
         self.client.subscribe(self.topics.commands)
         self.client.subscribe(self.topics.drive_commands)
         self._unsubscribe = self.engine.subscribe(self._on_event)
@@ -285,24 +302,30 @@ class MqttBridge:
             "events_dropped": self._events_dropped(),
             "faceplate_controls": bool(self.schema.for_device("faceplate")),
             "command_error": self._last_error,
+            "tier": self._drive_tier,
+            "falling_back": self._falling_back,
         }
 
     def _events_dropped(self) -> int:
         return int(getattr(self.engine.hub, "dropped", 0) or 0) + self._stale_dropped
 
     def _on_connect(self):
+        # Home Assistant's status is not retained, so a new connection starts
+        # as reachable; an offline seen before it is old news.
         with self._lock:
             self._needs_full = True
             self._connected_key = self._key
+            self._ha_offline = False
 
     def _on_message(self, topic, payload, retain):
         topics = self.topics
         if topics is None:
             return
         if topic == topics.ha_status:
-            if payload == b"online":
+            if payload in (b"online", b"offline"):
                 with self._lock:
-                    self._needs_full = True
+                    self._ha_offline = payload == b"offline"
+                    self._needs_full = self._needs_full or payload == b"online"
             return
         if topic.startswith(topics.command_prefix):
             self._on_command(topic[len(topics.command_prefix):], payload, retain)
@@ -329,8 +352,8 @@ class MqttBridge:
         if control is None:
             self._reject(key, f"{name}: not a setting Home Assistant can change")
             return
-        if not self._level_allows(control):
-            self._reject(key, f"{name}: {DEVICE_NAMES[control.device]} is set to Report only")
+        if not self._tier_allows(control):
+            self._reject(key, f"{name}: {DEVICE_NAMES[control.device]} is set to {TIER_NAMES[1]}")
             return
         try:
             value = control.parse(payload)
@@ -355,8 +378,8 @@ class MqttBridge:
             self._reject("drive/(unknown)", "drive/(unknown): not a light bar command")
             return
         key = f"drive/{name}"
-        if self.config.public().get("light_bar_level") != "drive":
-            self._reject(key, f"{key}: Light bar is not set to Home Assistant drives it")
+        if self._tier("light_bar") < 2:
+            self._reject(key, f"{key}: Light bar is set to {TIER_NAMES[1]}")
             return
         if self._drive_provider() is None:
             self._reject(key, f"{key}: the Home Assistant display is not available")
@@ -379,8 +402,12 @@ class MqttBridge:
         if full:
             self._reject("drive/alert", "drive/alert: dropped, three alerts are already waiting")
 
-    def _level_allows(self, control) -> bool:
-        return self.config.public().get(f"{control.device}_level") in CONTROL_LEVELS
+    def _tier(self, device) -> int:
+        """The tier chosen on the Steam Machine for a device."""
+        return self.config.public().get(f"{device}_tier", 1)
+
+    def _tier_allows(self, control) -> bool:
+        return self._tier(control.device) >= 2
 
     def _reject(self, key, message):
         message = message[:ERROR_LIMIT]
@@ -489,15 +516,15 @@ class MqttBridge:
         self._sync_settings(client)
 
     def _controlled_devices(self) -> frozenset:
-        """Devices that take settings commands, plus "drive" while it drives the light bar."""
-        settings = self.config.public()
-        scopes = {device for device in DEVICES if settings.get(f"{device}_level") in CONTROL_LEVELS}
-        if settings.get("light_bar_level") == "drive":
+        """Devices that take settings commands, plus "drive" for the light and alerts."""
+        scopes = {device for device in DEVICES if self._tier(device) >= 2 and self.schema.for_device(device)}
+        # Without the engine's display slot the light could never show anything.
+        if "light_bar" in scopes and self._drive_provider() is not None:
             scopes.add("drive")
         return frozenset(scopes)
 
     def _sync_settings(self, client):
-        """Describe or clear entities when a level changes, then publish their state."""
+        """Describe or clear entities when a tier changes, then publish their state."""
         active = self._controlled_devices()
         if active != self._described:
             if not self._describe_settings(client, active):
@@ -556,7 +583,7 @@ class MqttBridge:
         self._log_advertised_error()
         done = ok and len(cleared) == len(stale)
         if not done and cleared:
-            # Some entities are gone, so if the level comes back before the
+            # Some entities are gone, so if the tier comes back before the
             # retry nothing would advertise them again.
             self._described = None
         return done
@@ -565,13 +592,15 @@ class MqttBridge:
         return getattr(self.engine, "home_assistant", None)
 
     def _step_drive(self, stop_event):
-        """Follow the light bar's level, then apply waiting alerts and the newest colour or frame.
+        """Follow the light bar's tier, then apply waiting alerts and the newest colour or frame.
 
-        Leaving "drive" empties the display slot and puts back the displays
-        the light replaced, so nothing Home Assistant sent keeps showing.
+        Going down to Watch only empties the display slot, and leaving Help
+        out puts back the displays the light replaced, so nothing Home
+        Assistant sent keeps showing where it no longer should.
         """
         # A worker that outlived stop() may only detach, never attach.
-        driving = not stop_event.is_set() and self.config.public().get("light_bar_level") == "drive"
+        tier = 1 if stop_event.is_set() else self._effective_tier()
+        driving = tier >= 2
         provider = self._drive_provider()
         if driving != self._drive_attached:
             if driving:
@@ -580,6 +609,25 @@ class MqttBridge:
                 self._drive_attached = True
             else:
                 self._detach_drive()
+                self._restore_routes(stop_event)
+        if driving:
+            help_out = self._tier("light_bar") == 2
+            routing = help_out
+            if self._routing and not routing:
+                self._restore_routes(stop_event)
+            # stop() may have handed the engine Watch only while the put-back
+            # waited; a tier handed now would stick with no worker to fix it.
+            if stop_event.is_set():
+                return
+            self._routing = routing
+            self._drive_tier = tier
+            self._hand_tier(tier)
+            # Once per outage, as Home Assistant itself would turn its light off.
+            if not self._outage:
+                self._outage_cleared = False
+            elif help_out and not self._outage_cleared and provider is not None:
+                self._outage_cleared = True
+                provider.set_light(False)
                 self._restore_routes(stop_event)
         if not driving or provider is None:
             with self._lock:
@@ -603,6 +651,31 @@ class MqttBridge:
         name, command = pending
         self._apply_light(provider, name, command, stop_event)
 
+    def _effective_tier(self) -> int:
+        """The light bar's chosen tier, or Help out while Home Assistant has been unreachable long enough.
+
+        Unreachable is no broker connection or Home Assistant saying offline.
+        Only tiers 3-5 fall back, and only with the switch on; Help out
+        itself turns the light off instead.
+        """
+        tier = self._tier("light_bar")
+        client = self.client
+        with self._lock:
+            offline = self._ha_offline
+        now = self._clock()
+        if client is not None and client.connected and not offline:
+            self._unreachable_since = None
+        elif self._unreachable_since is None:
+            self._unreachable_since = now
+        self._outage = self._unreachable_since is not None and now - self._unreachable_since >= FALLBACK_AFTER_S
+        self._falling_back = bool(tier >= 3 and self.config.public().get("ha_fallback") and self._outage)
+        return 2 if self._falling_back else tier
+
+    def _hand_tier(self, tier):
+        setter = getattr(self.engine, "set_home_assistant_tier", None)
+        if setter is not None:
+            self._safe(lambda: setter(tier))
+
     def _apply_light(self, provider, name, command, stop_event):
         key = f"drive/{name}"
         if name == "light" and not command.on:
@@ -614,7 +687,7 @@ class MqttBridge:
         if refusal:
             self._reject(key, f"{key}: {refusal}")
             return
-        if not self._route_home_assistant(key) or stop_event.is_set():
+        if self._routing and not self._route_home_assistant(key) or stop_event.is_set():
             return
         try:
             if name == "frame":
@@ -738,7 +811,11 @@ class MqttBridge:
         provider = self._drive_provider()
         if provider is not None:
             provider.attach(False)
+        self._hand_tier(1)
         self._drive_attached = False
+        self._drive_tier = 1
+        self._routing = False
+        self._falling_back = False
         self._drive_text = None
 
     def _publish_light_state(self, client):
@@ -779,8 +856,8 @@ class MqttBridge:
 
     def _apply_command(self, key, value):
         control = self.schema.controls[key]
-        if not self._level_allows(control):
-            self._reject(key, f"{key}: {DEVICE_NAMES[control.device]} is set to Report only")
+        if not self._tier_allows(control):
+            self._reject(key, f"{key}: {DEVICE_NAMES[control.device]} is set to {TIER_NAMES[1]}")
             return
         if self._read_settings is None or self._apply_setting is None:
             self._reject(key, f"{key}: settings control is not available")

@@ -30,7 +30,7 @@ class HomeAssistantProvider:
         self._frame = None  # None shows the colour
 
     def attach(self, attached):
-        """Called as the bridge reaches or leaves "drive"; leaving empties the slot."""
+        """Called as the light bar's tier rises above or drops to Watch only; dropping empties the slot."""
         with self._lock:
             self._attached = bool(attached)
             if not attached:

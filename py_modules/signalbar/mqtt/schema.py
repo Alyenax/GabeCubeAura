@@ -11,7 +11,7 @@ them. DENIED keys are neither controllable nor reported, and NOT_EXPOSED keys
 have no fitting entity yet. A test fails on any key left unclassified, so each
 new setting gets sorted.
 
-faceplate_* keys belong to the faceplate device and its own level; builds
+faceplate_* keys belong to the faceplate device and its own tier; builds
 without a faceplate service simply have none.
 """
 
@@ -23,7 +23,7 @@ from signalbar.settings import store
 
 from .snapshot import is_redacted
 
-DEVICES = ("light_bar", "faceplate")  # each has its own "<device>_level" in mqtt.json
+DEVICES = ("light_bar", "faceplate")  # each has its own "<device>_tier" in mqtt.json
 FACEPLATE_PREFIX = "faceplate_"
 MAX_PAYLOAD = 64
 # Used with fullmatch, since "$" would accept a trailing newline. Up to 17

@@ -31,8 +31,11 @@ class DriveEngine:
         self.store = store
         self.home_assistant = HomeAssistantProvider()
         self.refusal, self.override, self.route_key = "", "inherit", "home_display"
-        self.alerts, self.alert_result = [], (True, "")
+        self.alerts, self.alert_result, self.tiers = [], (True, ""), []
         self.hub = type("Hub", (), {"dropped": 0})()
+
+    def set_home_assistant_tier(self, tier):
+        self.tiers.append(tier)
 
     def subscribe(self, callback):
         return lambda: None
@@ -80,15 +83,15 @@ class DriveTestCase(unittest.TestCase):
         self.applied.append((key, value))
         self.store.update({key: value})
 
-    def connect(self, level="drive"):
-        self.config.update({"enabled": True, "host": "192.0.2.10", "light_bar_level": level}, password="pw")
+    def connect(self, tier=2):
+        self.config.update({"enabled": True, "host": "192.0.2.10", "light_bar_tier": tier}, password="pw")
         self.bridge.start()
         self.bridge.client.go_online()
         self.bridge.step()
         return self.bridge.client
 
-    def level(self, level):
-        self.config.update({"light_bar_level": level})
+    def tier(self, tier):
+        self.config.update({"light_bar_tier": tier})
 
     def send(self, name, payload, retain=False):
         self.bridge.client.receive(f"{ROOT}/drive/{name}", payload, retain)
@@ -112,14 +115,14 @@ class DriveTestCase(unittest.TestCase):
 
 
 class DriveEntityTests(DriveTestCase):
-    def test_report_only_clears_the_drive_entities_and_empties_the_slot(self):
-        self.assertFalse(any("drive" in t for t, _, _ in self.connect("report").published))
-        self.level("drive")
+    def test_watch_only_clears_the_drive_entities_and_empties_the_slot(self):
+        self.assertFalse(any("drive" in t for t, _, _ in self.connect(1).published))
+        self.tier(2)
         self.settle()
         client = self.bridge.client
         self.provider.set_light(True, (255, 0, 0))
         client.published.clear()
-        self.level("report")
+        self.tier(1)
         self.settle()
         empties = [t for t, p, _ in client.published if p == ""]
         self.assertLess(empties.index(LIGHT), empties.index(DRIVE_STATE))
@@ -127,13 +130,14 @@ class DriveEntityTests(DriveTestCase):
         self.assertFalse({LIGHT, DRIVE_STATE} & AdvertisedTopics(self.mqtt_dir).topics())
 
     def test_stopping_empties_the_slot_and_an_outliving_worker_never_offers_it_again(self):
-        self.connect()
+        self.connect(2)
         self.provider.set_light(True, (255, 0, 0))
         old = self.bridge._stop_event
         self.bridge.stop()
         self.bridge._step_drive(old)
         self.assertIsNone(self.frame())
         self.assertFalse(self.provider.status()["offered"])
+        self.assertEqual((self.engine.tiers[-1], self.bridge.status()["tier"]), (1, 1))
 
 
 class DriveLightTests(DriveTestCase):
@@ -175,12 +179,15 @@ class DriveLightTests(DriveTestCase):
             self.light_on()
             self.assertEqual(self.error(), f"drive/light: {refusal}")
         self.engine.refusal = ""
-        for phase in ("installing", "restart_pending"):
-            self.update = {"phase": phase}
-            self.send("frame", json.dumps([[1, 2, 3]] * 17).encode())
-            self.settle()
-            self.assertEqual(self.error(), "drive/frame: a GabeCubeAura update is being installed")
+        for tier in (2, 3, 4, 5):
+            for phase in ("installing", "restart_pending"):
+                self.tier(tier)
+                self.update = {"phase": phase}
+                self.send("frame", json.dumps([[1, 2, 3]] * 17).encode())
+                self.settle()
+                self.assertEqual(self.error(), "drive/frame: a GabeCubeAura update is being installed")
         self.assertEqual((self.applied, self.frame()), ([], None))
+        self.tier(2)
         self.update = {"phase": "idle"}
         self.light_on()
         self.engine.refusal = "thermal protection is active"
@@ -201,12 +208,12 @@ class DriveLightTests(DriveTestCase):
         self.assertEqual(self.error(), "drive/(unknown): not a light bar command")
         self.assertEqual(self.applied, [])
 
-    def test_nothing_applies_once_stopping_or_after_the_level_drops(self):
+    def test_nothing_applies_once_stopping_or_after_the_tier_drops(self):
         self.connect()
         self.send("light", RED_ON)
-        self.level("settings")
+        self.tier(1)
         self.settle()
-        self.level("drive")
+        self.tier(2)
         self.send("light", RED_ON)
         self.bridge._stop_event.set()
         self.settle()
@@ -241,12 +248,12 @@ class DriveAlertTests(DriveTestCase):
             self.send("alert", FLASH)
         self.assertEqual(self.error(), "drive/alert: dropped, three alerts are already waiting")
 
-    def test_waiting_alerts_never_play_after_the_level_drops_or_the_bridge_stops(self):
+    def test_waiting_alerts_never_play_after_the_tier_drops_or_the_bridge_stops(self):
         self.connect()
         self.send("alert", FLASH)
-        self.level("settings")
+        self.tier(1)
         self.settle()
-        self.level("drive")
+        self.tier(2)
         self.send("alert", FLASH)
         self.send("alert", b'{"variant":"pulse"}')
         play, stopping = self.engine.trigger_home_assistant_alert, threading.Event()
@@ -282,16 +289,90 @@ class PutBackTests(DriveTestCase):
         self.settle()
         self.assertEqual((self.applied[-1], self.recorded()), (("home_display", "audio_sync"), {}))
 
-    def test_leaving_drive_puts_the_display_back_and_empties_the_slot(self):
-        for level in ("report", "settings"):
-            self.connect()
+    def test_leaving_help_out_puts_the_display_back_and_keeps_the_light(self):
+        for tier in (1, 4):
+            self.connect(2)
             self.light_on()
-            self.level(level)
+            self.tier(tier)
             self.settle()
             self.settle()
             self.assertEqual(self.applied[-2:], [("home_display", "home_assistant"), ("home_display", "audio_sync")])
-            self.assertEqual((self.frame(), self.provider.status()["on"]), (None, False))
+            self.assertEqual(self.provider.status()["on"], tier == 4)
             self.bridge.stop()
+
+
+class TierTests(DriveTestCase):
+    def outage(self, how):
+        if how == "broker":
+            self.bridge.client.connected = False
+        else:
+            self.bridge.client.receive("homeassistant/status", b"offline")
+        self.settle()
+
+    def back(self, how):
+        if how == "broker":
+            self.bridge.client.go_online()
+        else:
+            self.bridge.client.receive("homeassistant/status", b"online")
+        self.settle()
+
+    def test_an_outage_of_thirty_seconds_falls_back_to_help_out_and_resumes(self):
+        for how in ("broker", "home assistant"):
+            self.connect(5)
+            self.engine.tiers.clear()
+            self.light_on()
+            self.outage(how)
+            self.settle(29.0)
+            self.assertEqual(set(self.engine.tiers), {5}, how)
+            self.settle(1.0)
+            self.assertEqual((self.engine.tiers[-1], self.bridge.status()["falling_back"]), (2, True), how)
+            self.light_on()  # another automation still talking to the broker
+            self.assertIsNotNone(self.frame())  # the slot is kept
+            self.back(how)
+            self.assertEqual((self.engine.tiers[-1], self.bridge.status()["falling_back"]), (5, False), how)
+            self.assertEqual(self.applied, [])  # falling back writes no settings
+            self.bridge.stop()
+
+    def test_with_the_switch_off_or_below_take_the_lead_nothing_falls_back(self):
+        self.config.update({"ha_fallback": False})
+        for tier in (4, 2, 1):
+            self.connect(tier)
+            self.outage("broker")
+            self.settle(60.0)
+            self.assertEqual((self.engine.tiers[-1], self.bridge.status()["falling_back"]), (tier, False))
+            self.bridge.stop()
+
+    def test_help_out_turns_the_light_off_once_thirty_seconds_into_an_outage(self):
+        self.connect(2)
+        self.light_on()
+        self.outage("home assistant")
+        self.settle(29.0)
+        self.assertEqual((self.frame(), len(self.applied)), (RED, 1))
+        self.settle(1.0)
+        self.assertEqual((self.frame(), self.applied[-1]), (None, ("home_display", "audio_sync")))
+        self.settle(60.0)
+        self.assertEqual(len(self.applied), 2)
+        self.back("home assistant")
+        self.light_on()
+        self.assertEqual((self.frame(), self.applied[-1]), (RED, ("home_display", "home_assistant")))
+
+    def test_a_worker_stopped_during_a_put_back_leaves_watch_only(self):
+        self.connect(2)
+        self.light_on()
+        stop_event = threading.Event()
+
+        def apply_then_stop(key, value):
+            # stop() runs on another thread while this worker waits on the put-back.
+            self.apply(key, value)
+            stop_event.set()
+            self.bridge._detach_drive()
+
+        self.bridge._apply_setting = apply_then_stop
+        self.tier(5)
+        self.now[0] += 0.25
+        self.bridge.step(stop_event)
+        self.assertEqual(self.applied[-1], ("home_display", "audio_sync"))
+        self.assertEqual((self.engine.tiers[-1], self.bridge.status()["tier"]), (1, 1))
 
 
 if __name__ == "__main__":

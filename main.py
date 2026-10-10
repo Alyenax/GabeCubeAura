@@ -280,7 +280,7 @@ class Plugin:
     async def set_mqtt_config(self, changes: dict, password: str = None):
         self._require_mqtt()
         config = self.mqtt_config.update(changes, password)
-        # Turbo mode and the levels apply on the bridge's next step. Anything
+        # Turbo mode and the tiers apply on the bridge's next step. Anything
         # else reconnects, which can take a few seconds, so off the event loop.
         if password is not None or set(changes) - MQTT_LIVE_KEYS:
             await asyncio.get_running_loop().run_in_executor(None, self.mqtt.reconfigure)

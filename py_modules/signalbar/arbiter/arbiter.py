@@ -21,15 +21,56 @@ class Arbiter:
         pixels[8] = RED
         return ProviderOutput(base.provider + "+recording", normalize_frame(pixels), base.reason)
 
+    @staticmethod
+    def _home_assistant_first(tier, *, guard_allows, signal, event, signal_critical, controller_event,
+                              home_assistant_base, steam_priority):
+        """Tiers 3-5: Home Assistant's alert, then its light, above all of GabeCubeAura.
+
+        Steam's own animations, such as downloads, come first at every tier.
+        Below 5 the other critical signals do too: a controller at low battery
+        and a playtime countdown near its end.
+        None means tier 3 with Home Assistant quiet, so the usual order follows.
+        """
+        def showing(output):
+            return output is not None and output.frame is not None
+
+        alert = event if showing(event) and event.provider == "event:ha" else None
+        if steam_priority:
+            return ProviderOutput("valve", None, "Steam system priority")
+        if tier < 5:
+            if showing(controller_event) and controller_event.provider == "controller:low" and not signal_critical:
+                return controller_event
+            if alert is not None and not signal_critical:
+                return alert
+            if not guard_allows:
+                return ProviderOutput("valve", None, "Valve/system owns the bar")
+            if signal_critical and showing(signal):
+                return signal
+        elif alert is not None:
+            return alert
+        if showing(home_assistant_base):
+            return home_assistant_base
+        if tier == 3:
+            return None
+        return ProviderOutput("none", None, "Home Assistant has nothing to show")
+
     def choose(self, *, mode, guard_allows, game, performance, artwork, idle,
                signal=None, event=None, signal_critical=False, recording_marker=False,
                recording_marker_isolation=False, performance_always=False,
                controller_event=None, controller_base=None, weather_base=None,
                customization_base=None, screen_sync_base=None, screen_sync_fallback=None,
-               audio_sync_base=None, home_assistant_base=None,
+               audio_sync_base=None, home_assistant_base=None, home_assistant_tier=1,
                launch_artwork=None, steam_priority=False, companion_hud_active=False):
         if mode == "disabled":
             return ProviderOutput("none", None, "GabeCubeAura disabled")
+        if home_assistant_tier >= 3:
+            first = self._home_assistant_first(
+                home_assistant_tier, guard_allows=guard_allows, signal=signal, event=event,
+                signal_critical=signal_critical, controller_event=controller_event,
+                home_assistant_base=home_assistant_base, steam_priority=steam_priority,
+            )
+            if first is not None:
+                return first
         if steam_priority:
             return ProviderOutput("valve", None, "Steam system priority")
         # Short, opted-in effects can briefly use an otherwise native-owned bar.

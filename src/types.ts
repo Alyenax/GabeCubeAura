@@ -249,8 +249,10 @@ export interface Status {
   stripmine_priority_audio_sync: CompanionPriority;
   stripmine_priority_home_assistant: CompanionPriority;
   ha_alerts_enabled: boolean;
-  // The Home Assistant display slot; offered while Home Assistant drives the light bar over MQTT.
-  home_assistant: { offered: boolean; on: boolean; source: "" | "colour" | "frame"; colour: RGB; brightness: number };
+  // The Home Assistant display slot; offered at Help out, the tier the bridge last set.
+  home_assistant: {
+    offered: boolean; on: boolean; source: "" | "colour" | "frame"; colour: RGB; brightness: number; tier: number;
+  };
   weather_clear_day_variant: number;
   weather_clear_night_variant: number;
   weather_rain_variant: number;

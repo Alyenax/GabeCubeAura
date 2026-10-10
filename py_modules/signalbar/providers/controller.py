@@ -434,6 +434,12 @@ class ControllerProvider:
         with self._lock:
             self._active = None
 
+    def cancel_alerts_except_low(self):
+        """Drop a playing connect, charging or preview alert; a low-battery one stays."""
+        with self._lock:
+            if self._active and self._active[0] != "low":
+                self._active = None
+
     def clear(self):
         with self._lock:
             self._controllers.clear()

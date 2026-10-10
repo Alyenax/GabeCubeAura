@@ -3,24 +3,43 @@ import test from "node:test";
 
 import { connectionLine, type ConnectionStatus } from "../../src/home_assistant_status";
 import {
-  DRIVE_NOTE, FACEPLATE_LEVEL_OPTIONS, HOME_ASSISTANT_DISPLAY, LEVEL_OPTIONS, PRESET_NOTE, levelRows,
-  withHomeAssistantDisplay,
-} from "../../src/home_assistant_levels";
+  FACEPLATE_TIER_OPTIONS, FALLBACK_LABEL, FULL_CONTROL_CONFIRM, HOME_ASSISTANT_DISPLAY, TIER_EXPLAINERS, TIER_OPTIONS,
+  fallbackLine, lightBarTierChange, lightNote, showsFallback, tierDescription, tierRows, withHomeAssistantDisplay,
+} from "../../src/home_assistant_tiers";
 
-test("the levels match the backend's names and the faceplate stops at settings", () => {
-  assert.deepEqual(LEVEL_OPTIONS.map((option) => option.data), ["report", "settings", "drive"]);
-  assert.deepEqual(FACEPLATE_LEVEL_OPTIONS.map((option) => option.data), ["report", "settings"]);
-  assert.match(DRIVE_NOTE, /turning it off puts your display back/);
+test("the five tiers match the backend's names and the faceplate stops at Help out", () => {
+  assert.deepEqual(TIER_OPTIONS.map((option) => [option.data, option.label]), [
+    [1, "Watch only"], [2, "Help out"], [3, "Take the lead"], [4, "In control"], [5, "Full control"]]);
+  assert.deepEqual(FACEPLATE_TIER_OPTIONS.map((option) => option.data), [1, 2]);
+  assert.match(TIER_EXPLAINERS[4], /urgent warnings/);
+  assert.match(TIER_EXPLAINERS[5], /Steam still shows its own animations, like downloads/);
 });
 
-test("only the drive level offers the display, and the note names the Custom preset", () => {
-  assert.match(PRESET_NOTE, /Custom preset/);
+test("the fallback switch shows from Take the lead up, and the page says when it has taken over", () => {
+  assert.deepEqual(([1, 2, 3, 4, 5] as const).map(showsFallback), [false, false, true, true, true]);
+  assert.equal(FALLBACK_LABEL, "When Home Assistant is unreachable, let GabeCubeAura take over");
+  const taken = fallbackLine({ falling_back: true });
+  assert.match(taken, /unreachable/);
+  assert.equal(tierDescription("Reconnecting…", taken, 3), `Reconnecting… ${taken}`);
+  assert.equal(tierDescription("", fallbackLine({ falling_back: false }), 3), TIER_EXPLAINERS[3]);
+});
+
+test("Full control asks first and turns the fallback off in the same save", () => {
+  assert.equal(FULL_CONTROL_CONFIRM,
+    "Home Assistant takes over everything, including overheating and playtime warnings. Continue?");
+  assert.deepEqual(lightBarTierChange(5, true),
+    { changes: { light_bar_tier: 5, ha_fallback: false }, confirm: FULL_CONTROL_CONFIRM });
+  assert.deepEqual(lightBarTierChange(4, true), { changes: { light_bar_tier: 4 }, confirm: "" });
+});
+
+test("only Help out offers the display and says the light changes it", () => {
+  assert.match(lightNote(2), /Custom preset/);
+  assert.match(lightNote(4), /never changes your Home or game display/);
   const options = [{ data: "steam", label: "GabeCubeAura Off" }];
   assert.deepEqual(withHomeAssistantDisplay(options, false, "steam"), options);
-  assert.deepEqual(withHomeAssistantDisplay(options, true, "steam"), [...options, HOME_ASSISTANT_DISPLAY]);
   // Still listed while selected, so the dropdown never shows a blank choice.
   assert.deepEqual(withHomeAssistantDisplay(options, false, "home_assistant"), [...options, HOME_ASSISTANT_DISPLAY]);
-  assert.deepEqual(levelRows({ connected: false, connected_with_current_settings: true, faceplate_controls: false }),
+  assert.deepEqual(tierRows({ connected: false, connected_with_current_settings: true, faceplate_controls: false }),
     { visible: true, disabled: true, note: "Reconnecting…", faceplate: false });
 });
 

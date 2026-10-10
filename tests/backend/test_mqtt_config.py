@@ -7,7 +7,7 @@ import tempfile
 import unittest
 
 from signalbar.mqtt.advertised import AdvertisedTopics, is_ours
-from signalbar.mqtt.config import LIVE_KEYS, MqttConfig
+from signalbar.mqtt.config import DEVICE_TIERS, LIVE_KEYS, TIER_NAMES, MqttConfig
 from signalbar.mqtt.routed import RoutedDisplays
 
 CONFIG = "homeassistant/switch/gabecubeaura_steammachine_setting_signalbar_enabled/config"
@@ -27,10 +27,15 @@ class StorageTestCase(unittest.TestCase):
 
 
 class ConfigTests(StorageTestCase):
+    def tiers(self, values):
+        self.write("mqtt.json", values)
+        public = MqttConfig(self.dir).public()
+        return public["light_bar_tier"], public["faceplate_tier"]
+
     def test_defaults_are_off_and_nothing_is_written(self):
         public = MqttConfig(self.dir).public()
-        self.assertEqual((public["enabled"], public["port"], public["turbo"], public["light_bar_level"],
-                          public["faceplate_level"]), (False, 1883, False, "report", "report"))
+        self.assertEqual((public["enabled"], public["port"], public["turbo"], public["ha_fallback"],
+                          public["light_bar_tier"], public["faceplate_tier"]), (False, 1883, False, True, 2, 2))
         self.assertNotIn("password", public)
         self.assertFalse(os.path.exists(self.dir))
 
@@ -50,9 +55,8 @@ class ConfigTests(StorageTestCase):
         config = MqttConfig(self.dir)
         bad = [{"port": 0}, {"port": "x"}, {"host": "bad host"}, {"host": "[::1]"}, {"host": None},
                {"username": 5}, {"base_topic": "a/+"}, {"discovery_prefix": "/x"}, {"unknown": 1},
-               {"enabled": True}, {"turbo": 1}]
-        bad += [{key: value} for key in ("light_bar_level", "faceplate_level") for value in ("steer", "", None, True)]
-        bad.append({"faceplate_level": "drive"})  # nothing on the faceplate to drive yet
+               {"enabled": True}, {"turbo": 1}, {"ha_fallback": "no"}]
+        bad += [{key: value} for key, highest in DEVICE_TIERS.items() for value in (0, highest + 1, "2", True, 2.0)]
         for changes in bad:
             with self.subTest(changes=changes), self.assertRaises(ValueError):
                 config.update(changes)
@@ -60,20 +64,36 @@ class ConfigTests(StorageTestCase):
         self.assertEqual(config.update({"host": "fe80::1"})["host"], "fe80::1")
 
     def test_only_connection_settings_change_the_connection_key(self):
-        self.assertTrue({"turbo", "light_bar_level", "faceplate_level"} <= LIVE_KEYS)
+        self.assertTrue({"turbo", "light_bar_tier", "faceplate_tier", "ha_fallback"} <= LIVE_KEYS)
         config = MqttConfig(self.dir)
         config.update({"enabled": True, "host": "broker"}, password="a")
         key = config.connection_key()
-        config.update({"turbo": True, "light_bar_level": "drive", "faceplate_level": "settings"})
+        config.update({"turbo": True, "light_bar_tier": 4, "faceplate_tier": 1, "ha_fallback": False})
         self.assertEqual(config.connection_key(), key)
         self.assertIs(MqttConfig(self.dir).public()["turbo"], True)
         config.update({}, password="b")
         self.assertNotEqual(config.connection_key(), key)
 
-    def test_unknown_levels_in_the_file_fall_back_to_report_only(self):
-        self.write("mqtt.json", {"light_bar_level": "steer", "faceplate_level": "drive"})
-        public = MqttConfig(self.dir).public()
-        self.assertEqual((public["light_bar_level"], public["faceplate_level"]), ("report", "report"))
+    def test_levels_from_an_older_file_become_tiers(self):
+        cases = (({"light_bar_level": "report", "faceplate_level": "settings"}, (1, 2)),
+                 ({"light_bar_level": "drive", "faceplate_level": "report"}, (2, 1)),
+                 ({"light_bar_level": "settings"}, (2, 2)),
+                 ({"light_bar_tier": 4, "light_bar_level": "report"}, (4, 2)),
+                 ({"light_bar_level": "steer", "faceplate_level": 3}, (2, 2)))
+        for values, expected in cases:
+            with self.subTest(values=values):
+                self.assertEqual(self.tiers(values), expected)
+        MqttConfig(self.dir).update({"turbo": True})
+        with open(os.path.join(self.dir, "mqtt.json"), encoding="utf-8") as handle:
+            self.assertNotIn("light_bar_level", json.load(handle))
+
+    def test_out_of_range_tiers_in_the_file_are_clamped_to_help_out(self):
+        self.assertEqual(TIER_NAMES, {1: "Watch only", 2: "Help out", 3: "Take the lead", 4: "In control",
+                                      5: "Full control"})
+        self.assertEqual(self.tiers({"light_bar_tier": 3, "faceplate_tier": 5}), (3, 2))
+        for odd in (0, 6, -1, "4", None, True, 2.5, [3]):
+            with self.subTest(odd=odd):
+                self.assertEqual(self.tiers({"light_bar_tier": odd, "faceplate_tier": odd}), (2, 2))
 
 
 class RecordTests(StorageTestCase):

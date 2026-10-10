@@ -452,6 +452,13 @@ class EventProvider:
                 else:
                     self._deactivate()
 
+    def holds(self, kind):
+        """Whether an event of this kind is playing or waiting."""
+        now = self._clock()
+        with self._lock:
+            playing = self._active == kind and now - self._started_at < self._active_duration
+            return playing or any(item[0] == kind for item in self._queue)
+
     def clear_recording(self):
         with self._lock:
             self._recording = False

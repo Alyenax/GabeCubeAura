@@ -13,13 +13,14 @@ import os
 import re
 import threading
 
-# What Home Assistant may do, per device. Saved files hold these strings, so
-# new levels are appended and none is ever renamed.
-LEVELS = ("report", "settings", "drive")
-# "drive" includes "settings": turning the light on selects the Home Assistant
-# display, which is itself a settings change.
-CONTROL_LEVELS = frozenset({"settings", "drive"})
-DEVICE_LEVELS = {"light_bar_level": LEVELS, "faceplate_level": LEVELS[:2]}
+# From 2 up Home Assistant may change settings and has the light, frames and
+# alerts; 3 to 5 decide who wins when both want the bar.
+TIER_NAMES = {1: "Watch only", 2: "Help out", 3: "Take the lead", 4: "In control", 5: "Full control"}
+# The faceplate has nothing Home Assistant can show yet, so it stops at 2.
+DEVICE_TIERS = {"light_bar_tier": 5, "faceplate_tier": 2}
+DEFAULT_TIER = 2
+# Files written before tiers existed hold these.
+OLD_LEVELS = {"report": 1, "settings": 2, "drive": 2}
 DEFAULTS = {
     "enabled": False,
     "host": "",
@@ -28,13 +29,14 @@ DEFAULTS = {
     "username": "",
     "discovery_prefix": "homeassistant",
     "base_topic": "gabecubeaura",
-    "light_bar_level": "report",
-    "faceplate_level": "report",
+    "light_bar_tier": DEFAULT_TIER,
+    "faceplate_tier": DEFAULT_TIER,
+    "ha_fallback": True,
     "turbo": False,
 }
 # The running bridge picks these up on its next step. Reconnecting for them
 # would only hide the settings until the new connection is up.
-LIVE_KEYS = frozenset({"turbo", "light_bar_level", "faceplate_level"})
+LIVE_KEYS = frozenset({"turbo", "light_bar_tier", "faceplate_tier", "ha_fallback"})
 # No brackets: "[::1]" is URL syntax, and the socket layer wants the bare IPv6 address ("::1").
 _HOST = re.compile(r"^[A-Za-z0-9.\-:]{1,253}$")
 _TEXT_KEYS = ("host", "username", "discovery_prefix", "base_topic")
@@ -45,7 +47,7 @@ def _clean(key, value):
     if key in _TEXT_KEYS and not isinstance(value, str):
         # str(None) would quietly become a host or topic called "None".
         raise ValueError(f"{key} must be text")
-    if key in ("enabled", "tls", "turbo"):
+    if key in ("enabled", "tls", "turbo", "ha_fallback"):
         if not isinstance(value, bool):
             raise ValueError(f"{key} must be true or false")
         return value
@@ -67,11 +69,27 @@ def _clean(key, value):
         if len(value) > 64 or not _TOPIC.match(value):
             raise ValueError(f"{key} may use letters, digits, - and _ separated by /")
         return value
-    if key in DEVICE_LEVELS:
-        if value not in DEVICE_LEVELS[key]:
-            raise ValueError(f"{key} must be one of {', '.join(DEVICE_LEVELS[key])}")
+    if key in DEVICE_TIERS:
+        if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= DEVICE_TIERS[key]:
+            raise ValueError(f"{key} must be 1-{DEVICE_TIERS[key]}")
         return value
     raise ValueError(f"unknown MQTT setting {key}")
+
+
+def _saved_tier(raw, key):
+    """Read a tier from the file, never raising.
+
+    A tier the device does not offer yet becomes its highest one, an older
+    file's level becomes its tier, and anything else the default.
+    """
+    value = raw.get(key)
+    if isinstance(value, int) and not isinstance(value, bool) and 1 <= value <= max(TIER_NAMES):
+        return min(value, DEVICE_TIERS[key])
+    if key not in raw:
+        level = raw.get(key.replace("_tier", "_level"))
+        if isinstance(level, str) and level in OLD_LEVELS:
+            return OLD_LEVELS[level]
+    return DEFAULT_TIER
 
 
 class MqttConfig:
@@ -97,8 +115,10 @@ class MqttConfig:
             return
         if not isinstance(raw, dict):
             return
+        for key in DEVICE_TIERS:
+            self.values[key] = _saved_tier(raw, key)
         for key in DEFAULTS:
-            if key in raw:
+            if key in raw and key not in DEVICE_TIERS:
                 try:
                     self.values[key] = _clean(key, raw[key])
                 except ValueError:

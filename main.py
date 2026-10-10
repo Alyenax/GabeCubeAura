@@ -20,9 +20,12 @@ from signalbar.steam import get_library_artwork  # noqa: E402
 from signalbar.providers.weather import search_cities  # noqa: E402
 from signalbar import __version__  # noqa: E402
 from signalbar.updates import UpdateManager  # noqa: E402
+from signalbar.voice import VoiceOff, build as build_voice  # noqa: E402
 
 
 class Plugin:
+    voice = VoiceOff("not started")
+
     @staticmethod
     def _migrate_legacy_settings(settings_directory: str):
         """Copy legacy settings once when GabeCubeAura is installed as a new plugin."""
@@ -61,16 +64,23 @@ class Plugin:
             decky.logger,
         )
         self.update_manager.start()
+        # Off unless voice.json in the settings folder turns it on. See docs/VOICE.md.
+        self.voice = build_voice(
+            decky.DECKY_PLUGIN_SETTINGS_DIR, getattr(self, "faceplate", None), decky.logger,
+        )
+        self.voice.start()
         if migrated_from:
             decky.logger.info(f"[GabeCubeAura] imported legacy {migrated_from} settings")
         decky.logger.info("[GabeCubeAura] loaded")
 
     async def _unload(self):
+        self.voice.stop()
         self.update_manager.stop()
         self.engine.stop()
         decky.logger.info("[GabeCubeAura] unloaded; LED ownership released")
 
     async def _uninstall(self):
+        self.voice.stop()
         self.update_manager.stop()
         self.engine.stop()
 
@@ -134,6 +144,7 @@ class Plugin:
     async def game_changed(self, appid: int = 0, title: str = "", launch: bool = False,
                            source: str = ""):
         self.engine.set_game(appid, title, launch, source)
+        self.voice.set_game(appid, title)
         return self.engine.status()
 
     async def get_artwork(self, appid: int = 0, source: str = "hero", purpose: str = "artwork"):

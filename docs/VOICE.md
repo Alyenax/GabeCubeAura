@@ -1,141 +1,128 @@
-# Voice assistant (scaffold)
+# Voice assistant (draft)
 
-Say "hey Gabe", ask a question, and the Steam Machine answers out loud while a
-little face on the JSAUX faceplate reacts. That's the idea. What's here is the
-frame for it. Every piece is written and plugged together, but none of it has
-run on a Steam Machine yet, and it stays off until you turn it on by hand.
+This is a draft and an example. It doesn't work yet, it isn't meant to merge
+as-is, and it's off unless you go out of your way to turn it on. The idea is
+the obvious one: say "hey Gabe", ask something, the Steam Machine answers out
+loud and a little face on the JSAUX faceplate reacts.
 
 I have something like this at home already, except mine pretends to be
-MU/TH/UR from Alien and runs the house through Home Assistant. Getting the
-audio pipeline working is the easy bit. The trick is whether it does anything
-useful once it can hear you.
+MU/TH/UR from Alien and runs the house through Home Assistant. Wiring up the
+audio is the easy bit. The trick is whether it does anything.
 
-## How it fits together
+## Two versions
 
-Everything lives in `py_modules/signalbar/voice/`, one small file per step:
+Both start the same way: a USB mic, openWakeWord listening for the wake word,
+then record until you stop talking. Both stop listening and let go of
+everything when a game starts.
 
-```
-USB mic (pw-record, 16 kHz mono)          mic.py
-  -> openWakeWord hears "hey Gabe"        wake.py
-  -> curious face, start loading Qwen     face.py, brain.py
-  -> record until you stop talking
-  -> Parakeet turns it into text          listen.py
-  -> Qwen writes a short answer           brain.py
-  -> Piper says it, talking face          speak.py
-  -> back to listening
-```
+Local (`"mode": "local"`) keeps it all on the machine. Parakeet turns the
+recording into text, a small Qwen through llama.cpp writes an answer, Piper
+reads it out. Nothing leaves the box, which is how GabeCubeAura works
+everywhere else. The catch is that the models that fit in the GPU's 8 GB are
+too weak to do anything good. Honestly, the local version is a parlour trick.
 
-`assistant.py` is the loop that runs those in order on one background thread.
-When a game starts it cancels whatever it's doing, lets go of the mic so it
-isn't fighting voice chat, and unloads the models. When the game ends it goes
-back to listening and reloads the models the next time someone talks to it.
+Cloud (`"mode": "cloud"`) sends the recording straight to a cloud model
+that takes audio and answers with audio or text. No Parakeet, no Qwen. One
+provider is written (OpenAI's audio chat completions) and Gemini, Grok and
+Anthropic have notes on where they'd go in `voice/cloud.py`. It would be far
+more useful. It also means your voice goes to a third party every time you
+say the wake word, which is the opposite of the plugin's whole security
+posture. So it's off, and it won't start without a key file. It costs money
+per question too, and every answer waits on a round trip to the provider,
+probably a couple of seconds before it starts talking. I haven't timed it.
 
-None of that runs inside the plugin. Decky's loader is a frozen binary with
-Python 3.11 built in, SteamOS ships Python 3.13, and numpy or onnxruntime
-built for one won't import into the other. So the pipeline runs as its own
-process, `python -m signalbar.voice`, under a venv's Python, started as the
-logged-in user.
+## Memory on a stock machine
 
-The plugin side is `supervisor.py`, which only uses the standard library. It
-starts that process, sends it `{"game": true}` or `{"game": false}` as JSON
-lines on stdin, and reads lines like `{"state": "curious", "mood": "curious"}`
-back from stdout. Moods go to the faceplate, which lives in the plugin. If
-the voice process dies, the supervisor logs a line and starts it again after
-5 s, doubling up to 5 minutes. Its stderr goes to `voice.log` in the
-settings folder.
+A stock Steam Machine has 16 GB of RAM. We think the GPU has its own 8 GB of
+GDDR6, but I haven't confirmed that.
 
-`main.py` builds the supervisor at start-up, stops it at unload and tells it
-when the game changes. If voice.json is missing or the venv's Python isn't
-there, nothing starts. If the voice process finds a piece missing, it says
-so, the plugin logs one line, and it isn't started again. Nothing else in the
-plugin changes.
-
-## Memory
-
-The defaults are sized for a stock Steam Machine with 16 GB of RAM, not for
-one with extra RAM fitted.
-
-| Piece | Default | Roughly |
+| Local piece | Default | Roughly |
 | --- | --- | --- |
 | Wake word | openWakeWord `hey_jarvis` | tiny |
 | Speech to text | Parakeet TDT 0.6B v2, ONNX on the CPU | 1-2 GB |
-| Answers | Qwen3 4B Instruct, Q4_K_M GGUF | 2.5 GB |
+| Answers | Qwen3 4B Instruct, Q4_K_M | 2.5 GB, on the GPU if it fits |
 | Speech | Piper `en_US-lessac-medium` | 60-100 MB |
 
-About 4 GB with everything loaded, next to SteamOS and Steam's UI. That's
-fine at the Home screen and too much to keep during a game, so everything
-unloads when one starts. We think the GPU has its own 8 GB of GDDR6. If so,
-llama-server's Vulkan build puts the Qwen weights there and system RAM only
-carries the rest. I haven't confirmed that, so measure before relying on it.
+About 4 GB in all, which is fine at the Home screen and too much during a
+game, so it unloads when one starts. Qwen3 1.7B (about 1.2 GB) is the light
+option; a 32 GB machine fits Qwen3 8B. Cloud mode only keeps the wake word
+loaded, plus Piper if the provider answers in text.
 
-If 4B is slow or too big, Qwen3 1.7B at Q4_K_M is about 1.2 GB. With 32 GB of
-RAM, Qwen3 8B fits. Changing the model means pointing `llm_model` at a
-different GGUF. I went with 4B as the default because it's the smallest Qwen
-I'd trust with tool calls, which is what Home Assistant commands need.
+## Is it useful, though?
+
+This is the real open question and I don't have a good answer. There aren't
+any controls on the machine you'd want your voice for. Gaming knowledge is
+the obvious pitch, and wiring a Wikipedia or walkthrough lookup into a voice
+assistant is about the dumbest and worst way to get that information.
+
+The Reddit video that started this may well be a basic text to speech fired
+by a controller button, not AI at all. If that's what people actually want,
+it's a much smaller feature than this.
+
+## What would make it worth doing
+
+Home Assistant. Hand the text (or the request) to HA's Assist and the Steam
+Machine becomes a voice remote for the house: lights for movie night, the
+thermostat, whatever you've got. That's what my MU/TH/UR setup does, and it's
+the one use I actually have for this. `brain.py` notes
+where it would go. It isn't built.
+
+## How it's put together
+
+Everything is in `py_modules/signalbar/voice/`. The models can't load inside
+the plugin (Decky's loader bundles Python 3.11, SteamOS ships 3.13), so the
+pipeline runs as its own process, `python -m signalbar.voice`, under a venv's
+Python, as the logged-in user. `supervisor.py` is the plugin side: it starts
+that process, passes game changes down and moods up as JSON lines, puts the
+moods on the faceplate, and restarts the process with a backoff if it dies.
+Its stderr goes to `voice.log` in the settings folder. `main.py` builds the
+supervisor at start-up, stops it at unload and tells it when the game changes.
 
 ## Trying it
 
-SteamOS replaces its read-only root on every update, so all of this goes
-under `/home/deck/voice` and nothing touches the system.
+Everything goes under `/home/deck/voice`, since SteamOS replaces the
+read-only root on updates.
 
+Both versions:
 1. Plug in a USB mic and make it the default input in Desktop Mode.
-2. Make a venv and install the Python bits:
-   `python -m venv /home/deck/voice/venv`, then
-   `/home/deck/voice/venv/bin/pip install openwakeword onnx-asr[cpu] numpy`.
-   Any Python works, since the voice process runs under the venv's own and
-   never inside Decky. SteamOS's 3.13 is the obvious pick. If it won't make a
-   venv, a standalone Python in /home (uv can fetch one) does the same job.
-3. Run `openwakeword.utils.download_models()` once from the venv to fetch the
-   stock wake word models.
-4. Grab the Vulkan Linux build of llama.cpp from its GitHub releases and
-   unpack it to `/home/deck/voice/llama.cpp`. Download a Qwen3 4B Instruct
-   Q4_K_M GGUF from Hugging Face (unsloth's `Qwen3-4B-Instruct-2507-GGUF`
-   has one) into `/home/deck/voice/models`.
-5. Get Piper's Linux build into `/home/deck/voice/piper`, plus a voice from
-   `rhasspy/piper-voices` on Hugging Face (the `.onnx` and its `.onnx.json`).
-6. Download `nemo-parakeet-tdt-0.6b-v2` for onnx-asr somewhere local and set
-   `stt_path` to it, so nothing downloads at runtime. Use v3 if you want
-   languages other than English.
-7. Optional: put `idle.gif`, `curious.gif`, `thinking.gif` and `talking.gif`
-   (64x54) in `/home/deck/voice/faces` for the faceplate.
-8. Create `voice.json` in the plugin's settings folder
-   (`~/homebrew/settings/GabeCubeAura/`) and restart Decky:
+2. Make a venv with any Python (SteamOS's 3.13 is fine) and install
+   `openwakeword numpy`, plus `onnx-asr[cpu]` for local mode. Run
+   `openwakeword.utils.download_models()` once.
+3. Create `voice.json` in `~/homebrew/settings/GabeCubeAura/` and restart
+   Decky. `voice/config.py` lists every key with the reasoning.
+
+Local, on top of that: the Vulkan Linux build of llama.cpp in
+`/home/deck/voice/llama.cpp`, a Qwen3 4B Instruct Q4_K_M GGUF from Hugging
+Face in `models/`, Piper and a voice from `rhasspy/piper-voices` in `piper/`,
+and a local copy of `nemo-parakeet-tdt-0.6b-v2` for `stt_path`.
 
 ```json
-{
-  "enabled": true,
-  "python": "/home/deck/voice/venv/bin/python",
-  "stt_path": "/home/deck/voice/models/parakeet-tdt-0.6b-v2"
-}
+{"enabled": true, "stt_path": "/home/deck/voice/models/parakeet-tdt-0.6b-v2"}
 ```
 
-The full list of keys, with the reasoning next to each one, is in
-`voice/config.py`. The plugin starts and stops llama-server itself, because
-stopping the process is how a game gets the memory back. You could run it as
-a systemd user service instead, but then it never unloads.
+Cloud, on top of that: put your API key alone in `voice-key` next to
+voice.json and `chmod 600` it, or it gets refused. The plugin reads it and
+hands it to the voice process over stdin. It's never logged and never in
+voice.json, so it can't end up in a settings export.
 
-## Home Assistant
+```json
+{"enabled": true, "mode": "cloud"}
+```
 
-The obvious place for a Home Assistant hand-off is `brain.py`: send the text
-to HA's Assist conversation API, either instead of Qwen or before it, and let
-HA run the lights and whatever else. That's how my MU/TH/UR setup works. It
-isn't built here.
+Mood GIFs are optional: `idle.gif`, `curious.gif`, `thinking.gif` and
+`talking.gif` (64x54) in `/home/deck/voice/faces`.
 
 ## What's left
 
-- Run any of it on a Steam Machine. Everything above is written against each
-  project's docs.
-- Check the voice process really starts as the logged-in user through
-  runuser, and that it can see the mic from there.
-- If the voice process crashes, llama-server can be left running. Setting
-  PR_SET_PDEATHSIG on it would tie the two together.
-- See how much memory the paused voice process still holds during a game. If
-  it's more than expected, stop the process on game start instead of pausing
-  it.
-- Add a `show_gif(path)` call to the faceplate service (PR #4) so `face.py`
-  has something to call. Until then the face does nothing.
-- Make the mood GIFs and train a real "hey Gabe" model.
-- Replace the volume-based end-of-speech check with Silero VAD.
-- Stream Qwen's answer into Piper a sentence at a time, and let a game start
-  cut speech off mid-sentence.
-- A settings toggle and a status line, once it can actually answer things.
+- Run any of it on a Steam Machine. All of it is written from each project's
+  docs, and the OpenAI request shape needs checking against their current
+  ones.
+- Check the voice process starts as the logged-in user and can see the mic.
+- Add a `show_gif(path)` call to the faceplate service (PR #4) so the face
+  has something to call, and make the GIFs.
+- Train a real "hey Gabe" model, and swap the volume-based end-of-speech check
+  for Silero VAD.
+- Kill llama-server if the voice process crashes (PR_SET_PDEATHSIG), and let a
+  game starting cut speech off mid-sentence.
+- Measure what the paused voice process still holds during a game.
+- Decide whether any of this is worth it. See above.

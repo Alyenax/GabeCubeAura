@@ -1,5 +1,6 @@
 import io
 import json
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -35,6 +36,10 @@ class FakeEars:
             self.on_listen()
         return self.text
 
+    def record(self, mic, cancel):
+        self.listen(mic, cancel)
+        return b"\x01\x00" * 1280
+
     def unload(self):
         self.unloaded += 1
 
@@ -60,6 +65,8 @@ class FakeVoice:
 
     def say(self, text, cancel):
         self.said.append(text)
+
+    play = say
 
 
 class FakeFace:
@@ -89,10 +96,15 @@ class VoiceAssistantTests(unittest.TestCase):
         self.assertEqual(parts["brain"].calls, ["warm", "ask what time is it"])
         self.assertEqual(parts["voice"].said, ["about half past"])
 
-    def test_resident_mode_does_not_warm_on_wake(self):
-        bot, parts = assistant(warm="resident")
-        bot.turn()
-        self.assertEqual(parts["brain"].calls, ["ask what time is it"])
+    def test_cloud_mode_sends_the_recording_and_plays_the_reply(self):
+        sent = []
+        cloud = type("Cloud", (), {"answer": lambda self, wav: sent.append(wav) or b"RIFF reply"})()
+        bot = Assistant(FakeMic(), None, FakeEars(), None, FakeVoice(), FakeFace(), cloud=cloud)
+        self.assertEqual(bot.turn(), "idle")
+        self.assertTrue(sent[0].startswith(b"RIFF"))
+        self.assertEqual(bot.voice.said, [b"RIFF reply"])
+        bot.set_game(570)  # no brain to unload in cloud mode, and that's fine
+        self.assertEqual(bot.state, "paused")
 
     def test_nothing_heard_goes_back_to_idle_quietly(self):
         bot, parts = assistant(ears=FakeEars(text=""))
@@ -171,14 +183,19 @@ class VoiceStartupTests(unittest.TestCase):
         self.assertIsInstance(result, VoiceOff)
         self.assertEqual(result.reason, "off in voice.json")
 
-    def test_missing_venv_python_keeps_it_off_with_one_log_line(self):
-        log = Log()
-        with tempfile.TemporaryDirectory() as folder:
-            values = {"enabled": True, "python": folder + "/nope/python"}
-            Path(folder, config.FILENAME).write_text(json.dumps(values), encoding="utf-8")
-            result = build(folder, logger=log)
-        self.assertIsInstance(result, VoiceOff)
-        self.assertEqual(len(log.lines), 1)
+    def test_no_venv_python_or_no_cloud_key_keeps_it_off_with_one_log_line(self):
+        for values, reason in (
+            ({"python": "/nope/python"}, "no Python"),
+            ({"python": sys.executable, "mode": "cloud"}, "cloud mode needs a voice-key"),
+        ):
+            log = Log()
+            with tempfile.TemporaryDirectory() as folder:
+                Path(folder, config.FILENAME).write_text(
+                    json.dumps(dict(values, enabled=True)), encoding="utf-8")
+                result = build(folder, logger=log)
+            self.assertIsInstance(result, VoiceOff)
+            self.assertEqual(len(log.lines), 1)
+            self.assertTrue(result.reason.startswith(reason), result.reason)
 
     def test_voice_process_reports_missing_pieces_and_exits(self):
         out = io.StringIO()

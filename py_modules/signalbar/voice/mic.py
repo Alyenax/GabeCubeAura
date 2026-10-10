@@ -18,11 +18,24 @@ arecord would work as a fallback too. I just haven't needed it.
 
 from __future__ import annotations
 
+import io
 import subprocess
+import wave
 
 RATE = 16000
 FRAME_SAMPLES = 1280
 FRAME_BYTES = FRAME_SAMPLES * 2
+
+
+def to_wav(pcm):
+    """Wrap raw mic samples in a WAV header, for anything that wants a file."""
+    out = io.BytesIO()
+    with wave.open(out, "wb") as wav:
+        wav.setnchannels(1)
+        wav.setsampwidth(2)
+        wav.setframerate(RATE)
+        wav.writeframes(pcm)
+    return out.getvalue()
 
 
 class Microphone:

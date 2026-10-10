@@ -27,6 +27,10 @@ import os
 import shutil
 
 FILENAME = "voice.json"
+# Cloud mode's API key, one line, next to voice.json. Kept out of voice.json
+# so it can't end up in a settings export, and refused unless only its owner
+# can read it (chmod 600).
+KEY_FILENAME = "voice-key"
 # Everything the optional pieces need lives in /home, because SteamOS replaces
 # the read-only root on every update. See docs/VOICE.md for the layout.
 HOME = "/home/deck/voice"
@@ -38,6 +42,10 @@ DEFAULTS = {
     # 3.13. Any Python works here as long as the packages were installed with
     # it. See __main__.py.
     "python": HOME + "/venv/bin/python",
+    # "local" keeps everything on the machine: Parakeet, Qwen, Piper.
+    # "cloud" sends the recording to a cloud model instead. See cloud.py
+    # before turning that on, because it breaks the plugin's local-only rule.
+    "mode": "local",
 
     # Stock openWakeWord model, fine for testing. A custom "hey Gabe" gets
     # trained with openWakeWord's training notebook and goes here as a path to
@@ -87,6 +95,12 @@ DEFAULTS = {
     "tts_voice": HOME + "/piper/en_US-lessac-medium.onnx",
     "tts_binary": HOME + "/piper/piper",
 
+    # Cloud mode only. The one provider written so far is "openai". The model
+    # name changes often, so check OpenAI's docs for the current audio one.
+    "cloud_provider": "openai",
+    "cloud_model": "gpt-4o-mini-audio-preview",
+    "cloud_voice": "alloy",
+
     # Folder of pre-made mood GIFs: idle.gif, curious.gif, thinking.gif,
     # talking.gif. See face.py for why they're files and not drawn live.
     "faces_dir": HOME + "/faces",
@@ -110,7 +124,21 @@ def load(settings_dir):
     if isinstance(raw, dict):
         values.update({key: raw[key] for key in DEFAULTS if key in raw})
     values["enabled"] = values["enabled"] is True
+    if values["mode"] not in ("local", "cloud"):
+        values["mode"] = "local"
     return values
+
+
+def read_key(settings_dir):
+    """Return the cloud key, or "" when there's no usable key file."""
+    path = os.path.join(settings_dir or "", KEY_FILENAME)
+    try:
+        if os.stat(path).st_mode & 0o077:
+            return ""
+        with open(path, "r", encoding="utf-8") as handle:
+            return handle.read().strip()
+    except OSError:
+        return ""
 
 
 def missing(values, find_spec=importlib.util.find_spec, which=shutil.which,
@@ -118,7 +146,10 @@ def missing(values, find_spec=importlib.util.find_spec, which=shutil.which,
     """List what's missing. Runs in the voice process, under the venv's Python.
     find_spec looks for a module without importing it, so this is quick."""
     gaps = []
-    for module in ("numpy", "openwakeword", "onnx_asr"):
+    local = values["mode"] == "local"
+    # Cloud mode skips Parakeet and Qwen. Piper is only needed if the
+    # provider answers in text, so it isn't a hard requirement there.
+    for module in ("numpy", "openwakeword") + (("onnx_asr",) if local else ()):
         try:
             found = find_spec(module) is not None
         except (ImportError, ValueError):
@@ -128,7 +159,7 @@ def missing(values, find_spec=importlib.util.find_spec, which=shutil.which,
     for tool in ("pw-record", "pw-play"):
         if not which(tool):
             gaps.append(tool)
-    for key in ("llm_server", "llm_model", "tts_binary", "tts_voice"):
+    for key in ("llm_server", "llm_model", "tts_binary", "tts_voice") if local else ():
         if not exists(values[key]):
             gaps.append(key + " " + str(values[key]))
     return gaps

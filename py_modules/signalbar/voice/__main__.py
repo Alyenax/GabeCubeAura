@@ -6,7 +6,8 @@ one won't import into the other, so the models can't load inside the plugin.
 Instead the plugin starts this with the venv's Python and talks to it over
 stdin and stdout, one JSON object per line.
 
-Plugin to us:  {"game": true}   a game started, pause and unload
+Plugin to us:  {"key": "..."}   cloud mode only, always the first line
+               {"game": true}   a game started, pause and unload
                {"game": false}  back at the Home screen
                (stdin closing)  the plugin is going away, stop
 Us to plugin:  {"state": "curious", "mood": "curious"}
@@ -46,25 +47,32 @@ class Lines:
         self.send(log=message, level="warning")
 
 
-def make(values, lines):
+def make(values, lines, key=""):
     from .assistant import Assistant
     from .brain import Brain
     from .listen import Listener
     from .mic import Microphone
     from .speak import Voice
     from .wake import WakeWord
+    cloud = brain = None
+    if values["mode"] == "cloud":
+        from .cloud import provider
+        cloud = provider(values, key)
+    else:
+        brain = Brain(values["llm_server"], values["llm_model"], values["llm_port"],
+                      values["llm_gpu_layers"], values["llm_context"],
+                      values["llm_system_prompt"], lines)
     return Assistant(
         Microphone(),
         WakeWord(values["wake_word"], values["wake_threshold"]),
         Listener(values["stt_model"], values["stt_path"],
                  values["listen_seconds"], values["silence_seconds"]),
-        Brain(values["llm_server"], values["llm_model"], values["llm_port"],
-              values["llm_gpu_layers"], values["llm_context"],
-              values["llm_system_prompt"], lines),
+        brain,
         Voice(values["tts_binary"], values["tts_voice"]),
         warm=values["warm"],
         logger=lines,
         report=lambda state, mood: lines.send(state=state, mood=mood),
+        cloud=cloud,
     )
 
 
@@ -76,7 +84,18 @@ def main(argv=None, stdin=sys.stdin, stdout=sys.stdout):
     if gaps:
         lines.send(off="missing " + ", ".join(gaps))
         return 0
-    assistant = make(values, lines)
+    key = ""
+    if values["mode"] == "cloud":
+        # The key comes first on stdin, from the plugin, so it's never on a
+        # command line or in the environment where other processes could see it.
+        try:
+            key = str(json.loads(stdin.readline() or "{}").get("key") or "")
+        except (ValueError, AttributeError):
+            key = ""
+        if not key:
+            lines.send(off="cloud mode without a key")
+            return 0
+    assistant = make(values, lines, key)
     assistant.start()
     for raw in stdin:
         try:

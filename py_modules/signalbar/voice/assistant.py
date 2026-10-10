@@ -18,6 +18,10 @@ the next time they're needed.
 
 Any step that blows up gets logged and we drop back to idle.
 
+Cloud mode swaps listening and thinking for one call to a cloud model that
+takes the recording and answers (see cloud.py). Everything else is the same,
+the game pause included.
+
 This runs in its own process (see __main__.py), not inside the plugin. The
 face and state changes go out through report() as lines the plugin reads.
 """
@@ -27,11 +31,12 @@ from __future__ import annotations
 import threading
 
 from .face import NoFace
+from .mic import to_wav
 
 
 class Assistant:
     def __init__(self, mic, wake, ears, brain, voice, face=None, warm="on_wake", logger=None,
-                 report=None):
+                 report=None, cloud=None):
         self.mic = mic
         self.wake = wake
         self.ears = ears
@@ -41,6 +46,8 @@ class Assistant:
         self.warm = warm
         self.log = logger
         self.report = report
+        # Cloud mode: a provider from cloud.py and no brain. ears only records.
+        self.cloud = cloud
         self.state = "idle"
         self.last_heard = ""
         self.last_reply = ""
@@ -98,11 +105,13 @@ class Assistant:
             # game keeps seeing its own cancel.
             self._cancel = threading.Event()
             self._enter("idle", "idle")
-            if self.warm == "resident":
+            if self.brain and self.warm == "resident":
                 self.brain.warm_up()
 
     def _unload(self):
         for part in (self.brain, self.ears):
+            if part is None:
+                continue
             try:
                 part.unload()
             except Exception as error:
@@ -113,7 +122,7 @@ class Assistant:
 
     # ---- the loop ------------------------------------------------------
     def _run(self):
-        if self.warm == "resident" and not self._game_running:
+        if self.brain and self.warm == "resident" and not self._game_running:
             self.brain.warm_up()
         while not self._stop.is_set():
             if self._game_running:
@@ -136,6 +145,8 @@ class Assistant:
         """One wake word to one answer. Each step checks whether a game started."""
         cancel = self._cancel
         self._enter("curious", "curious")
+        if self.cloud is not None:
+            return self._cloud_turn(cancel)
         # Warm on wake: the model loads while the person is still talking.
         if self.warm == "on_wake":
             self.brain.warm_up()
@@ -151,6 +162,24 @@ class Assistant:
         self.last_reply = reply
         self._enter("talking", "talking")
         self.voice.say(reply, cancel)
+        return self._finish(cancel)
+
+    def _cloud_turn(self, cancel):
+        """Same shape, minus the local models: record, send, play."""
+        self._enter("listening")
+        audio = self.ears.record(self.mic, cancel)
+        if cancel.is_set() or not audio:
+            return self._finish(cancel)
+        self._enter("thinking", "thinking")
+        reply = self.cloud.answer(to_wav(audio))
+        if cancel.is_set() or not reply:
+            return self._finish(cancel)
+        self._enter("talking", "talking")
+        if isinstance(reply, bytes):
+            self.voice.play(reply, cancel)
+        else:
+            self.last_reply = reply
+            self.voice.say(reply, cancel)
         return self._finish(cancel)
 
     def _finish(self, cancel):

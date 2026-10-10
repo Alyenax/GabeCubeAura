@@ -83,9 +83,11 @@ def user_command(command):
 
 class Supervisor:
     def __init__(self, settings_dir, python, face=None, logger=None,
-                 popen=subprocess.Popen, command_for=user_command):
+                 popen=subprocess.Popen, command_for=user_command, key=""):
         self.settings_dir = settings_dir
         self.python = python
+        # Cloud mode's API key. Only ever written to the child's stdin.
+        self._key = key
         self.face = face or NoFace()
         self.log = logger
         self.state = "starting"
@@ -196,6 +198,8 @@ class Supervisor:
             if child is not None:
                 with self._lock:
                     self._child = child
+                if self._key:
+                    self.send({"key": self._key})
                 self.send({"game": self._game})
                 for raw in child.stdout:
                     self.handle_line(raw)
@@ -213,18 +217,24 @@ class Supervisor:
 
 def build(settings_dir, faceplate=None, logger=None):
     """Return a Supervisor ready to start, or VoiceOff with the reason it's off."""
+    def off(reason):
+        if logger:
+            logger.warning(f"[GabeCubeAura] voice assistant off: {reason}")
+        return VoiceOff(reason)
+
     try:
         values = config.load(settings_dir)
         if not values["enabled"]:
-            return VoiceOff("off in voice.json")
+            return VoiceOff("off in voice.json")  # the normal case, so no log line
         python = str(values["python"])
         if not os.path.isfile(python):
-            if logger:
-                logger.warning(f"[GabeCubeAura] voice assistant off: no Python at {python}")
-            return VoiceOff("no Python at " + python)
+            return off("no Python at " + python)
+        key = ""
+        if values["mode"] == "cloud":
+            key = config.read_key(settings_dir)
+            if not key:
+                return off(f"cloud mode needs a {config.KEY_FILENAME} file, mode 600")
         face = for_faceplate(faceplate, values["faces_dir"], logger)
-        return Supervisor(settings_dir, python, face, logger)
+        return Supervisor(settings_dir, python, face, logger, key=key)
     except Exception as error:
-        if logger:
-            logger.warning(f"[GabeCubeAura] voice assistant off: {type(error).__name__}: {error}")
-        return VoiceOff(str(error))
+        return off(f"{type(error).__name__}: {error}")

@@ -2,18 +2,26 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { connectionLine, type ConnectionStatus } from "../../src/home_assistant_status";
-import { LEVEL_OPTIONS, PRESET_NOTE, levelRows } from "../../src/home_assistant_levels";
+import {
+  DRIVE_NOTE, FACEPLATE_LEVEL_OPTIONS, HOME_ASSISTANT_DISPLAY, LEVEL_OPTIONS, PRESET_NOTE, levelRows,
+  withHomeAssistantDisplay,
+} from "../../src/home_assistant_levels";
 
-test("the levels match the backend's names, Report only first", () => {
-  assert.deepEqual(LEVEL_OPTIONS.map((option) => option.data), ["report", "settings"]);
+test("the levels match the backend's names and the faceplate stops at settings", () => {
+  assert.deepEqual(LEVEL_OPTIONS.map((option) => option.data), ["report", "settings", "drive"]);
+  assert.deepEqual(FACEPLATE_LEVEL_OPTIONS.map((option) => option.data), ["report", "settings"]);
+  assert.match(DRIVE_NOTE, /turning it off puts your display back/);
 });
 
-test("the level rows grey out while reconnecting and the note names the Custom preset", () => {
+test("only the drive level offers the display, and the note names the Custom preset", () => {
   assert.match(PRESET_NOTE, /Custom preset/);
-  assert.equal(levelRows({ connected: true, connected_with_current_settings: false, faceplate_controls: false }).visible,
-    false);
+  const options = [{ data: "steam", label: "GabeCubeAura Off" }];
+  assert.deepEqual(withHomeAssistantDisplay(options, false, "steam"), options);
+  assert.deepEqual(withHomeAssistantDisplay(options, true, "steam"), [...options, HOME_ASSISTANT_DISPLAY]);
+  // Still listed while selected, so the dropdown never shows a blank choice.
+  assert.deepEqual(withHomeAssistantDisplay(options, false, "home_assistant"), [...options, HOME_ASSISTANT_DISPLAY]);
   assert.deepEqual(levelRows({ connected: false, connected_with_current_settings: true, faceplate_controls: false }),
-    { visible: true, disabled: true, note: "Reconnecting...", faceplate: false });
+    { visible: true, disabled: true, note: "Reconnecting…", faceplate: false });
 });
 
 test("the status line names the broker, the user and the last failure", () => {

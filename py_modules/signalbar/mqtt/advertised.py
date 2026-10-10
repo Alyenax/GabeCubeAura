@@ -1,14 +1,16 @@
-"""Which retained settings topics this plugin has put on the broker, remembered across restarts.
+"""The retained entity topics this plugin has put on the broker, remembered across restarts.
 
-Setting entities (and their state and preset-note topics) exist on the broker only while a device is at
-level "settings". When a level drops, or the plugin starts at Report only after a session that had
-one, the bridge clears exactly the topics recorded here, once, and forgets them; with nothing recorded
-it sends nothing. Topics are recorded before they are published, so a crash between the two still
-gets them cleared later.
+Setting entities exist only while a device is at "settings" or "drive", and
+the light and alert buttons only at "drive". When a level drops, or the
+plugin starts at Report only after a session that had one, the bridge clears
+the topics recorded here and forgets them. With nothing recorded it
+sends nothing. Topics are recorded before they are published, so a crash in
+between still gets them cleared later.
 
-Not secret (topic names only), but kept next to mqtt.json in the owner-only runtime directory and
-written atomically. A topic is only ever accepted if it has the shape of one this bridge creates, so a
-damaged or edited file can never make the bridge delete someone else's retained messages.
+The file holds topic names only, but lives next to mqtt.json in the
+owner-only runtime directory and is written atomically. Only topics shaped
+like the ones this bridge creates are accepted, so a damaged or edited file
+can never make it delete someone else's retained messages.
 """
 
 from __future__ import annotations
@@ -22,7 +24,8 @@ FILENAME = "advertised.json"
 MAX_TOPICS = 1024
 _OURS = re.compile(
     r"[A-Za-z0-9_\-/]{1,200}/(switch|select|number)/gabecubeaura_[a-z0-9_]{1,80}_setting_[a-z0-9_]{1,80}/config"
-    r"|[A-Za-z0-9_\-/]{1,200}/(state/settings|attributes/display_preset_note)"
+    r"|[A-Za-z0-9_\-/]{1,200}/(light|button)/gabecubeaura_[a-z0-9_]{1,80}_drive_[a-z0-9_]{1,80}/config"
+    r"|[A-Za-z0-9_\-/]{1,200}/(state/settings|state/drive|attributes/display_preset_note)"
 )
 
 
@@ -32,7 +35,6 @@ def is_ours(topic) -> bool:
 
 class AdvertisedTopics:
     def __init__(self, directory=None):
-        # directory None: memory only (tests, or no runtime directory); nothing survives a restart.
         self.path = os.path.join(directory, FILENAME) if directory else None
         self._lock = threading.Lock()
         self._topics = set()
@@ -86,5 +88,4 @@ class AdvertisedTopics:
             os.replace(temporary, self.path)
             self.error = ""
         except OSError as error:
-            # Memory stays right for this run; the next successful save writes the whole set.
             self.error = f"advertised topics not saved: {type(error).__name__}"

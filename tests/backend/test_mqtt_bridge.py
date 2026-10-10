@@ -235,8 +235,9 @@ class SettingsEntityTests(BridgeTestCase):
 
     def test_the_settings_level_describes_every_control_once_then_the_state(self):
         client = self.connect()
-        for _ in range(3):
-            self.settle()
+        for level in ("drive", "settings"):
+            self.config.update({"light_bar_level": level})
+            self.bridge.step()
         topics = self.topics(client)
         for topic in self.everything - {SETTINGS}:
             self.assertEqual(topics.count(topic), 1, topic)

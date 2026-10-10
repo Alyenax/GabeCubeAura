@@ -23,6 +23,8 @@ from signalbar.providers import (
     ScreenSyncProvider, AudioSyncProvider,
 )
 from signalbar.providers.controller import ControllerProvider
+from signalbar.providers.events import HA_ALERT_DURATIONS
+from signalbar.providers.home_assistant import HomeAssistantProvider
 from signalbar.providers.audio_sync import ADAPTIVE_STYLES
 from signalbar.providers.onboarding import immersive_preview_output
 from signalbar.providers.weather import WeatherProvider
@@ -96,6 +98,9 @@ class Engine:
         self.events.set_variants(settings.all())
         self.controllers = ControllerProvider()
         self.weather = WeatherProvider()
+        # Filled by the MQTT bridge; shown only while the Home Assistant
+        # display is selected.
+        self.home_assistant = HomeAssistantProvider()
         # Engine facts for subscribers such as the MQTT bridge. New features
         # call self.hub.emit("<area>.<event>", {...}) to publish themselves.
         self.hub = EventHub(logger)
@@ -527,6 +532,75 @@ class Engine:
             return False
         return self.events.trigger(kind, preview=bool(preview), variant=variant)
 
+    def home_assistant_refusal(self):
+        """Return why the light bar refuses Home Assistant content now, or ""."""
+        if self.thermal_protection.active:
+            return "thermal protection is active"
+        if not self.settings.all()["signalbar_enabled"]:
+            return "Light bar control is off on the Steam Machine"
+        with self._lock:
+            previewing = time.monotonic() < self._display_preset_preview_until
+        if previewing:
+            return "a display preset preview is running"
+        return ""
+
+    def home_assistant_route(self):
+        """Return where the Home Assistant display would be selected for what is on screen.
+
+        That is the settings key (home_display, or game_display in a game),
+        the display selected there and the game's own override, "inherit"
+        when it has none.
+        """
+        with self._lock:
+            appid = self._game.appid
+        display = self.settings.display_for(appid)
+        return {"key": "game_display" if appid > 0 else "home_display",
+                "selected": display["selected"], "override": display["override"]}
+
+    def trigger_home_assistant_alert(self, variant, colour, duration=None):
+        """Play a Home Assistant alert and return (shown, reason it was not).
+
+        Like a Steam event it is reported as a light_event (kind "ha")
+        whether or not it played.
+        """
+        reason = self._home_assistant_alert_refusal(variant)
+        shown = False
+        if not reason:
+            try:
+                shown = self.events.trigger_home_assistant(variant, colour, duration)
+            except ValueError:
+                reason = "the alert colour or duration is not valid"
+            else:
+                if not shown:
+                    reason = "the previous alert started less than a second ago"
+        with self._lock:
+            appid = self._game.appid
+        self.hub.emit("light_event", {"kind": "ha", "variant": variant, "appid": appid, "shown": shown,
+                                      "result": "shown" if shown else "dropped", "reason": reason})
+        return shown, reason
+
+    def _home_assistant_alert_refusal(self, variant):
+        if variant not in HA_ALERT_DURATIONS:
+            return "not a Home Assistant alert"
+        refusal = self.home_assistant_refusal()
+        if refusal:
+            return refusal
+        values = self.settings.all()
+        if not values["ha_alerts_enabled"]:
+            return "Home Assistant alerts are off on the Steam Machine"
+        if not values["events_enabled"]:
+            return "Light Events are off on the Steam Machine"
+        if self.controllers.event_output().provider == "controller:low":
+            return "a controller low-battery alert is showing"
+        with self._lock:
+            game_running = self._game.running
+        countdown = self.countdown.status(
+            allow_parental=values["parental_countdown_enabled"] and game_running,
+        )
+        if countdown["active"] and countdown["remaining_seconds"] <= 300:
+            return "a playtime countdown is in its last five minutes"
+        return ""
+
     def update_controllers(self, controllers, source="Steam callback"):
         before = {item["id"]: item for item in self.controllers.roster()}
         values = self.settings.all()
@@ -696,6 +770,7 @@ class Engine:
                 ("event_achievements_enabled", ("achievement",)),
                 ("event_screenshots_enabled", ("screenshot",)),
                 ("event_recording_enabled", ("record-start", "record-stop")),
+                ("ha_alerts_enabled", ("ha",)),
             ):
                 if key in changes and not values[key]:
                     self.events.cancel_kinds(kinds)
@@ -739,6 +814,8 @@ class Engine:
             return "weather"
         if provider.startswith("controller"):
             return "controller"
+        if provider.startswith("home-assistant"):
+            return "home_assistant"
         if provider.startswith("event:"):
             return "light_events"
         return "system"
@@ -1012,7 +1089,7 @@ class Engine:
                             selected_preview
                             if selected_preview in {
                                 "artwork", "performance", "customization",
-                                "screen_sync", "audio_sync", "blackout",
+                                "screen_sync", "audio_sync", "home_assistant", "blackout",
                             } else "events"
                         ),
                     }
@@ -1280,6 +1357,11 @@ class Engine:
                         or screen_sync_fallback_active
                     ),
                 )
+                # The slot keeps Home Assistant's last request even while
+                # another display shows.
+                home_assistant_base = (
+                    self.home_assistant.output() if current_display == "home_assistant" else None
+                )
                 brief_alert = any(output is not None and output.frame is not None for output in (
                     event, controller_event,
                 ))
@@ -1346,6 +1428,7 @@ class Engine:
                         customization_base if screen_sync_fallback_active else None
                     ),
                     audio_sync_base=audio_sync_base,
+                    home_assistant_base=home_assistant_base,
                     launch_artwork=launch_artwork,
                     recording_marker=(
                         self.events.recording and values["events_enabled"]
@@ -1875,6 +1958,8 @@ class Engine:
                 "stripmine_priority_customization": values["stripmine_priority_customization"],
                 "stripmine_priority_screen_sync": values["stripmine_priority_screen_sync"],
                 "stripmine_priority_audio_sync": values["stripmine_priority_audio_sync"],
+                "stripmine_priority_home_assistant": values["stripmine_priority_home_assistant"],
+                "ha_alerts_enabled": values["ha_alerts_enabled"],
                 **{key: values[key] for key in values if key.startswith("weather_") and key.endswith("_variant")},
                 "weather": weather_status,
                 "customization": customization_status,
@@ -1882,6 +1967,7 @@ class Engine:
                 "audio_sync": audio_sync_status,
                 "controllers": controller_status,
                 "events": self.events.status(),
+                "home_assistant": self.home_assistant.status(),
                 "game": {"appid": self._game.appid, "title": self._game.title},
                 "performance": {
                     "sample_age_s": max(0.0, now - sample.sampled_at) if sample.sampled_at else None,

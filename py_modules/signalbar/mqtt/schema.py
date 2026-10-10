@@ -1,16 +1,18 @@
 """Which GabeCubeAura settings Home Assistant may change, and how each value is checked first.
 
-The list builds itself from the settings store: a bool setting becomes a switch, and a setting whose
-allowed values the store names (a VALID_* set named after the key, or EVENT_VARIANTS and
-CONTROLLER_VARIANTS) becomes a select with exactly those options. Numbers are never guessed: only keys
-in NUMBERS, with the range store._validate clamps to, become number entities. Keys in
-store.LOCAL_ONLY_SETTINGS are GabeCubeAura's own decision: their values are reported, but only the
-Steam Machine itself may change them. DENIED keys (private, legacy, derived) are neither controllable
-nor reported; NOT_EXPOSED keys have no strict entity yet. A key in none of these is "unclassified",
-and a test fails on it, so every new GabeCubeAura setting gets classified on purpose.
+The list builds itself from the settings store. A bool setting becomes a
+switch, and a setting whose allowed values the store names (a VALID_* set
+named after the key, EVENT_VARIANTS or CONTROLLER_VARIANTS) becomes a select
+with exactly those options. Numbers are never guessed: only the keys in
+NUMBERS become number entities.
 
-faceplate_* keys belong to the faceplate device and its own level. They exist only in builds with a
-faceplate service; without them the faceplate simply has no controls.
+store.LOCAL_ONLY_SETTINGS are reported but only the Steam Machine may change
+them. DENIED keys are neither controllable nor reported, and NOT_EXPOSED keys
+have no fitting entity yet. A test fails on any key left unclassified, so each
+new setting gets sorted.
+
+faceplate_* keys belong to the faceplate device and its own level; builds
+without a faceplate service simply have none.
 """
 
 from __future__ import annotations
@@ -21,25 +23,26 @@ from signalbar.settings import store
 
 from .snapshot import is_redacted
 
-DEVICES = ("light_bar", "faceplate")  # each has an MQTT config key f"{device}_level"
+DEVICES = ("light_bar", "faceplate")  # each has its own "<device>_level" in mqtt.json
 FACEPLATE_PREFIX = "faceplate_"
 MAX_PAYLOAD = 64
-# fullmatch: "$" would accept a trailing newline. Up to 17 decimals: an automation's float maths sends the
-# full repr (0.35000000000000003), and the step check below has a tolerance for it. No exponent.
+# Used with fullmatch, since "$" would accept a trailing newline. Up to 17
+# decimals because automations send float results in full
+# (0.35000000000000003); the step check allows for that. No exponents.
 _NUMBER_TEXT = re.compile(r"-?[0-9]{1,6}(\.[0-9]{1,17})?")
-# Decimal steps are checked in floating point: (0.34 - 0.15) / 0.01 is 19.000000000000004, not 19.
+# Steps are checked in floating point, where (0.34 - 0.15) / 0.01 is
+# 19.000000000000004.
 STEP_TOLERANCE = 1e-9
 
-# Never controllable from Home Assistant and never reported, whatever the level: private values and
-# fields that are not a setting of their own (legacy, retired, derived, internal revisions). What only
-# the Steam Machine may change is GabeCubeAura's decision, in store.LOCAL_ONLY_SETTINGS, not here.
-# Reasons are for people reading this.
+# Never controllable and never reported: private values and fields that are
+# not a setting of their own. What only the Steam Machine may change lives in
+# store.LOCAL_ONLY_SETTINGS instead.
 DENIED = {
     "mode": "legacy field; writing it rewrites the in-game display",
     "led_output_calibration_mode": "retired; the store forces it",
     "audio_sync_sensitivity": "retired; the store forces it to 100",
-    "audio_sync_style": "legacy pair that writes both Home and in-game styles; the Home/in-game keys are exposed",
-    "audio_sync_palette": "legacy pair that writes both Home and in-game palettes; the Home/in-game keys are exposed",
+    "audio_sync_style": "legacy; writes both the Home and in-game styles, which are exposed",
+    "audio_sync_palette": "legacy; writes both the Home and in-game palettes, which are exposed",
     "performance_enabled": "legacy migration field",
     "performance_always": "derived from the Home display",
     "weather_display": "derived; writing it changes the displays without leaving the display preset",
@@ -53,8 +56,6 @@ DENIED = {
 }
 DENIED_SUFFIXES = {"_profiles": "per-game maps, not one value", "_restore": "the display preset's undo state"}
 
-# Could be controllable one day, but no strict Home Assistant entity fits yet. Colour triplets (a
-# default that is a list of three numbers) are recognised by shape and land here too.
 NOT_EXPOSED = {
     "audio_sync_lab_crest_strength": "Hi-Fi Crest beta lab calibration",
     "audio_sync_lab_edge_reach": "Hi-Fi Crest beta lab calibration",
@@ -63,8 +64,8 @@ NOT_EXPOSED = {
     "faceplate_clock_colour": "colour text",
 }
 
-# key: (minimum, maximum, step, whole numbers, unit, name). Ranges are what store._validate clamps to;
-# a test writes both ends and one step beyond each into a real store to prove it.
+# key: (minimum, maximum, step, whole numbers, unit, name). The ranges are
+# what store._validate clamps to; a test checks both ends against a real store.
 NUMBERS = {
     "light_bar_day_brightness": (1, 255, 1, True, None, "Day brightness"),
     "night_mode_brightness": (10, 100, 1, True, None, "Night brightness"),
@@ -79,7 +80,6 @@ NUMBERS = {
     "launch_artwork_colour_count": (2, 3, 1, True, None, "Game launch colours"),
     "launch_artwork_duration_seconds": (3, 45, 1, True, "s", "Game launch duration"),
     "cool_temp_c": (20, 100, 1, False, "°C", "Cool temperature"),
-    # The store also keeps hot at least 1 °C above cool; the read-back reports when that moves it.
     "hot_temp_c": (21, 120, 1, False, "°C", "Hot temperature"),
     "countdown_full_bar_minutes": (0, 240, 60, True, "min", "Countdown full bar"),
     "countdown_dark_edge_compensation": (0, 6, 1, True, None, "Countdown edge compensation"),
@@ -90,13 +90,10 @@ NUMBERS = {
     "weather_shadow_cutoff": (0, 60, 1, True, None, "Weather shadow cutoff"),
     **{key: (0, store.WEATHER_VARIANT_COUNTS[key.removeprefix("weather_").removesuffix("_variant")] - 1,
              1, True, None, None) for key in store.WEATHER_VARIANT_KEYS},
-    # Faceplate builds only (faceplate/options.py clean()); inert while the keys do not exist.
     "faceplate_brightness": (0, 100, 1, True, "%", "Faceplate brightness"),
     "faceplate_aura_interval": (30, 600, 1, True, "s", "Faceplate aura interval"),
 }
 
-# Selects whose options the store checks against a set named after another key, or inline in
-# _validate (no VALID_* set). A test proves every option round-trips through a real store.
 CHOICES = {
     "audio_sync_home_style": store.VALID_AUDIO_SYNC_STYLES,
     "audio_sync_game_style": store.VALID_AUDIO_SYNC_STYLES,
@@ -109,17 +106,14 @@ CHOICES = {
     "controller_colour_mode": ("battery", "players"),
     "weather_temperature_unit": ("celsius", "fahrenheit"),
 }
-# faceplate/options.py names its choices itself; read them only when that module exists.
 FACEPLATE_CHOICE_NAMES = {
     "mode": "MODES", "artwork_idle": "IDLE_CHOICES", "art_style": "ART_STYLES",
     "logo_position": "LOGO_POSITIONS", "sleep_action": "SLEEP_ACTIONS", "shutdown_action": "SLEEP_ACTIONS",
 }
 
-# Select options Home Assistant may offer, per key, when the store accepts values the settings page
-# never offers (internal or derived ones): key -> function(sorted options) -> the options to keep.
-# test_select_options_are_ones_the_ui_offers checks every select against the UI source. Empty today:
-# every option the store accepts is one the settings page offers, including Customization+'s borrowed
-# "event:", "controller:" and "weather:" patterns (src/customization_catalog.ts lists them as choices).
+# key -> function(sorted options) -> the options to keep. Empty, because the
+# UI offers every option the store accepts, Customization+'s event:,
+# controller: and weather: patterns included.
 OPTION_FILTERS = {}
 
 NAMES = {
@@ -144,7 +138,7 @@ ICONS = {
 
 
 class Control:
-    """One controllable setting: its entity kind and the strict check its command payload must pass."""
+    """One controllable setting: its entity kind and the check its payload must pass."""
 
     def __init__(self, key, component, *, options=(), minimum=None, maximum=None, step=1, integer=True,
                  unit=None, name=None, preset=False):
@@ -156,22 +150,24 @@ class Control:
         self.unit = unit
         self.name = name or NAMES.get(key) or key.replace("_", " ").capitalize()
         self.icon = ICONS.get(key)
-        # Writing it switches GabeCubeAura from a display preset to Custom (store.update).
         self.preset = preset
 
     def __repr__(self) -> str:
         return f"Control({self.key!r}, {self.component!r})"
 
     def parse(self, payload):
-        """The setting value for a command payload, or ValueError with a short reason (no echo)."""
+        """Return the value a command payload asks for, or raise ValueError with a short reason."""
         if isinstance(payload, str):
-            payload = payload.encode("utf-8")
+            try:
+                payload = payload.encode("utf-8")
+            except UnicodeEncodeError:  # a lone surrogate; the error's own text would quote it
+                raise ValueError("value is not text") from None
         if not isinstance(payload, (bytes, bytearray)):
             raise ValueError("value is not text")
         if len(payload) > MAX_PAYLOAD:
             raise ValueError("value too long")
         try:
-            text = bytes(payload).decode("utf-8")  # no strip: Home Assistant sends exact values
+            text = bytes(payload).decode("utf-8")
         except UnicodeDecodeError:
             raise ValueError("value is not text") from None
         if self.component == "switch":
@@ -203,16 +199,15 @@ class Control:
 class Schema:
     def __init__(self, controls, classes):
         self.controls = controls  # key -> Control
-        # key -> "derived" | "override" | "denied" | "local_only" | "not_exposed" | None
+        # key -> "derived", "override", "denied", "local_only", "not_exposed" or None
         self.classes = classes
-        # Kept on the Steam Machine (store.LOCAL_ONLY_SETTINGS): reported in state, never controllable.
         self.local_only = frozenset(key for key, kind in classes.items() if kind == "local_only")
 
     def for_device(self, device):
         return [control for control in self.controls.values() if control.device == device]
 
     def reported(self, devices):
-        """Keys whose values go to state/settings while these devices are at level "settings"."""
+        """Keys whose values go to state/settings while these devices accept settings commands."""
         keys = [control.key for control in self.controls.values() if control.device in devices]
         return sorted(keys + [key for key in self.local_only if device_of(key) in devices])
 
@@ -252,7 +247,7 @@ def _strings(value):
 
 
 def derived_choices(key):
-    """The store's own option set for a key: EVENT/CONTROLLER_VARIANTS, or a VALID_* set named after it."""
+    """Return the store's own options for a key, or () if it names none."""
     for source in (store.EVENT_VARIANTS, store.CONTROLLER_VARIANTS):
         if key in source:
             return _strings(source[key])
@@ -268,12 +263,12 @@ def derived_choices(key):
 
 
 def faceplate_choices():
-    """Faceplate select options from faceplate/options.py, or {} in a build without a faceplate."""
+    """Return the faceplate's select options, or {} in a build without a faceplate."""
     try:
         from signalbar.faceplate import options
-    except Exception:  # noqa: BLE001 - ImportError on upstream main; anything else is a broken module
-        # A faceplate module that fails to load must not take the light bar's controls with it. There
-        # is no logger here (build_schema runs anywhere): fail closed, with no faceplate selects at all.
+    except Exception:
+        # Not only ImportError: a broken faceplate module must not take the
+        # light bar's controls with it.
         return {}
     return {FACEPLATE_PREFIX + key: _strings(getattr(options, name, None))
             for key, name in FACEPLATE_CHOICE_NAMES.items() if _strings(getattr(options, name, None))}
@@ -284,14 +279,13 @@ def build_schema(defaults=None, faceplate=None, preset_keys=None, local_only=Non
     defaults = store.DEFAULTS if defaults is None else defaults
     choices = {**CHOICES, **(faceplate_choices() if faceplate is None else faceplate)}
     preset_keys = frozenset(store.DISPLAY_PRESET_CONTROLLED_KEYS if preset_keys is None else preset_keys)
-    # GabeCubeAura's own list of what only the Steam Machine may change (settings/store.py).
     local_only = frozenset(store.LOCAL_ONLY_SETTINGS if local_only is None else local_only)
     option_filters = OPTION_FILTERS if option_filters is None else option_filters
     controls, classes = {}, {}
     for key in sorted(defaults):
         default = defaults[key]
         if denial(key):
-            classes[key] = "denied"  # wins over local-only: a denied key is not even reported
+            classes[key] = "denied"
             continue
         if key in local_only:
             classes[key] = "local_only"
@@ -310,14 +304,18 @@ def build_schema(defaults=None, faceplate=None, preset_keys=None, local_only=Non
             controls[key] = Control(key, "switch", preset=preset)
             classes[key] = "derived"
             continue
-        options, kind = (tuple(sorted(choices[key])), "override") if key in choices else (derived_choices(key), "derived")
+        if key in choices:
+            options, kind = tuple(sorted(choices[key])), "override"
+        else:
+            options, kind = derived_choices(key), "derived"
         if not options:
             classes[key] = None
             continue
         if key in option_filters:
-            options, kind = tuple(option for option in option_filters[key](options) if option in options), "override"
+            kept = option_filters[key](options)
+            options, kind = tuple(option for option in kept if option in options), "override"
         if not options:
-            classes[key] = "not_exposed"  # a filter that leaves nothing: no select at all
+            classes[key] = "not_exposed"
             continue
         controls[key] = Control(key, "select", options=options, preset=preset)
         classes[key] = kind

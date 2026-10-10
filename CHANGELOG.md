@@ -5,13 +5,28 @@
 ### NEW FEATURE: Home Assistant
 
 - Publish the running game, key art, light bar state, events, controllers,
-  countdowns, performance and weather to Home Assistant over MQTT,
-  with discovery. Report only; off by default.
-- Send updates at rates that keep Home Assistant's database small without any
-  recorder configuration; Turbo mode sends every change in real time.
-- Let Home Assistant change light bar settings when you choose "Home Assistant
-  controls settings"; display settings changed from Home Assistant switch to
-  the Custom preset, as they do on the device. Off (report only) by default.
+  countdowns, performance and weather to Home Assistant over MQTT with
+  discovery. MQTT is off by default and starts as report only.
+- Throttle updates so Home Assistant's database stays small without any
+  recorder configuration. Turbo mode sends every change, up to once a second.
+- Let Home Assistant change light bar settings once "Home Assistant controls
+  settings" is selected. Display settings changed from Home Assistant switch to
+  the Custom preset, as they do on the Steam Machine.
+- Add "Home Assistant drives it": a light for the light bar, with colour,
+  brightness and 17-LED frames on a new Home Assistant display, and flash,
+  pulse and sweep alerts in any colour under the usual priorities.
+- Restore the display the light replaced when the light or MQTT is turned off,
+  and at the next start after a restart. Refuse new colours, frames and alerts
+  during thermal protection, a display preset preview or an update install, or
+  while GabeCubeAura is switched off.
+- Show each MQTT connection step on the Home Assistant page, with a plain
+  reason and a retry countdown after a failure.
+- Add Header, Cover and Logo images of the running game beside Key art, with
+  Steam's addresses for all four.
+- Send every status field that is not private, capped at 400 values with short
+  lists and text cut at 256 characters, at most once a minute (every second in
+  Turbo mode). Remove file paths from error text and never send Private Lab
+  release notes.
 
 ## 1.4.0 - 2026-10-05
 

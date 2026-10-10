@@ -159,7 +159,7 @@ class DescribeErrorTests(unittest.TestCase):
         mismatch = "TLS mismatch: check the port and the TLS switch"
         cases = [(ConnackError(code), text) for code, text in enumerate((
             "Bad protocol version", "Broker rejected the client ID", "Broker unavailable",
-            "Wrong username or password", "Not authorised",
+            "Wrong username or password", "Not authorised (check the username and password)",
             "Broker refused the connection (code 6)"), start=1)]
         cases += [
             (ConnectionRefusedError(111, "Connection refused"), "Nothing listening at broker.lan:1883"),

@@ -267,53 +267,105 @@ GabeCubeAura 1.4.0.
 
 ### Home Assistant
 
-GabeCubeAura can publish its state to Home Assistant over MQTT. It needs an
-MQTT broker and Home Assistant's MQTT integration with discovery turned on
-(the default). Open **Home
-Assistant** in the detailed settings, enter your broker's address, username
-and password, and turn on **Connect to Home Assistant**. Home Assistant then
-finds a "GabeCubeAura" device by itself: the running game with its key art and
+Follow the Steam Machine from Home Assistant, and optionally let Home Assistant
+control the light bar. GabeCubeAura publishes over MQTT with discovery, so you
+need an MQTT broker and Home Assistant's MQTT integration with discovery turned
+on (the default).
+
+Open **Home Assistant** in the detailed settings, enter your broker's address,
+username and password, then turn on **Connect to Home Assistant**. A
+"GabeCubeAura" device appears by itself, with the running game, its key art and
 session length, the light bar's owner, display and brightness, recording,
 downloads, controllers and their batteries, playtime countdowns, CPU and GPU
-load and temperature, thermal protection and weather. Game
-launches, achievements, screenshots, controller connections and thermal trips
-arrive as events for automations. Key art comes from the game's library hero
-image, including custom artwork you set for a game or non-Steam shortcut; it
-is sent as JPEG, PNG or WebP up to 2 MB.
+load and temperature, thermal protection and weather. Game launches,
+achievements, screenshots, controller connections and thermal trips arrive as
+events for automations. Only the kind of event is sent, never the text of a
+notification or achievement.
 
-Home Assistant keeps every state change in its database, so by default
-GabeCubeAura sends what automations need rather than a live stream, and you
-never have to edit `configuration.yaml`: CPU and GPU load and temperature
-update when they move by 5 points or 2 °C, at most every 30 seconds (thermal
-protection at once); countdowns in whole minutes, at most once a minute
-(starting and ending at once); session length in 5-minute steps; everything
-else as it changes. **Turbo mode**, in the same settings page, sends every
-change in real time, up to once a second. Only turn it on if you have a reason
-to and have set up Home Assistant's recorder for these sensors.
+Key art is the game's Library Hero, including custom artwork set for a game or
+non-Steam shortcut. **Header art**, **Cover art** and **Logo** images are also
+published, read from Steam's local library cache or your custom grid art. Each
+image is JPEG, PNG or WebP up to 2 MB, is sent once per game and stays empty
+when the game has none of that kind. For Steam games, the game's attributes
+also carry Steam's own addresses for all four.
 
-By default Home Assistant only watches. To let it change settings, choose
-**Home Assistant controls settings** for the light bar under **What Home
-Assistant can do**, which appears once GabeCubeAura has connected to your
-broker. Home Assistant then gets a switch, list or number for each light bar
-setting this plugin can check strictly: the display preset, Home and in-game
-displays, brightness, Audio Sync, Screen Sync, Customization+, artwork, Light
-Events, controller alerts, countdown and weather looks. A change goes through
-the same checks as the settings page and is applied within a second; rapid
-changes (a slider being dragged) collapse to the latest. Changing a
-display setting from Home Assistant switches GabeCubeAura to the Custom preset,
-as changing it here does, and sending a value that is already set changes
-nothing. Updates, the playtime countdown, Valve ownership, and StripMine or TW3
-SteamRGB integration can only be changed on the Steam Machine (their values are
-still published with the other settings); your weather city is never sent at
-all. Back on **Report only**, the controls disappear from Home Assistant;
-if you never allowed control, nothing about settings is ever sent.
-When Home Assistant asks for something GabeCubeAura cannot do (a Weather display
-without a city, say), the **Last command error** sensor says why, until that
-setting is changed from Home Assistant successfully.
+Home Assistant keeps every state change in its database, so GabeCubeAura sends
+what automations need rather than a live stream, and `configuration.yaml` never
+needs editing. CPU and GPU load and temperature update when they move by 5
+points or 2°C, at most every 30 seconds. Countdowns update in whole minutes, at
+most once a minute, and session length in 5-minute steps. Thermal protection
+and the start and end of a countdown are sent at once; everything else is sent
+as it changes. **Turbo mode** sends every change, up to once a second. Only
+turn it on if you need it and have set up Home Assistant's recorder for these
+sensors.
 
-MQTT is off until you turn it on, and the password is kept in its own file that
-configuration export never includes. Notification and achievement text is
-never sent, only the kind of event.
+By default Home Assistant only watches. Once GabeCubeAura has connected to your
+broker, **What Home Assistant can do** appears on the same page. Choose **Home
+Assistant controls settings** for the light bar to get a switch, list or number
+for each setting GabeCubeAura can fully check: the display preset, Home and
+in-game displays, brightness, Audio Sync, Screen Sync, Customization+, artwork,
+Light Events, controller alerts, countdown and weather looks. A change goes
+through the same checks as the settings page and applies after about a second.
+Rapid changes, such as a dragged slider, collapse to the latest value, and a
+value that is already set changes nothing. As on the Steam Machine, changing a
+display setting switches GabeCubeAura to the Custom preset.
+
+Updates, the playtime countdown, Valve ownership, and StripMine or TW3 SteamRGB
+integration can only be changed on the Steam Machine, although their values are
+still published. Your weather city is never sent. If Home Assistant asks for
+something GabeCubeAura cannot do, such as a Weather display without a city, the
+**Last command error** sensor says why until that setting is next changed
+successfully from Home Assistant. Returning to **Report only** removes the
+controls; if you never allowed control, no settings are sent at all.
+
+**Home Assistant drives it** (light bar only) adds a **Light bar** light and
+three alert buttons. Turning the light on selects the **Home Assistant**
+display for whatever is on screen, Home or in-game, and shows the colour and
+brightness Home Assistant sends. This switches GabeCubeAura to the Custom
+preset once. Turning the light off, leaving Home Assistant drives it or turning
+off **Connect to Home Assistant** gives the bar back and restores your previous
+display. If GabeCubeAura restarts while the light is on, that display is
+restored at the next start. A game with its own display keeps it unless you
+choose Home Assistant for that game. Night brightness dims Home Assistant
+colours like everything else.
+
+Automations can also send a whole 17-LED frame to `<topic root>/drive/frame` as
+a JSON list of 17 `[r, g, b]` values, and alerts to `<topic root>/drive/alert`,
+for example `{"variant": "pulse", "color": {"r": 255, "g": 80, "b": 0},
+"duration": 2}`. Alerts can flash, pulse or sweep for 0.5 to 4.85 seconds. The
+topic root is shown on the **Status** line after "publishing under". Retained
+and empty messages on these topics are ignored, and colours and frames apply at
+most four times a second.
+
+Home Assistant alerts behave like Steam notifications. They need Light Events,
+and Steam, controller low-battery alerts and the final five minutes of a
+playtime countdown keep priority. An alert less than 0.8 seconds after the
+previous one is dropped. **Home Assistant alerts** can only be turned on from
+the Steam Machine. New colours, frames and alerts are refused during thermal
+protection, a display preset preview or an update install, or while
+GabeCubeAura is switched off. Turning the light off always works.
+
+The **Status** line follows the connection step by step. It shows
+"Connecting to <broker>…", where `<broker>` is the host:port you entered, then
+"Connected as <user>, publishing under <topic root>". After a failure it says
+what went wrong and counts down to the next attempt, for example "Wrong
+username or password, retrying in 12 s", "Nothing listening at <broker>" or
+"Broker name not found". A bad password usually reads "Not authorised (check
+the username and password)". TLS switched on against a plain MQTT port shows
+"TLS mismatch: check the port and the TLS switch"; the reverse shows "Broker
+closed the connection" or a timeout. The password is never shown.
+
+GabeCubeAura also sends the rest of its own status, minus anything private.
+Your location, update tokens, the Private Lab account and its release notes,
+and private fields are never sent, and file paths are removed from known path
+fields and error text. Fast-changing values such as timers, counters and live
+audio and colour meters are left out too. Status values are capped at 400, with
+short lists only and text cut at 256 characters. This status, debug details
+included, goes to an MQTT topic that no entity records, at most once a minute
+(every second in Turbo mode), so Home Assistant's database stays small.
+
+MQTT is off until you turn it on. The password is kept in its own file and is
+never included in a configuration export.
 
 ## How priorities work
 
@@ -518,7 +570,15 @@ exported JSON or the artwork cache; both stop a running personal timer.
 - A userspace guard that yields when Steam or another process changes the bar
 - A CPU/GPU thermal interlock that yields completely to Valve at 94°C and only
   resumes after both coherent readings stay below 90°C for 30 seconds
-- Home Assistant support is off by default, connects only to the broker you enter, and never publishes your weather location, file paths or notification text. Home Assistant can change settings only after you allow it on the Steam Machine, and never updates, your location, the playtime countdown or plugin integrations.
+- Optional Home Assistant support, off by default, that connects only to the
+  broker you enter. It never publishes your weather location, update tokens,
+  private fields or notification text, and removes file paths from known path
+  fields and error text.
+- Home Assistant settings control only after you allow it on the Steam
+  Machine, never covering updates, your location, the playtime countdown or
+  plugin integrations. Light bar driving only at "Home Assistant drives it",
+  with no new colours, frames or alerts during thermal protection, a display
+  preset preview or an update install, or while GabeCubeAura is switched off.
 
 GabeCubeAura only restores a previous frame when the hardware still matches its
 own last verified write. Missing or incoherent sensor data during a thermal

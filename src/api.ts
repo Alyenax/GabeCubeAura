@@ -115,13 +115,11 @@ export interface MqttConfig {
   base_topic: string;
   light_bar_level: MqttLevel;
   faceplate_level: MqttLevel;
-  // Off: recorder-friendly update rates. On: every change, up to once a second. Applies without reconnecting.
   turbo: boolean;
   has_password: boolean;
   load_error: string;
 }
 
-// phase, reason, retry_in_s, broker, username, topic_root: the step-by-step connection line.
 export interface MqttBridgeStatus extends ConnectionStatus {
   enabled: boolean;
   connected: boolean;
@@ -129,16 +127,15 @@ export interface MqttBridgeStatus extends ConnectionStatus {
   last_error: string;
   messages_out: number;
   events_dropped: number;
-  // True only in builds whose faceplate has settings Home Assistant could change.
   faceplate_controls: boolean;
-  // Why Home Assistant's last command was refused or changed; "" if none since the plugin started
-  // or since that same setting later applied from Home Assistant.
+  // Why Home Assistant's last command was refused or changed; "" once that command later applies.
   command_error: string;
 }
 
 export interface MqttState {
   config: MqttConfig;
   status: MqttBridgeStatus;
+  ha_alerts_enabled: boolean;
 }
 
 export const getMqttStatus = callable<[], MqttState>("get_mqtt_status");

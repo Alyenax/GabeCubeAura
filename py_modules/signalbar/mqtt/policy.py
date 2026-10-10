@@ -1,29 +1,30 @@
 """When each Home Assistant state area is worth publishing, and how coarse its numbers are.
 
-Home Assistant's recorder stores a row for every state change and every distinct attribute blob, and
-keeps them for weeks. By default the bridge therefore sends what automations and control need, not a
-second-by-second stream: deadbands and slow cadences for the chatty areas, on top of "only when the
-payload changed". Identical payloads are never resent, so a quiet machine costs nothing.
+Home Assistant's recorder stores a row for every state change and every
+distinct set of attributes, and keeps them for weeks. By default the bridge
+sends what automations need rather than a stream: the chatty areas get
+deadbands and slow cadences on top of "only when it changed". A quiet machine
+sends nothing.
 
-Turbo mode (an MQTT setting) turns all of that off: every area publishes whenever it changes, at most
-once a second, with countdown and session minutes to 0.1.
+Turbo mode turns all of that off. Every area then publishes whenever it
+changes, at most once a second, with minutes to one decimal place.
 
-The policy keeps no clock of its own: the bridge passes its injected clock's "now" in, so tests drive
-it exactly. A full republish (connect, Home Assistant birth) calls reset(), which makes every area due.
+The bridge passes its own clock's "now" in, so tests can drive the policy.
+reset() makes every area due, for a full republish.
 """
 
 from __future__ import annotations
 
 import math
 
-# Every area, Turbo or not: on change, at most once a second (the bridge's snapshot cadence).
 BASE_INTERVAL_S = 1.0
-# Slow areas in the default mode. A thermal-protection flip, a countdown starting or ending, and a game
-# starting or stopping are news for automations and bypass these.
+# The slow areas outside Turbo mode. Thermal protection tripping, a countdown
+# starting or ending and a game starting or stopping are news and go at once.
 AREA_INTERVAL_S = {"performance": 30.0, "countdown": 60.0, "status": 60.0}
-# Performance only publishes once a reading has moved this far from the last value sent.
-LOAD_DEADBAND = 5          # percentage points (cpu_load, gpu_load)
-TEMPERATURE_DEADBAND = 2.0  # °C (cpu_temperature, gpu_temperature)
+# How far a performance reading must move from the last value sent:
+# percentage points for load, degrees for temperature.
+LOAD_DEADBAND = 5
+TEMPERATURE_DEADBAND = 2.0
 SESSION_STEP_MINUTES = 5
 IMMEDIATE_KEYS = {
     "performance": ("thermal_protection",),
@@ -39,7 +40,7 @@ def _is_number(value) -> bool:
 def _moved(now, before, deadband) -> bool:
     if _is_number(now) and _is_number(before):
         return abs(now - before) >= deadband
-    return now != before  # a reading appearing or vanishing (None) is always worth sending
+    return now != before
 
 
 def _whole(value, rounding):
@@ -51,15 +52,15 @@ class PublishingPolicy:
         self._last = {}  # area -> (text, payload, published at)
 
     def reset(self):
-        """Forget what was sent: the next offer of every area is due (full republish, new connection)."""
+        """Forget what was sent, so every area is due again."""
         self._last.clear()
 
     def shape(self, area, payload, turbo) -> dict:
-        """The payload as it should be published: whole minutes by default, as given in Turbo mode."""
+        """Return the payload as published: whole minutes by default, as given in Turbo mode."""
         if turbo or not isinstance(payload, dict):
             return payload
         if area == "countdown":
-            # Remaining rounds up so a running countdown never shows 0 before it ends.
+            # Rounded up, so a running countdown never shows 0 before it ends.
             return {**payload,
                     "remaining_minutes": _whole(payload.get("remaining_minutes"), math.ceil),
                     "total_minutes": _whole(payload.get("total_minutes"), lambda v: math.floor(v + 0.5))}
@@ -94,7 +95,7 @@ class PublishingPolicy:
         return area in self._last
 
     def published(self, area, payload, text, now):
-        """Record a successful publish; deadbands and intervals are measured from here."""
+        """Record a successful publish; deadbands and intervals count from it."""
         self._last[area] = (text, payload, now)
 
     @staticmethod

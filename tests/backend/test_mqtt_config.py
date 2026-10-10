@@ -8,6 +8,7 @@ import unittest
 
 from signalbar.mqtt.advertised import AdvertisedTopics, is_ours
 from signalbar.mqtt.config import LIVE_KEYS, MqttConfig
+from signalbar.mqtt.routed import RoutedDisplays
 
 CONFIG = "homeassistant/switch/gabecubeaura_steammachine_setting_signalbar_enabled/config"
 STATE = "gabecubeaura/steammachine/state/settings"
@@ -50,7 +51,8 @@ class ConfigTests(StorageTestCase):
         bad = [{"port": 0}, {"port": "x"}, {"host": "bad host"}, {"host": "[::1]"}, {"host": None},
                {"username": 5}, {"base_topic": "a/+"}, {"discovery_prefix": "/x"}, {"unknown": 1},
                {"enabled": True}, {"turbo": 1}]
-        bad += [{key: value} for key in ("light_bar_level", "faceplate_level") for value in ("drive", "", None, True)]
+        bad += [{key: value} for key in ("light_bar_level", "faceplate_level") for value in ("steer", "", None, True)]
+        bad.append({"faceplate_level": "drive"})  # nothing on the faceplate to drive yet
         for changes in bad:
             with self.subTest(changes=changes), self.assertRaises(ValueError):
                 config.update(changes)
@@ -62,24 +64,25 @@ class ConfigTests(StorageTestCase):
         config = MqttConfig(self.dir)
         config.update({"enabled": True, "host": "broker"}, password="a")
         key = config.connection_key()
-        config.update({"turbo": True, "light_bar_level": "settings", "faceplate_level": "settings"})
+        config.update({"turbo": True, "light_bar_level": "drive", "faceplate_level": "settings"})
         self.assertEqual(config.connection_key(), key)
         self.assertIs(MqttConfig(self.dir).public()["turbo"], True)
         config.update({}, password="b")
         self.assertNotEqual(config.connection_key(), key)
 
     def test_unknown_levels_in_the_file_fall_back_to_report_only(self):
-        self.write("mqtt.json", {"light_bar_level": "drive", "faceplate_level": "settings"})
+        self.write("mqtt.json", {"light_bar_level": "steer", "faceplate_level": "drive"})
         public = MqttConfig(self.dir).public()
-        self.assertEqual((public["light_bar_level"], public["faceplate_level"]), ("report", "settings"))
+        self.assertEqual((public["light_bar_level"], public["faceplate_level"]), ("report", "report"))
 
 
 class RecordTests(StorageTestCase):
-    def test_only_our_settings_topics_count_as_ours(self):
-        for topic in (CONFIG, STATE):
+    def test_only_our_settings_and_drive_topics_count_as_ours(self):
+        for topic in (CONFIG, STATE, "homeassistant/light/gabecubeaura_steammachine_drive_light/config"):
             self.assertTrue(is_ours(topic), topic)
         for topic in ("homeassistant/sensor/gabecubeaura_steammachine_cpu_load/config",
-                      "homeassistant/switch/other_setting_x/config", "zigbee2mqtt/lamp", "#", CONFIG + "\n", None, 5):
+                      "homeassistant/switch/other_setting_x/config", "zigbee2mqtt/lamp", "#",
+                      "gabecubeaura/steammachine/drive/light", CONFIG + "\n", None, 5):
             self.assertFalse(is_ours(topic), topic)
 
     def test_advertised_topics_ignore_foreign_topics_and_skip_unchanged_saves(self):
@@ -96,6 +99,19 @@ class RecordTests(StorageTestCase):
         self.assertEqual(AdvertisedTopics(self.dir).topics(), {STATE})
         self.write("advertised.json", {"topics": [CONFIG, "homeassistant/sensor/other/config", 7]})
         self.assertEqual(AdvertisedTopics(self.dir).topics(), {CONFIG})
+
+    def test_displaced_displays_survive_a_restart_and_only_plain_display_names_are_kept(self):
+        routed = RoutedDisplays(self.dir)
+        for key, value in (("mode", "audio_sync"), ("home_display", "home_assistant"), ("home_display", "../x")):
+            self.assertFalse(routed.remember(key, value), (key, value))
+        self.assertFalse(os.path.exists(os.path.join(self.dir, "routed.json")))
+        routed.remember("game_display", "artwork")
+        self.assertTrue(routed.remember("game_display", "performance"))
+        self.assertEqual(RoutedDisplays(self.dir).displays(), {"game_display": "performance"})
+        RoutedDisplays(self.dir).forget("game_display")
+        self.assertEqual(RoutedDisplays(self.dir).displays(), {})
+        self.write("routed.json", {"displays": {"home_display": "performance", "updates_channel": "beta"}})
+        self.assertEqual(RoutedDisplays(self.dir).displays(), {"home_display": "performance"})
 
 
 if __name__ == "__main__":

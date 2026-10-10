@@ -1,20 +1,18 @@
-// The Home Assistant page's connection line, step by step. Kept free of Decky imports so it is tested.
+// The connection line on the Home Assistant page. No Decky imports, so it can be unit tested.
 
 export type ConnectionPhase = "off" | "connecting" | "connected" | "waiting_retry";
 
-// The fields of the bridge's status() that describe the connection (signalbar/mqtt/bridge.py).
 export interface ConnectionStatus {
   phase: ConnectionPhase;
-  // Why the last attempt failed, in plain English; "" while connected or before any failure.
+  // Why the last attempt failed; "" while connected or before the first failure.
   reason: string;
-  // Seconds until the next attempt while waiting after a failure, else null.
   retry_in_s: number | null;
   broker: string;
   username: string;
   topic_root: string;
 }
 
-/** secondsSinceStatus: how long ago the status arrived, so the countdown keeps running between polls. */
+/** secondsSinceStatus keeps the retry countdown running between polls. */
 export function connectionLine(enabled: boolean, status: ConnectionStatus, secondsSinceStatus = 0): string {
   if (!enabled || status.phase === "off") return "Off";
   if (status.phase === "connected") {

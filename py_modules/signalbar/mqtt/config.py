@@ -13,9 +13,13 @@ import os
 import re
 import threading
 
-# What Home Assistant may do, per device (light bar, faceplate). Append new levels (Phase 3 adds
-# "drive"); never reorder or rename, because saved files hold these strings.
-LEVELS = ("report", "settings")
+# What Home Assistant may do, per device. Saved files hold these strings, so
+# new levels are appended and none is ever renamed.
+LEVELS = ("report", "settings", "drive")
+# "drive" includes "settings": turning the light on selects the Home Assistant
+# display, which is itself a settings change.
+CONTROL_LEVELS = frozenset({"settings", "drive"})
+DEVICE_LEVELS = {"light_bar_level": LEVELS, "faceplate_level": LEVELS[:2]}
 DEFAULTS = {
     "enabled": False,
     "host": "",
@@ -26,11 +30,10 @@ DEFAULTS = {
     "base_topic": "gabecubeaura",
     "light_bar_level": "report",
     "faceplate_level": "report",
-    # Off: recorder-friendly update rates (see policy.py). The bridge reads it every step.
     "turbo": False,
 }
-# Settings the running bridge picks up by itself; changing only these must not reconnect (which would
-# also hide the Home Assistant section until the new connection is up). Levels apply on the next step.
+# The running bridge picks these up on its next step. Reconnecting for them
+# would only hide the settings until the new connection is up.
 LIVE_KEYS = frozenset({"turbo", "light_bar_level", "faceplate_level"})
 # No brackets: "[::1]" is URL syntax, and the socket layer wants the bare IPv6 address ("::1").
 _HOST = re.compile(r"^[A-Za-z0-9.\-:]{1,253}$")
@@ -64,9 +67,9 @@ def _clean(key, value):
         if len(value) > 64 or not _TOPIC.match(value):
             raise ValueError(f"{key} may use letters, digits, - and _ separated by /")
         return value
-    if key in ("light_bar_level", "faceplate_level"):
-        if value not in LEVELS:
-            raise ValueError(f"{key} must be one of {', '.join(LEVELS)}")
+    if key in DEVICE_LEVELS:
+        if value not in DEVICE_LEVELS[key]:
+            raise ValueError(f"{key} must be one of {', '.join(DEVICE_LEVELS[key])}")
         return value
     raise ValueError(f"unknown MQTT setting {key}")
 
@@ -81,7 +84,6 @@ class MqttConfig:
         self._load()
 
     def __repr__(self) -> str:
-        # Never include the password (or any value) in a repr that could reach a log.
         return "MqttConfig()"
 
     def _load(self):
@@ -128,7 +130,6 @@ class MqttConfig:
             if merged["enabled"] and not merged["host"]:
                 raise ValueError("enter the broker host before turning MQTT on")
             self._save(merged, self._password if password is None else password)
-            # Memory changes only once the file is safely on disk.
             self.values = merged
             if password is not None:
                 self._password = password

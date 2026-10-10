@@ -1,6 +1,6 @@
-export type Mode = "artwork" | "performance" | "customization" | "screen_sync" | "audio_sync" | "blackout" | "events" | "disabled";
-export type HomeDisplay = "steam" | "blackout" | "customization" | "performance" | "audio_sync" | "weather" | "controller";
-export type GameDisplay = "steam" | "blackout" | "customization" | "artwork" | "performance" | "screen_sync" | "audio_sync" | "weather" | "controller";
+export type Mode = "artwork" | "performance" | "customization" | "screen_sync" | "audio_sync" | "home_assistant" | "blackout" | "events" | "disabled";
+export type HomeDisplay = "steam" | "blackout" | "customization" | "performance" | "audio_sync" | "home_assistant" | "weather" | "controller";
+export type GameDisplay = "steam" | "blackout" | "customization" | "artwork" | "performance" | "screen_sync" | "audio_sync" | "home_assistant" | "weather" | "controller";
 export type DisplayPreset = "custom" | "lights-out" | "focus" | "essential" | "moderate" | "atmosphere" | "signals" | "immersive" | "immersive-plus" | "festive";
 export type ValveOwnershipPolicy = "cooperative" | "downloads" | "critical";
 export type ArtworkMode = "auto" | "center" | "lower" | "manual";
@@ -247,6 +247,10 @@ export interface Status {
   stripmine_priority_customization: CompanionPriority;
   stripmine_priority_screen_sync: CompanionPriority;
   stripmine_priority_audio_sync: CompanionPriority;
+  stripmine_priority_home_assistant: CompanionPriority;
+  ha_alerts_enabled: boolean;
+  // The Home Assistant display slot; offered while Home Assistant drives the light bar over MQTT.
+  home_assistant: { offered: boolean; on: boolean; source: "" | "colour" | "frame"; colour: RGB; brightness: number };
   weather_clear_day_variant: number;
   weather_clear_night_variant: number;
   weather_rain_variant: number;

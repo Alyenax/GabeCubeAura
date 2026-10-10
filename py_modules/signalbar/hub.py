@@ -1,7 +1,7 @@
-"""Fan engine facts out to subscribers (such as the MQTT bridge) without ever blocking the engine.
+"""Pass engine events to subscribers such as the MQTT bridge without blocking the engine.
 
-New features publish by calling ``engine.hub.emit("<area>.<event>", {...})``;
-anything subscribed picks them up with no further wiring.
+A feature publishes with ``engine.hub.emit("<area>.<event>", {...})`` and
+every subscriber receives it with no further wiring.
 """
 
 from __future__ import annotations
@@ -67,6 +67,7 @@ class EventHub:
             for callback in subscribers:
                 try:
                     callback(kind, data)
-                except Exception as error:  # noqa: BLE001 - one subscriber must not stop the rest
+                except Exception as error:
+                    # One failing subscriber must not starve the others.
                     if self.log:
                         self.log.warning(f"[GabeCubeAura] event subscriber failed: {error}")

@@ -26,7 +26,7 @@ class Arbiter:
                recording_marker_isolation=False, performance_always=False,
                controller_event=None, controller_base=None, weather_base=None,
                customization_base=None, screen_sync_base=None, screen_sync_fallback=None,
-               audio_sync_base=None,
+               audio_sync_base=None, home_assistant_base=None,
                launch_artwork=None, steam_priority=False, companion_hud_active=False):
         if mode == "disabled":
             return ProviderOutput("none", None, "GabeCubeAura disabled")
@@ -95,6 +95,20 @@ class Arbiter:
             return self._with_recording_marker(
                 base,
                 recording_marker and base.provider.startswith("audio-sync"),
+                recording_marker_isolation,
+            )
+
+        # An empty Home Assistant slot gives the bar back instead of falling
+        # through to performance or artwork: that is what "off" means there.
+        if mode == "home_assistant":
+            base = (
+                home_assistant_base
+                if home_assistant_base is not None and home_assistant_base.frame is not None
+                else ProviderOutput("none", None, "Home Assistant has nothing to show")
+            )
+            return self._with_recording_marker(
+                base,
+                recording_marker and base.provider.startswith("home-assistant"),
                 recording_marker_isolation,
             )
 

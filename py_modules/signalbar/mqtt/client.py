@@ -23,28 +23,30 @@ class MqttError(Exception):
 
 
 class TlsHandshakeTimeout(TimeoutError):
-    """TCP connected but the TLS handshake did not finish in time (still a TimeoutError)."""
+    """The TCP connection opened but the TLS handshake timed out."""
 
 
 class ConnackError(MqttError):
-    """The broker answered CONNECT with a refusal (MQTT 3.1.1 return codes 1-5)."""
+    """The broker refused CONNECT with an MQTT 3.1.1 return code."""
 
     def __init__(self, code):
         super().__init__(packets.CONNACK_ERRORS.get(code, f"connection refused ({code})"))
         self.code = code
 
 
-# The settings page's words for each CONNACK refusal (last_error keeps packets.CONNACK_ERRORS' text).
 CONNACK_REASONS = {
     1: "Bad protocol version",
     2: "Broker rejected the client ID",
     3: "Broker unavailable",
     4: "Wrong username or password",
-    5: "Not authorised",
+    # Mosquitto answers a wrong password with 5 rather than 4.
+    5: "Not authorised (check the username and password)",
 }
-# What OpenSSL reports when the other end is not speaking TLS (plain MQTT on a TLS client, or the reverse).
-_TLS_MISMATCH_REASONS = {"UNEXPECTED_EOF_WHILE_READING", "WRONG_VERSION_NUMBER", "HTTP_REQUEST", "UNKNOWN_PROTOCOL",
-                         "RECORD_LAYER_FAILURE"}
+# OpenSSL's reasons when TLS is switched on against a plain MQTT port. The
+# reverse never reaches OpenSSL: the broker closes the connection or the
+# attempt times out.
+_TLS_MISMATCH_REASONS = {"UNEXPECTED_EOF_WHILE_READING", "WRONG_VERSION_NUMBER", "HTTP_REQUEST",
+                         "UNKNOWN_PROTOCOL", "RECORD_LAYER_FAILURE"}
 _MQTT_REASONS = {
     "broker closed the connection": "Broker closed the connection",
     "no answer from broker": "Broker did not answer (timed out)",
@@ -53,8 +55,7 @@ _MQTT_REASONS = {
 
 
 def describe_error(error, host, port) -> str:
-    """Why a connection attempt failed, in plain English, for the settings page. Host and port are
-    what the user typed there; no error raised here can carry the password."""
+    """Say in plain English why a connection attempt failed, for the settings page."""
     where = f"[{host}]:{port}" if ":" in str(host) else f"{host}:{port}"
     if isinstance(error, ConnackError):
         return CONNACK_REASONS.get(error.code, f"Broker refused the connection (code {error.code})")
@@ -116,15 +117,11 @@ class MqttClient:
         self.connected = False
         self.connected_once = False
         self.last_error = ""
-        # For the settings page: the phase ("idle" before start, "connecting", "connected",
-        # "waiting_retry", "stopped"), why the last attempt failed in plain English ("" once connected),
-        # and when the next attempt starts while waiting (see retry_in).
         self.phase = "idle"
         self.last_reason = ""
         self._retry_at = None
         self.messages_out = 0
 
-    # ---- public API ----------------------------------------------------
     def start(self):
         if self._thread and self._thread.is_alive():
             return
@@ -172,7 +169,6 @@ class MqttClient:
         self.messages_out += 1
         return True
 
-    # ---- connection loop -----------------------------------------------
     def _run(self):
         delay = self._backoff[0]
         while not self._stop.is_set():
@@ -184,7 +180,7 @@ class MqttClient:
                 if not self._stop.is_set():
                     self.last_error = str(error) or type(error).__name__
                     self.last_reason = describe_error(error, self.host, self.port)
-            except Exception as error:  # noqa: BLE001 - nothing may end the connection thread
+            except Exception as error:
                 if not self._stop.is_set():
                     self.last_error = f"{type(error).__name__}: {error}"
                     self.last_reason = describe_error(error, self.host, self.port)
@@ -242,8 +238,8 @@ class MqttClient:
         self.connected = True
         self.connected_once = True
         self.phase, self.last_reason = "connected", ""
-        # last_error is deliberately kept across a successful reconnect: it records why the
-        # previous connection ended; callers read it only while `connected` is False.
+        # last_error is kept: it says why the previous connection ended, and
+        # callers only read it while disconnected.
         if self._topics:
             self._send(packets.subscribe(self._next_id(), list(self._topics)))
         self._call(self._on_connect)
@@ -270,7 +266,6 @@ class MqttClient:
                 self._send(packets.PINGREQ_PACKET)
                 last_ping = waiting_since = now
 
-    # ---- helpers -------------------------------------------------------
     def _send(self, data):
         sock = self._sock
         if sock is None:
@@ -283,9 +278,9 @@ class MqttClient:
         return self._packet_id
 
     def _abort(self):
-        # Callable from any thread: shutdown() wakes the loop's select/recv (EOF), and the loop
-        # thread then does the teardown. Never close() the socket from a non-loop thread: its
-        # fileno becomes -1 under the loop's feet and select() raises ValueError.
+        # Safe from any thread: shutdown() wakes the loop's select() and the
+        # loop tears down. Closing the socket here instead would set its fileno
+        # to -1 under the loop and select() would raise ValueError.
         self.connected = False
         sock = self._sock
         if sock is not None:
@@ -295,7 +290,6 @@ class MqttClient:
                 pass
 
     def _close(self):
-        # Loop thread only: stop() never calls this; it _abort()s and the loop's finally closes the socket.
         self.connected = False
         sock, self._sock = self._sock, None
         if sock is not None:
@@ -309,6 +303,6 @@ class MqttClient:
             return
         try:
             callback(*args)
-        except Exception as error:  # noqa: BLE001 - a bridge bug must not kill the connection
+        except Exception as error:
             if self.log:
                 self.log.warning(f"[GabeCubeAura] MQTT callback failed: {type(error).__name__}: {error}")

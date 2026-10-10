@@ -7,8 +7,12 @@ from pathlib import Path
 
 from signalbar.backend import Engine
 from signalbar.mqtt.policy import PublishingPolicy
-from signalbar.mqtt.snapshot import build_snapshot, flatten_status, frontend_connected, is_redacted
+from signalbar.mqtt.snapshot import (
+    NOISY_KEYS, STATUS_KEY_LIMIT, UPDATE_NOT_PUBLISHED, build_snapshot, flatten_status, frontend_connected,
+    is_redacted, is_volatile,
+)
 from signalbar.settings import SettingsStore
+from signalbar.updates import UpdateManager
 
 FACTS = {"started_at": "2026-09-14T01:00:00+00:00", "session_minutes": 12.5, "download_active": False,
          "events_dropped": 0, "frontend_connected": True}
@@ -56,6 +60,17 @@ class SnapshotTests(unittest.TestCase):
             self.assertNotIn(forbidden, text)
         self.assertFalse(any(is_redacted(key) for key in flatten_status(odd)))
 
+    def test_paths_in_error_text_and_private_lab_release_notes_never_go_out(self):
+        flat = build_snapshot(status(
+            performance={"error": "open /dev/input/by-path/pci-0000:00:14.0-usb-0:1:1.0-event: busy"},
+            weather={"error": "HTTP 503 from https://api.open-meteo.com/v1/forecast"}), None, None, FACTS)["status"]
+        self.assertEqual(flat["performance.error"], "open <path>: busy")
+        self.assertEqual(flat["weather.error"], "HTTP 503 from https://api.open-meteo.com/v1/forecast")
+        for channel, published in (("stable", True), ("private", False)):
+            update = {**UPDATE, "channel": channel, "release_notes": "Lab build for the rig"}
+            text = json.dumps(build_snapshot(status(), None, update, FACTS))
+            self.assertEqual("Lab build" in text, published, channel)
+
     def test_odd_inputs_never_raise_and_stay_valid_json(self):
         snap = build_snapshot({}, None, None, {})
         self.assertEqual((snap["game"]["appid"], snap["controllers"]["count"], snap["update"]["phase"]), (0, 0, None))
@@ -77,10 +92,61 @@ class SnapshotTests(unittest.TestCase):
         cyclic = {}
         cyclic["me"] = cyclic
         self.assertEqual(flatten_status(cyclic), {})
+        last_error = build_snapshot(status(), None, None, {**FACTS, "last_error": "x" * 400})["bridge"]["last_error"]
+        self.assertEqual(len(last_error), 256)
         with tempfile.TemporaryDirectory() as directory:
             real = Engine(SettingsStore(str(Path(directory) / "config.json")), str(Path(directory) / "a.json")).status()
         self.assertLess(len(flatten_status(real)), 400)
         self.assertLess(len(json.dumps(flatten_status(real))), 16_000)
+
+
+class ReportEverythingTests(unittest.TestCase):
+    """Every field GabeCubeAura reports reaches Home Assistant unless snapshot.py says why not."""
+
+    @classmethod
+    def setUpClass(cls):
+        tmp = tempfile.TemporaryDirectory()
+        cls.addClassCleanup(tmp.cleanup)
+        store = SettingsStore(str(Path(tmp.name) / "config.json"))
+        engine = Engine(store, str(Path(tmp.name) / "art.json"))
+        engine.set_game(570, "Dota 2")
+        engine.update_controllers([{"id": "one", "name": "Controller", "percent": 64, "level": None,
+                                    "charging": False}])
+        cls.engine_status = engine.status()
+        cls.update_status = UpdateManager("1.4.0", store, str(Path(tmp.name) / "runtime"), tmp.name, None).status()
+        cls.snapshot = build_snapshot(cls.engine_status, None, cls.update_status, {"frontend_connected": True})
+
+    @staticmethod
+    def leaves(value, prefix=""):
+        if isinstance(value, dict):
+            for key, child in value.items():
+                yield from ReportEverythingTests.leaves(child, f"{prefix}.{key}" if prefix else str(key))
+        else:
+            yield prefix, value
+
+    def test_every_engine_and_update_field_is_published_or_left_out_on_purpose(self):
+        status = self.snapshot["status"]
+        self.assertLess(len(status), STATUS_KEY_LIMIT)  # at the cap later fields would be cut off
+        missing = []
+        for path, value in self.leaves(self.engine_status):
+            if path in status or any(is_redacted(p) or p in NOISY_KEYS or is_volatile(p) for p in path.split(".")):
+                continue
+            if path == "controllers.controllers":
+                sent = self.snapshot["controllers"]["controllers"]
+                self.assertEqual(len(sent), len(value))
+                missing += [f"{path}[].{key}" for key in value[0] if not is_redacted(key) and key not in sent[0]]
+                continue
+            missing.append(path)
+        missing += [f"update.{key}" for key in self.update_status
+                    if key not in self.snapshot["update"] and f"update.{key}" not in status
+                    and not is_redacted(key) and key not in UPDATE_NOT_PUBLISHED]
+        self.assertEqual(missing, [], "publish these in snapshot.py or leave them out there with a reason")
+        self.assertEqual(sorted(set(UPDATE_NOT_PUBLISHED) - set(self.update_status)), [])
+
+    def test_a_new_settings_key_is_reported_without_any_work(self):
+        engine_status = {**self.engine_status, "future_setting_speed": 3}
+        snapshot = build_snapshot(engine_status, None, self.update_status, {"frontend_connected": True})
+        self.assertEqual(snapshot["status"]["future_setting_speed"], 3)
 
 
 def perf(cpu=20, cpu_t=50.0, thermal=False):

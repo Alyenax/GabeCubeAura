@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import json
 import os
 import tempfile
 import unittest
 from unittest import mock
 
-from signalbar.mqtt.discovery import BASE_EVENT_TYPES, Topics, discovery_messages, node_id_for, setting_discovery
+from signalbar.mqtt.discovery import (
+    BASE_EVENT_TYPES, Topics, discovery_messages, drive_discovery, node_id_for, setting_discovery,
+)
+from signalbar.mqtt.drive import AlertCommand, LightCommand, light_state, parse_alert, parse_frame, parse_light
 from signalbar.mqtt.schema import build_schema, denial
 from signalbar.mqtt.snapshot import is_redacted
 from signalbar.settings import SettingsStore
@@ -35,6 +39,7 @@ class SchemaTests(unittest.TestCase):
 
     def test_local_only_settings_are_reported_but_never_controllable(self):
         self.assertEqual(self.schema.local_only, store_module.LOCAL_ONLY_SETTINGS)
+        self.assertTrue({"ha_alerts_enabled", "stripmine_priority_home_assistant"} <= store_module.LOCAL_ONLY_SETTINGS)
         for key in store_module.LOCAL_ONLY_SETTINGS:
             self.assertEqual(self.schema.classes[key], "local_only", key)
             self.assertNotIn(key, self.controls, key)
@@ -60,8 +65,8 @@ class SchemaTests(unittest.TestCase):
             with self.subTest(key=control.key, payload=payload), self.assertRaises(ValueError):
                 control.parse(payload)
         for control, payload, reason in ((manual_y, b"0.345", "must be in steps of 0.01"),
-                                         (cool, b"45.5", "must be in steps of 1"), (switch, b"x" * 65, "value too long"),
-                                         (number, b"31415", "must be 1-255")):
+                                         (cool, b"45.5", "must be in steps of 1"), (switch, "\udcff", "value is not text"),
+                                         (switch, b"x" * 65, "value too long"), (number, b"31415", "must be 1-255")):
             with self.assertRaises(ValueError) as caught:
                 control.parse(payload)
             self.assertEqual(str(caught.exception), reason)
@@ -129,6 +134,52 @@ class DiscoveryTests(unittest.TestCase):
             self.assertEqual("json_attributes_topic" in payload, control.preset, control.key)
         number = setting_discovery(self.topics, "1.4.0", "steammachine", controls["cool_temp_c"])[1]
         self.assertEqual((number["min"], number["max"], number["step"]), (20, 100, 1))
+
+    def test_drive_entities_are_a_json_light_and_one_button_per_alert(self):
+        messages = dict(drive_discovery(self.topics, "1.4.0", "steammachine"))
+        light = messages["homeassistant/light/gabecubeaura_steammachine_local_drive_light/config"]
+        self.assertEqual((light["schema"], light["supported_color_modes"], light["brightness_scale"]),
+                         ("json", ["rgb"], 255))
+        self.assertEqual(light["command_topic"], self.topics.drive("light"))
+        self.assertFalse(self.topics.drive_prefix.startswith(self.topics.command_prefix))
+        # The display lives in the backend: it stays controllable while the Decky frontend is down.
+        self.assertEqual(light["availability"], [{"topic": self.topics.availability}])
+        presses = sorted(json.loads(p["payload_press"])["variant"] for p in messages.values() if "payload_press" in p)
+        self.assertEqual(presses, ["flash", "pulse", "sweep"])
+        self.assertFalse(any("/light/" in t or "/button/" in t for t, _ in self.messages))
+
+
+class DriveCommandTests(unittest.TestCase):
+    def test_what_home_assistant_sends(self):
+        self.assertEqual(parse_light(b'{"state":"ON","brightness":128,"color":{"r":255,"g":10,"b":0}}'),
+                         LightCommand(True, (255, 10, 0), 128))
+        self.assertEqual(parse_light(b'{"state":"ON","color_mode":"rgb","transition":2}'), LightCommand(True, None, None))
+        self.assertEqual(parse_light(b'{"state":"ON","brightness":0}'), LightCommand(False))  # 0 is off to HA
+        pixels = [[index, 255 - index, 0] for index in range(17)]
+        self.assertEqual(parse_frame(json.dumps(pixels).encode()), tuple(tuple(pixel) for pixel in pixels))
+        self.assertEqual(parse_alert(b'{"variant":"flash"}'), AlertCommand("ha-flash", (255, 255, 255), None))
+        self.assertEqual(parse_alert(b'{"variant":"sweep","color":{"r":0,"g":200,"b":0},"duration":4.85}'),
+                         AlertCommand("ha-sweep", (0, 200, 0), 4.85))
+        self.assertEqual(light_state({"on": True, "colour": (255, 10, 0), "brightness": 128, "frame": False}),
+                         {"state": "ON", "brightness": 128, "color_mode": "rgb", "color": {"r": 255, "g": 10, "b": 0}})
+
+    def test_anything_else_is_refused_without_echoing_it(self):
+        cases = [(parse_light, payload) for payload in (
+            b"ON", b'{"state":"on"}', b'{"state":"ON","brightness":256}', b'{"state":"ON","brightness":true}',
+            b'{"state":"ON","color":{"r":1,"g":2}}', b'{"state":"ON","effect":"rainbow"}', b'{"state":"secret-abc"}')]
+        cases += [(parse_frame, json.dumps(value).encode()) for value in (
+            [[0, 0, 0]] * 16, [[0, 0, 0]] * 18, [[0, 0, 0, 0]] * 17, [[0, 0, 256]] * 17, [[0, 0, 1.5]] * 17,
+            [[0, 0, 31415]] * 17, {"frame": []})]
+        cases += [(parse_alert, payload) for payload in (
+            b'{"variant":"strobe"}', b'{"variant":"flash","duration":0.4}', b'{"variant":"flash","duration":5}',
+            b'{"variant":"flash","repeat":3}', b'{"variant":"secret-abc"}',
+            b'{"variant":"flash","color":{"r":31415,"g":0,"b":0}}')]
+        for parse, payload in cases:
+            with self.subTest(parse=parse.__name__, payload=payload):
+                with self.assertRaises(ValueError) as caught:
+                    parse(payload)
+                self.assertNotIn("secret", str(caught.exception))
+                self.assertNotIn("1415", str(caught.exception))
 
 
 if __name__ == "__main__":

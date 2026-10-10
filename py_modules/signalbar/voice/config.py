@@ -33,11 +33,11 @@ HOME = "/home/deck/voice"
 
 DEFAULTS = {
     "enabled": False,
-    # Extra import paths, usually the venv's site-packages. The venv's Python
-    # has to match the one Decky runs the plugin with, or numpy and
-    # onnxruntime won't import. I haven't checked which version that is on a
-    # current Decky build, so this is the part I'd test first.
-    "python_path": [],
+    # The venv's Python. The whole pipeline runs under it as its own process,
+    # because Decky's bundled 3.11 can't load packages built for SteamOS's
+    # 3.13. Any Python works here as long as the packages were installed with
+    # it. See __main__.py.
+    "python": HOME + "/venv/bin/python",
 
     # Stock openWakeWord model, fine for testing. A custom "hey Gabe" gets
     # trained with openWakeWord's training notebook and goes here as a path to
@@ -115,8 +115,8 @@ def load(settings_dir):
 
 def missing(values, find_spec=importlib.util.find_spec, which=shutil.which,
             exists=os.path.exists):
-    """List what's missing. find_spec looks for a module without importing it,
-    so this stays cheap enough to run while the plugin starts."""
+    """List what's missing. Runs in the voice process, under the venv's Python.
+    find_spec looks for a module without importing it, so this is quick."""
     gaps = []
     for module in ("numpy", "openwakeword", "onnx_asr"):
         try:

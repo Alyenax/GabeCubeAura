@@ -20,8 +20,6 @@ from __future__ import annotations
 
 import subprocess
 
-from .session import user_command
-
 RATE = 16000
 FRAME_SAMPLES = 1280
 FRAME_BYTES = FRAME_SAMPLES * 2
@@ -35,12 +33,10 @@ class Microphone:
     def open(self):
         if self._process and self._process.poll() is None:
             return
-        command, env = user_command([
-            "pw-record", "--rate", str(RATE), "--channels", "1", "--format", "s16", "-",
-        ])
         self._process = self._popen(
-            command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-            stdin=subprocess.DEVNULL, env=env, bufsize=0,
+            ["pw-record", "--rate", str(RATE), "--channels", "1", "--format", "s16", "-"],
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL, bufsize=0,
         )
 
     def read_frame(self):

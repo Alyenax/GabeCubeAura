@@ -16,43 +16,22 @@ not fighting voice chat for it, and unloads Qwen and Parakeet so the game gets
 the memory back. When the game ends we go back to idle and the models reload
 the next time they're needed.
 
-Any step that blows up gets logged and we drop back to idle. The plugin's
-lights matter more than this does, so nothing in here is allowed to take the
-plugin down with it.
+Any step that blows up gets logged and we drop back to idle.
+
+This runs in its own process (see __main__.py), not inside the plugin. The
+face and state changes go out through report() as lines the plugin reads.
 """
 
 from __future__ import annotations
 
-import sys
 import threading
 
-from . import config
-from .face import NoFace, for_faceplate
-
-
-class VoiceOff:
-    """Stand-in when the assistant is off or can't run. Does nothing, quietly."""
-
-    state = "off"
-
-    def __init__(self, reason=""):
-        self.reason = reason
-
-    def start(self):
-        pass
-
-    def stop(self):
-        pass
-
-    def set_game(self, appid=0, title=""):
-        pass
-
-    def status(self):
-        return {"state": self.state, "reason": self.reason}
+from .face import NoFace
 
 
 class Assistant:
-    def __init__(self, mic, wake, ears, brain, voice, face=None, warm="on_wake", logger=None):
+    def __init__(self, mic, wake, ears, brain, voice, face=None, warm="on_wake", logger=None,
+                 report=None):
         self.mic = mic
         self.wake = wake
         self.ears = ears
@@ -61,6 +40,7 @@ class Assistant:
         self.face = face or NoFace()
         self.warm = warm
         self.log = logger
+        self.report = report
         self.state = "idle"
         self.last_heard = ""
         self.last_reply = ""
@@ -81,6 +61,8 @@ class Assistant:
         self.state = state
         if mood:
             self.face.show(mood)
+        if self.report:
+            self.report(state, mood)
 
     # ---- lifecycle -----------------------------------------------------
     def start(self):
@@ -175,43 +157,3 @@ class Assistant:
         if not cancel.is_set():
             self._enter("idle", "idle")
         return self.state
-
-
-def build(settings_dir, faceplate=None, logger=None, find_missing=config.missing):
-    """Return an Assistant ready to start, or VoiceOff with the reason it's off."""
-    try:
-        values = config.load(settings_dir)
-        if not values["enabled"]:
-            return VoiceOff("off in voice.json")
-        for path in values["python_path"] or []:
-            if isinstance(path, str) and path not in sys.path:
-                sys.path.append(path)
-        gaps = find_missing(values)
-        if gaps:
-            reason = "missing " + ", ".join(gaps)
-            if logger:
-                logger.warning(f"[GabeCubeAura] voice assistant off: {reason}")
-            return VoiceOff(reason)
-        # Imported here so a disabled assistant never even loads these files.
-        from .brain import Brain
-        from .listen import Listener
-        from .mic import Microphone
-        from .speak import Voice
-        from .wake import WakeWord
-        return Assistant(
-            Microphone(),
-            WakeWord(values["wake_word"], values["wake_threshold"]),
-            Listener(values["stt_model"], values["stt_path"],
-                     values["listen_seconds"], values["silence_seconds"]),
-            Brain(values["llm_server"], values["llm_model"], values["llm_port"],
-                  values["llm_gpu_layers"], values["llm_context"],
-                  values["llm_system_prompt"], logger),
-            Voice(values["tts_binary"], values["tts_voice"]),
-            for_faceplate(faceplate, values["faces_dir"], logger),
-            values["warm"],
-            logger,
-        )
-    except Exception as error:
-        if logger:
-            logger.warning(f"[GabeCubeAura] voice assistant off: {type(error).__name__}: {error}")
-        return VoiceOff(str(error))

@@ -1,10 +1,13 @@
+import io
 import json
 import tempfile
 import unittest
 from pathlib import Path
 
-from signalbar.voice import Assistant, VoiceOff, build
+from signalbar.voice import Supervisor, VoiceOff, build
 from signalbar.voice import config
+from signalbar.voice.__main__ import main as voice_main
+from signalbar.voice.assistant import Assistant
 
 
 class FakeMic:
@@ -116,38 +119,69 @@ class VoiceAssistantTests(unittest.TestCase):
         self.assertEqual(parts["brain"].calls, ["unload", "warm"])
 
 
-class VoiceBuildTests(unittest.TestCase):
-    def write_config(self, folder, values):
-        Path(folder, config.FILENAME).write_text(json.dumps(values), encoding="utf-8")
+class Log:
+    def __init__(self):
+        self.lines = []
 
+    def info(self, message):
+        self.lines.append(message)
+
+    warning = info
+
+
+class FakeChild:
+    def __init__(self, lines=()):
+        self.stdin = io.StringIO()
+        self.stdout = iter(lines)
+
+    def wait(self, timeout=None):
+        return 0
+
+
+class VoiceSupervisorTests(unittest.TestCase):
+    def test_game_start_sends_pause_and_moods_reach_the_face(self):
+        face = FakeFace()
+        supervisor = Supervisor("/tmp", "python3", face)
+        supervisor._child = FakeChild()
+        supervisor.set_game(1091500, "Cyberpunk 2077")
+        self.assertEqual(supervisor._child.stdin.getvalue(), '{"game": true}\n')
+        supervisor.handle_line('{"state": "curious", "mood": "curious"}\n')
+        self.assertEqual(face.moods, ["curious"])
+        self.assertEqual(supervisor.state, "curious")
+
+    def test_off_line_logs_once_and_is_not_restarted(self):
+        log, spawned = Log(), []
+
+        def popen(command, **kwargs):
+            spawned.append(command)
+            return FakeChild(['{"off": "missing openwakeword"}\n'])
+
+        with tempfile.TemporaryDirectory() as folder:
+            supervisor = Supervisor(folder, "venv-python", logger=log, popen=popen,
+                                    command_for=lambda command: (command, {}))
+            supervisor._run()
+        self.assertEqual(spawned, [["venv-python", "-m", "signalbar.voice", folder]])
+        self.assertEqual(log.lines, ["[GabeCubeAura] voice: assistant off: missing openwakeword"])
+
+
+class VoiceStartupTests(unittest.TestCase):
     def test_off_without_a_config_file(self):
         with tempfile.TemporaryDirectory() as folder:
             result = build(folder)
         self.assertIsInstance(result, VoiceOff)
         self.assertEqual(result.reason, "off in voice.json")
 
-    def test_missing_dependency_keeps_it_off_with_one_log_line(self):
-        class Log:
-            lines = []
-
-            def warning(self, message):
-                self.lines.append(message)
-
+    def test_missing_venv_python_keeps_it_off_with_one_log_line(self):
         log = Log()
         with tempfile.TemporaryDirectory() as folder:
-            self.write_config(folder, {"enabled": True})
-            result = build(folder, logger=log, find_missing=lambda values: ["openwakeword"])
+            values = {"enabled": True, "python": folder + "/nope/python"}
+            Path(folder, config.FILENAME).write_text(json.dumps(values), encoding="utf-8")
+            result = build(folder, logger=log)
         self.assertIsInstance(result, VoiceOff)
-        self.assertEqual(log.lines, ["[GabeCubeAura] voice assistant off: missing openwakeword"])
-        result.start()
-        result.set_game(10)
-        result.stop()
+        self.assertEqual(len(log.lines), 1)
 
-    def test_missing_check_without_optional_packages(self):
-        gaps = config.missing(
-            dict(config.DEFAULTS), find_spec=lambda name: None,
-            which=lambda name: None, exists=lambda path: False,
-        )
-        self.assertIn("openwakeword", gaps)
-        self.assertIn("pw-record", gaps)
-        self.assertTrue(any(gap.startswith("llm_model ") for gap in gaps))
+    def test_voice_process_reports_missing_pieces_and_exits(self):
+        out = io.StringIO()
+        with tempfile.TemporaryDirectory() as folder:
+            self.assertEqual(voice_main([folder], io.StringIO(), out), 0)
+        self.assertTrue(json.loads(out.getvalue())["off"].startswith("missing "))

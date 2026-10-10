@@ -8,7 +8,9 @@ the GPU really has the 8 GB of its own we think it does.
 
 The assistant starts and stops llama-server itself, because stopping the
 process is the only reliable way I know to get the memory back. That's the
-whole point when a game starts.
+whole point when a game starts. One gap: if the voice process crashes
+instead of stopping cleanly, llama-server can be left running on its own.
+Setting PR_SET_PDEATHSIG on it would fix that and is on the list.
 
 When to warm it up is the question I'm least sure about. Two options:
 
@@ -39,8 +41,6 @@ import threading
 import time
 import urllib.error
 import urllib.request
-
-from .session import user_command
 
 # How long to wait for llama-server to load the model. Generous because the
 # first load after boot reads the GGUF from disk cold.
@@ -76,14 +76,12 @@ class Brain:
             if self._process and self._process.poll() is None:
                 return
             self._ready.clear()
-            command, env = user_command([
-                self.server, "--model", self.model,
-                "--host", "127.0.0.1", "--port", str(self.port),
-                "--n-gpu-layers", str(self.gpu_layers), "--ctx-size", str(self.context),
-            ])
             self._process = self._popen(
-                command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                stdin=subprocess.DEVNULL, env=env,
+                [self.server, "--model", self.model,
+                 "--host", "127.0.0.1", "--port", str(self.port),
+                 "--n-gpu-layers", str(self.gpu_layers), "--ctx-size", str(self.context)],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                stdin=subprocess.DEVNULL,
             )
         threading.Thread(target=self._wait_until_ready, name="gabecubeaura-voice-warm",
                          daemon=True).start()

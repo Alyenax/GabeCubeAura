@@ -31,7 +31,7 @@ class WakeWord:
         self._last_fired = -COOLDOWN_SECONDS
 
     def load(self):
-        """Load the model. Deferred until the loop starts so plugin start stays quick."""
+        """Load the model the first time a frame comes in, not at import."""
         if self._model is not None:
             return
         from openwakeword.model import Model

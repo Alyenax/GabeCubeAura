@@ -30,9 +30,25 @@ When a game starts it cancels whatever it's doing, lets go of the mic so it
 isn't fighting voice chat, and unloads the models. When the game ends it goes
 back to listening and reloads the models the next time someone talks to it.
 
-`main.py` builds it at start-up, stops it at unload and tells it when the game
-changes. If voice.json is missing, or any optional piece isn't installed, the
-plugin logs one line and the assistant stays off. Nothing else changes.
+None of that runs inside the plugin. Decky's loader is a frozen binary with
+Python 3.11 built in, SteamOS ships Python 3.13, and numpy or onnxruntime
+built for one won't import into the other. So the pipeline runs as its own
+process, `python -m signalbar.voice`, under a venv's Python, started as the
+logged-in user.
+
+The plugin side is `supervisor.py`, which only uses the standard library. It
+starts that process, sends it `{"game": true}` or `{"game": false}` as JSON
+lines on stdin, and reads lines like `{"state": "curious", "mood": "curious"}`
+back from stdout. Moods go to the faceplate, which lives in the plugin. If
+the voice process dies, the supervisor logs a line and starts it again after
+5 s, doubling up to 5 minutes. Its stderr goes to `voice.log` in the
+settings folder.
+
+`main.py` builds the supervisor at start-up, stops it at unload and tells it
+when the game changes. If voice.json is missing or the venv's Python isn't
+there, nothing starts. If the voice process finds a piece missing, it says
+so, the plugin logs one line, and it isn't started again. Nothing else in the
+plugin changes.
 
 ## Memory
 
@@ -66,9 +82,9 @@ under `/home/deck/voice` and nothing touches the system.
 2. Make a venv and install the Python bits:
    `python -m venv /home/deck/voice/venv`, then
    `/home/deck/voice/venv/bin/pip install openwakeword onnx-asr[cpu] numpy`.
-   The venv's Python has to match the one Decky runs the plugin with, or the
-   compiled packages won't import. I haven't checked which one that is, so
-   start here.
+   Any Python works, since the voice process runs under the venv's own and
+   never inside Decky. SteamOS's 3.13 is the obvious pick. If it won't make a
+   venv, a standalone Python in /home (uv can fetch one) does the same job.
 3. Run `openwakeword.utils.download_models()` once from the venv to fetch the
    stock wake word models.
 4. Grab the Vulkan Linux build of llama.cpp from its GitHub releases and
@@ -88,7 +104,7 @@ under `/home/deck/voice` and nothing touches the system.
 ```json
 {
   "enabled": true,
-  "python_path": ["/home/deck/voice/venv/lib/python3.11/site-packages"],
+  "python": "/home/deck/voice/venv/bin/python",
   "stt_path": "/home/deck/voice/models/parakeet-tdt-0.6b-v2"
 }
 ```
@@ -109,9 +125,13 @@ isn't built here.
 
 - Run any of it on a Steam Machine. Everything above is written against each
   project's docs.
-- Find out whether the plugin's Python can load a venv's packages. If it
-  can't, the pipeline probably wants to run as its own process under the
-  venv's Python, talking to the plugin over a socket.
+- Check the voice process really starts as the logged-in user through
+  runuser, and that it can see the mic from there.
+- If the voice process crashes, llama-server can be left running. Setting
+  PR_SET_PDEATHSIG on it would tie the two together.
+- See how much memory the paused voice process still holds during a game. If
+  it's more than expected, stop the process on game start instead of pausing
+  it.
 - Add a `show_gif(path)` call to the faceplate service (PR #4) so `face.py`
   has something to call. Until then the face does nothing.
 - Make the mood GIFs and train a real "hey Gabe" model.

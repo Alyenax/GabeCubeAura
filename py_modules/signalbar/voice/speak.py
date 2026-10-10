@@ -18,8 +18,6 @@ import os
 import subprocess
 import tempfile
 
-from .session import user_command
-
 
 class Voice:
     def __init__(self, binary, voice, run=subprocess.run):
@@ -32,18 +30,15 @@ class Voice:
             return
         handle, wav = tempfile.mkstemp(prefix="gabecubeaura-voice-", suffix=".wav")
         os.close(handle)
-        # The user's pw-play has to be able to read a file root wrote.
-        os.chmod(wav, 0o644)
         try:
             self._run([self.binary, "--model", self.voice, "--output_file", wav],
                       input=text.encode("utf-8"), stdout=subprocess.DEVNULL,
                       stderr=subprocess.DEVNULL, timeout=30, check=True)
             if cancel.is_set():
                 return
-            command, env = user_command(["pw-play", wav])
             # A game starting mid-sentence doesn't cut this off yet. Using
             # Popen and killing it on cancel would.
-            self._run(command, env=env, stdout=subprocess.DEVNULL,
+            self._run(["pw-play", wav], stdout=subprocess.DEVNULL,
                       stderr=subprocess.DEVNULL, timeout=60, check=False)
         finally:
             try:

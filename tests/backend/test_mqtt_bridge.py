@@ -5,15 +5,22 @@ import os
 import tempfile
 import threading
 import unittest
+from unittest import mock
 
 from mqtt_fake_broker import FakeClient
+from signalbar.mqtt.advertised import AdvertisedTopics
 from signalbar.mqtt.bridge import MqttBridge
 from signalbar.mqtt.config import MqttConfig
+from signalbar.mqtt.schema import build_schema
+from signalbar.settings import SettingsStore
+from signalbar.settings import store as store_module
 
 ROOT = "gabecubeaura/steammachine"
 AVAILABILITY = f"{ROOT}/availability"
 STATUS = f"{ROOT}/state/status"
 LIGHT_BAR = f"{ROOT}/state/light_bar"
+SETTINGS = f"{ROOT}/state/settings"
+NOTE = f"{ROOT}/attributes/display_preset_note"
 
 
 class FakeEngine:
@@ -42,34 +49,46 @@ class BridgeTestCase(unittest.TestCase):
         FakeClient.instances.clear()
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
-        self.config = MqttConfig(os.path.join(self.tmp.name, "mqtt"))
+        self.mqtt_dir = os.path.join(self.tmp.name, "mqtt")
+        self.config = MqttConfig(self.mqtt_dir)
+        self.store = SettingsStore(os.path.join(self.tmp.name, "config.json"))
         self.engine = FakeEngine()
         self.now = [100.0]
+        self.applied = []
         self.bridge = self.make_bridge()
 
-    def make_bridge(self, client_factory=FakeClient, run_thread=False):
+    def make_bridge(self, client_factory=FakeClient, schema=None, run_thread=False):
+        # A fresh AdvertisedTopics on the same directory, as after a restart.
         bridge = MqttBridge(self.config, self.engine, lambda: None, lambda: {"phase": "idle"},
                             hostname="steammachine", client_factory=client_factory,
                             clock=lambda: self.now[0], wall=lambda: 1_760_000_000.0 + self.now[0],
-                            run_thread=run_thread)
+                            run_thread=run_thread, read_settings=self.store.all, apply_setting=self.apply,
+                            schema=schema, advertised=AdvertisedTopics(self.mqtt_dir))
         self.addCleanup(bridge.stop)
         return bridge
 
-    def connect(self):
-        self.config.update({"enabled": True, "host": "192.0.2.10", "username": "gca"}, password="pw")
-        self.bridge.start()
-        self.bridge.client.go_online()
-        self.bridge.step()
-        return self.bridge.client
+    def apply(self, key, value):
+        # Stands in for main.py's set_setting: the same store call the UI makes.
+        self.applied.append((key, value))
+        self.store.update({key: value})
 
-    def online(self):
-        client = self.connect()
+    def connect(self, level="settings", bridge=None):
+        bridge = bridge or self.bridge
+        self.config.update({"enabled": True, "host": "192.0.2.10", "username": "gca", "light_bar_level": level},
+                           password="pw")
+        bridge.start()
+        bridge.client.go_online()
+        bridge.step()
+        return bridge.client
+
+    def online(self, level="report"):
+        client = self.connect(level)
         client.published.clear()
         return client
 
-    def settle(self, seconds=1.1):
+    def settle(self, seconds=1.1, bridge=None):
         self.now[0] += seconds
-        self.bridge.step()
+        (bridge or self.bridge).step()
 
     @staticmethod
     def last(client, topic):
@@ -82,7 +101,7 @@ class BridgeTestCase(unittest.TestCase):
 
 class PublishingTests(BridgeTestCase):
     def test_connect_publishes_retained_discovery_availability_and_state_without_private_values(self):
-        client = self.connect()
+        client = self.connect("report")
         self.assertEqual(client.kwargs["will"], (AVAILABILITY, "offline", True))
         self.assertEqual(client.payloads(AVAILABILITY), ["online"])
         self.assertIn(f"{ROOT}/state/game", self.topics(client))
@@ -177,6 +196,184 @@ class WorkerTests(BridgeTestCase):
         bridge.stop()  # the join times out with the worker stuck in publish
         release.set()
         self.assertEqual(self.workers(0), 0)
+
+
+class SettingsEntityTests(BridgeTestCase):
+    def setUp(self):
+        super().setUp()
+        self.controls = self.bridge.schema.controls
+        self.everything = {self.config_topic(c) for c in self.controls.values()} | {SETTINGS, NOTE}
+
+    @staticmethod
+    def config_topic(control):
+        return f"homeassistant/{control.component}/gabecubeaura_steammachine_setting_{control.key}/config"
+
+    def on_disk(self):
+        return AdvertisedTopics(self.mqtt_dir).topics()
+
+    @staticmethod
+    def empties(client):
+        return sorted(t for t, p, _ in client.published if p == "")
+
+    def test_the_settings_level_describes_every_control_once_then_the_state(self):
+        client = self.connect()
+        for _ in range(3):
+            self.settle()
+        topics = self.topics(client)
+        for topic in self.everything - {SETTINGS}:
+            self.assertEqual(topics.count(topic), 1, topic)
+            self.assertLess(topics.index(topic), topics.index(SETTINGS))
+        state = self.last(client, SETTINGS)
+        self.assertEqual(set(state), set(self.controls) | store_module.LOCAL_ONLY_SETTINGS)
+        self.assertEqual(self.on_disk(), self.everything)
+
+    def test_dropping_to_report_only_clears_exactly_what_was_advertised_configs_first(self):
+        client = self.connect()
+        client.published.clear()
+        self.config.update({"light_bar_level": "report"})
+        self.bridge.step()
+        cleared = [t for t, p, _ in client.published if p == ""]
+        self.assertEqual((sorted(cleared), len(client.published)), (sorted(self.everything), len(self.everything)))
+        self.assertEqual(sorted(cleared[-2:]), sorted([SETTINGS, NOTE]))
+        self.assertEqual(self.on_disk(), frozenset())
+        client.published.clear()
+        client.receive("homeassistant/status", b"online")
+        self.bridge.step()
+        self.assertEqual(self.empties(client), [])
+
+    def test_a_start_at_report_only_clears_what_an_interrupted_earlier_run_left(self):
+        sent = []
+
+        class DropsAfterTen(FakeClient):
+            def publish(self, topic, payload, retain=False):
+                if payload == "":
+                    sent.append(topic)
+                    self.connected = len(sent) <= 10
+                return super().publish(topic, payload, retain)
+
+        first = self.make_bridge(DropsAfterTen)
+        self.connect("settings", first)
+        self.config.update({"light_bar_level": "report"})
+        first.step()
+        first.stop()
+        remaining = self.on_disk()
+        self.assertEqual(len(self.everything) - len(remaining), 10)
+        client = self.connect("report", self.make_bridge())
+        self.assertEqual(self.empties(client), sorted(remaining))
+        self.assertEqual(self.on_disk(), frozenset())
+
+
+class SettingsCommandTests(BridgeTestCase):
+    def send(self, client, key, payload, retain=False):
+        client.receive(f"{ROOT}/set/{key}", payload, retain)
+
+    def error(self):
+        return self.bridge.status()["command_error"]
+
+    def test_commands_apply_the_newest_value_once_a_second_per_setting(self):
+        client = self.connect()
+        for value in (10, 20, 30, 40):
+            self.send(client, "light_bar_day_brightness", str(value).encode())
+            self.settle(0.15)
+        self.send(client, "night_mode_brightness", b"20")
+        self.assertEqual(self.applied, [])
+        self.settle(0.5)
+        self.assertEqual(self.applied, [("light_bar_day_brightness", 40)])
+        self.settle()
+        self.settle()
+        self.assertEqual(self.applied, [("light_bar_day_brightness", 40), ("night_mode_brightness", 20)])
+        self.assertEqual(self.last(client, SETTINGS)["light_bar_day_brightness"], 40)
+
+    def test_resending_current_values_never_touches_the_store_or_the_preset(self):
+        # Scenes resend what is already set, and the store counts each write as an edit.
+        preset = self.store.all()["display_preset"]
+        client = self.connect()
+        for control in self.bridge.schema.controls.values():
+            value = self.store.all()[control.key]
+            self.send(client, control.key, (b"ON" if value else b"OFF") if control.component == "switch"
+                      else str(value).encode())
+        self.settle()
+        self.assertEqual((self.applied, self.error(), self.store.all()["display_preset"]), ([], "", preset))
+        self.send(client, "home_display", b"blackout")
+        self.settle()
+        self.assertEqual(self.store.all()["display_preset"], "custom")
+
+    def test_refusals_say_why_and_change_nothing(self):
+        cases = (
+            ("report", "home_display", b"blackout", "home_display: Light bar is set to Report only"),
+            ("settings", "weather_location", b"{}", "weather_location: not a setting Home Assistant can change"),
+            ("settings", "updates_channel", b"beta", "updates_channel: can only be changed on the Steam Machine"),
+            ("settings", "Home/../x", b"1", "(unreadable): not a setting Home Assistant can change"),
+            ("settings", "home_display", b"<b>nope</b>", "home_display: not one of the allowed options"),
+            ("settings", "light_bar_day_brightness", b"999", "light_bar_day_brightness: must be 1-255"),
+            ("settings", "signalbar_enabled", b"true", "signalbar_enabled: expected ON or OFF"),
+        )
+        client = self.connect()
+        for level, key, payload, expected in cases:
+            with self.subTest(key=key, payload=payload):
+                self.config.update({"light_bar_level": level})
+                self.send(client, key, payload)
+                self.settle()
+                self.assertEqual(self.last(client, f"{ROOT}/state/bridge")["last_error"], expected)
+        self.assertEqual(self.applied, [])
+
+    def test_local_only_settings_are_reported_but_never_advertised_or_applied(self):
+        # Plus two keys that would otherwise be controls, one of them preset-controlled.
+        local = store_module.LOCAL_ONLY_SETTINGS | {"home_display", "light_bar_day_brightness"}
+        bridge = self.make_bridge(schema=build_schema(local_only=local))
+        client = self.connect("settings", bridge)
+        state = self.last(client, SETTINGS)
+        for key in ("home_display", "light_bar_day_brightness", "updates_auto_check", "valve_ownership_policy"):
+            self.assertFalse(any(f"_setting_{key}/" in t for t in self.topics(client)), key)
+            self.assertEqual(state[key], self.store.all()[key], key)
+            for level in ("settings", "report"):
+                self.config.update({"light_bar_level": level})
+                self.send(client, key, b"OFF")
+                self.assertEqual(bridge.status()["command_error"], f"{key}: can only be changed on the Steam Machine")
+        self.assertEqual(self.applied, [])
+
+    def test_store_refusals_and_failures_are_reported_without_details(self):
+        client = self.connect()  # no weather city: the store refuses night mode
+        self.send(client, "night_mode_enabled", b"ON")
+        self.settle()
+        self.assertTrue(self.error().startswith("night_mode_enabled: Choose a city"))
+        self.assertIs(self.last(client, SETTINGS)["night_mode_enabled"], False)
+        self.bridge._apply_setting = mock.Mock(side_effect=OSError("/home/deck/private/file"))
+        self.send(client, "light_bar_day_brightness", b"41")
+        self.settle()
+        self.assertEqual(self.error(), "light_bar_day_brightness: not applied (OSError)")
+        self.bridge._read_settings = mock.Mock(side_effect=OSError("/home/deck/private/file"))
+        self.send(client, "light_bar_day_brightness", b"42")
+        self.settle()
+        self.assertEqual(self.error(), "light_bar_day_brightness: settings control is not available")
+
+    def test_nothing_applies_once_the_bridge_is_stopping(self):
+        client = self.connect()
+
+        def apply_then_stop(key, value):
+            self.apply(key, value)
+            self.bridge._stop_event.set()
+        self.bridge._apply_setting = apply_then_stop
+        self.send(client, "light_bar_day_brightness", b"40")
+        self.send(client, "weather_brightness", b"30")
+        self.settle()
+        self.assertEqual(len(self.applied), 1)
+
+    def test_a_worker_that_outlived_a_restart_obeys_its_own_stop(self):
+        # When stop()'s join times out, start() gives the new worker a fresh event.
+        client = self.connect()
+        own = threading.Event()
+
+        def apply_then_restart(key, value):
+            self.apply(key, value)
+            own.set()
+            self.bridge._stop_event = threading.Event()
+        self.bridge._apply_setting = apply_then_restart
+        self.send(client, "light_bar_day_brightness", b"40")
+        self.send(client, "weather_brightness", b"30")
+        self.now[0] += 1.1
+        self.bridge.step(own)
+        self.assertEqual(self.applied, [("light_bar_day_brightness", 40)])
 
 
 if __name__ == "__main__":

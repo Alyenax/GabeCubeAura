@@ -223,7 +223,9 @@ coordinates, tokens and error output). `policy.py` then decides which changed
 areas to publish, because Home Assistant's recorder stores every state change
 and every distinct attribute blob. By default: performance only when a load
 moves 5 points or a temperature 2 °C from the last value sent, and at most every
-30 seconds; countdown in whole minutes (remaining rounds up) at most every 60
+30 seconds, and after any policy reset (connect, Home Assistant restart, Turbo
+toggle) not before CPU load has a reading (it needs two samples; the wait is at
+most 10 s) so Home Assistant never records it as unknown at start; countdown in whole minutes (remaining rounds up) at most every 60
 seconds; session length in 5-minute steps; the flattened `status` area at most
 every 60 seconds; every other area on change, at most once a second. Thermal
 protection, countdown start, end, source and label, and game start, stop and
@@ -257,8 +259,52 @@ dropped rather than replayed. Thermal, ownership and countdown transitions are
 derived from snapshots. Key art is published as JPEG, PNG or WebP read from
 Steam's local artwork, at most 2 MB, and cleared when the game stops. The client
 never closes its socket from another thread; it reconnects with backoff, and
-both a reconnect and Home Assistant's birth message trigger a full republish. The
-bridge accepts no commands.
+both a reconnect and Home Assistant's birth message trigger a full republish.
+
+Each device has a level in `mqtt.json` (`light_bar_level`, `faceplate_level`:
+`report` or `settings`), set only on the Steam Machine and applied without
+reconnecting. `schema.py` builds the controllable settings from the settings
+store: bool keys become switches, keys with a `VALID_*` set (or an
+`EVENT_VARIANTS`/`CONTROLLER_VARIANTS` entry) become selects with exactly those
+options (narrowed by `OPTION_FILTERS` if the store ever accepts values the
+settings page does not offer; a test checks every option against `src/`),
+numbers come only from an override table whose ranges a test proves against
+`store._validate`. What only the Steam Machine itself may change is
+GabeCubeAura's decision, not the bridge's: `LOCAL_ONLY_SETTINGS` in
+`settings/store.py` (updates, the parental countdown, Valve ownership policy and
+guard timing, StripMine and TW3 SteamRGB integration, onboarding) is reported in
+`state/settings` but never controllable, at any level, and a store test fails
+when a new `updates_`, `stripmine_` or `tw3_` key is missing from it. A short
+deny list in `schema.py` (weather location, file paths, profiles, undo state,
+legacy and derived fields, anything private by name) is neither controllable nor
+reported. A test fails when a new settings key is not classified. At level
+`settings` the bridge publishes a switch, select or number per control and one
+retained `state/settings` JSON with their values (and the local-only ones),
+only when it changes. Every retained settings topic is first recorded in `advertised.json`
+next to `mqtt.json` (topic names only; only topics shaped like the bridge's own
+are ever loaded). When a level goes back to report only, or a start finds
+recorded topics the current levels do not want, the bridge clears exactly those
+with empty retained payloads (Home Assistant deletes the entities) and forgets
+each once it is sent; in that same pass the entity configs go first and the
+empty state and preset note after them, so Home Assistant never renders the
+entities against an empty state. With nothing recorded it sends nothing, and a clear cut
+short by a dropped connection finishes on the next connect. Commands arrive on
+`<root>/set/<key>`. Retained ones are ignored; unknown keys, local-only keys,
+keys outside the level and malformed values are refused on the client thread,
+with the reason in `state/bridge` `last_error` (the Last command error sensor)
+and one log warning per new reason.
+Coalescing is a throttle: a change is applied within a second; rapid changes to
+one setting collapse to the latest. The worker then reads the settings (refusing
+the command if it cannot), drops a value equal to the
+stored one (the store treats any write of a display-preset key as an edit and
+switches to Custom), calls `main.py`'s `_apply_setting_from_home_assistant`,
+which runs the UI's own `set_setting` on Decky's loop and waits at most 2 s
+(less than the bridge's 3 s stop join, so an unload cannot deadlock; a timed-out
+call is cancelled, never applied later), and reads the value back, reporting it
+when the store kept something else. When the refused setting itself later
+applies exactly, that clears `last_error` (and the settings page's Last refused change row). During unload the loop reference is dropped
+before the bridge stops, so no further Home Assistant change is applied. A
+command still waiting when the bridge stops or restarts is dropped.
 
 ## Runtime diagnostics
 

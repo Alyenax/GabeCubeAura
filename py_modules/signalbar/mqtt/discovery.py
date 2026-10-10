@@ -9,6 +9,10 @@ Contracts the bridge must honour:
   faceplate=True); a build or install without one never gets a permanently unavailable entity.
 - Every entity sets has_entity_name: names stay short ("CPU load") and Home Assistant prefixes the
   device name, so entity_ids are device-scoped.
+- Settings entities (switch, select, number) exist only while their level is "settings": the bridge
+  publishes setting_discovery() for them and, when the level goes back to report only, an empty
+  retained payload on exactly the config topics it advertised (Home Assistant then deletes the
+  entity). Their state is one retained JSON topic (state/settings); commands arrive on set/<key>.
 """
 
 from __future__ import annotations
@@ -66,12 +70,18 @@ class Topics:
         self.frontend = f"{self.root}/frontend"
         self.key_art_image = f"{self.root}/image/key_art"
         self.ha_status = f"{discovery_prefix}/status"
+        self.command_prefix = f"{self.root}/set/"
+        self.commands = f"{self.root}/set/+"  # one subscription for every setting command
+        self.preset_note = f"{self.root}/attributes/display_preset_note"
 
     def state(self, area):
         return f"{self.root}/state/{area}"
 
     def event(self, area):
         return f"{self.root}/event/{area}"
+
+    def command(self, key):
+        return f"{self.command_prefix}{key}"
 
 
 # (component, key, name, area, value template, extra discovery fields)
@@ -108,6 +118,11 @@ SENSORS = (
     ("sensor", "update", "Update", "update", "{{ value_json.phase }}", {"json_attributes_topic": "update"}),
     ("binary_sensor", "frontend_connected", "Decky frontend", "bridge",
      "{{ 'ON' if value_json.frontend_connected else 'OFF' }}", {"device_class": "connectivity", "entity_category": "diagnostic"}),
+    # Why Home Assistant's last command was refused or changed (Report only level, bad value, the store
+    # kept another value). Home Assistant's own "last changed" time says when.
+    ("sensor", "last_command_error", "Last command error", "bridge",
+     "{{ value_json.last_error if value_json.last_error else 'None' }}",
+     {"entity_category": "diagnostic", "icon": "mdi:alert-circle-outline"}),
     # State and attributes come from the tiny "info" area, never the "status" area: that flattened blob
     # is hundreds of keys, and Home Assistant's recorder would store it anew on every change. "status"
     # stays an MQTT-only topic for automations and debugging. (Sharing light_bar with "Light bar owner"
@@ -173,6 +188,53 @@ def _sensor_message(topics, device, entry):
 def faceplate_discovery(topics, version, hostname):
     """The Faceplate sensor's discovery message alone, for when a faceplate service appears."""
     return _sensor_message(topics, _device(topics, version, hostname), FACEPLATE_SENSOR)
+
+
+# Retained once at preset_note; every preset-controlled setting entity takes it as attributes, so the
+# warning shows in Home Assistant's entity details. Static, so the recorder stores it once.
+PRESET_NOTE = {
+    "changes_display_preset": True,
+    "note": "Changing this from Home Assistant switches GabeCubeAura to the Custom display preset "
+            "(and drops the preset's undo), as changing it on the Steam Machine does.",
+}
+
+
+def _setting_unique_id(topics, control):
+    return f"gabecubeaura_{topics.node_id}_setting_{control.key}"
+
+
+def setting_discovery(topics, version, hostname, control):
+    """A switch, select or number for one controllable setting (schema.Control)."""
+    unique_id = _setting_unique_id(topics, control)
+    key = control.key
+    defined = f"value_json.{key} is defined and value_json.{key} is not none"
+    payload = {
+        "name": control.name,
+        "has_entity_name": True,
+        "unique_id": unique_id,
+        "command_topic": topics.command(key),
+        "state_topic": topics.state("settings"),
+        "entity_category": "config",
+        "device": _device(topics, version, hostname),
+        # Settings live in the backend: they stay controllable while the Decky frontend is down.
+        **_availability(topics, "settings"),
+    }
+    if control.component == "switch":
+        payload["payload_on"], payload["payload_off"] = "ON", "OFF"
+        payload["value_template"] = f"{{{{ ('ON' if value_json.{key} else 'OFF') if {defined} else 'None' }}}}"
+    elif control.component == "select":
+        payload["value_template"] = f"{{{{ value_json.{key} if {defined} else 'None' }}}}"
+        payload["options"] = list(control.options)
+    else:
+        payload["value_template"] = f"{{{{ value_json.{key} if {defined} else 'None' }}}}"
+        payload.update({"min": control.minimum, "max": control.maximum, "step": control.step})
+        if control.unit:
+            payload["unit_of_measurement"] = control.unit
+    if control.icon:
+        payload["icon"] = control.icon
+    if control.preset:
+        payload["json_attributes_topic"] = topics.preset_note
+    return (f"{topics.prefix}/{control.component}/{unique_id}/config", payload)
 
 
 def discovery_messages(topics, version, hostname, event_types, content_type=DEFAULT_KEY_ART_TYPE,

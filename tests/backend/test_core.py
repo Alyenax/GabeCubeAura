@@ -24,6 +24,7 @@ from signalbar.providers import (
 from signalbar.providers.artwork import artwork_vibrance
 from signalbar.renderer import Renderer
 from signalbar.settings import SettingsStore
+from signalbar.settings.store import DEFAULTS, LOCAL_ONLY_SETTINGS
 from signalbar.steam import find_library_artwork, get_library_artwork
 from signalbar.thermal import (
     THERMAL_SUSPENSION_MESSAGE,
@@ -867,6 +868,17 @@ class PersistenceTests(unittest.TestCase):
             self.assertEqual(status["countdown"]["source"], "free")
             self.assertEqual(status["free_timer_minutes"], 35)
             self.assertEqual(status["countdown"]["remaining_seconds"], 2100)
+
+    def test_local_only_settings_cover_every_integration_and_update_key(self):
+        # A new updates_, stripmine_ or tw3_ setting must join LOCAL_ONLY_SETTINGS,
+        # or this test must change on purpose.
+        self.assertIsInstance(LOCAL_ONLY_SETTINGS, frozenset)
+        self.assertEqual(sorted(LOCAL_ONLY_SETTINGS - set(DEFAULTS)), [])
+        prefixed = {key for key in DEFAULTS if key.startswith(("updates_", "stripmine_", "tw3_"))}
+        self.assertEqual(sorted(prefixed - LOCAL_ONLY_SETTINGS), [])
+        for key in ("parental_countdown_enabled", "valve_ownership_policy", "guard_cooldown_s",
+                    "guard_stable_s", "onboarding_completed"):
+            self.assertIn(key, LOCAL_ONLY_SETTINGS)
 
     def test_artwork_cache_round_trip(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -1,6 +1,7 @@
 """Decky backend entry point for GabeCubeAura."""
 
 import asyncio
+import concurrent.futures
 import os
 from pathlib import Path
 import shutil
@@ -13,6 +14,7 @@ sys.path.insert(0, os.path.join(PLUGIN_DIR, "py_modules"))
 
 from signalbar.backend import Engine  # noqa: E402
 from signalbar.mqtt import MqttBridge, MqttConfig  # noqa: E402
+from signalbar.mqtt.advertised import AdvertisedTopics  # noqa: E402
 from signalbar.mqtt.config import LIVE_KEYS as MQTT_LIVE_KEYS  # noqa: E402
 from signalbar.settings import SettingsStore  # noqa: E402
 from signalbar.settings.export import (  # noqa: E402
@@ -23,11 +25,17 @@ from signalbar.providers.weather import search_cities  # noqa: E402
 from signalbar import __version__  # noqa: E402
 from signalbar.updates import UpdateManager  # noqa: E402
 
+# How long the MQTT bridge waits for Decky's loop to apply a Home Assistant setting. Shorter than the
+# bridge's 3 s stop join: if _unload (on the loop) is joining the worker while the worker waits for the
+# loop, the wait times out first, the queued call is cancelled, and the unload carries on.
+HA_APPLY_TIMEOUT_S = 2.0
+
 
 class Plugin:
     # Set in _main; None until then (and in tests that build a bare Plugin).
     mqtt = None
     mqtt_config = None
+    _loop = None
 
     @staticmethod
     def _migrate_legacy_settings(settings_directory: str):
@@ -70,12 +78,19 @@ class Plugin:
         # Home Assistant is optional and last: a failure here must never stop
         # the light bar or the updater.
         try:
-            self.mqtt_config = MqttConfig(os.path.join(decky.DECKY_PLUGIN_RUNTIME_DIR, "mqtt"))
+            # Home Assistant setting changes run here, on Decky's loop, like the UI's (see set_setting).
+            self._loop = asyncio.get_running_loop()
+            mqtt_directory = os.path.join(decky.DECKY_PLUGIN_RUNTIME_DIR, "mqtt")
+            self.mqtt_config = MqttConfig(mqtt_directory)
             if self.mqtt_config.load_error:
                 decky.logger.warning(f"[GabeCubeAura] {self.mqtt_config.load_error}")
             self.mqtt = MqttBridge(
                 self.mqtt_config, self.engine, self._faceplate_status,
                 self.update_manager.status, decky.logger,
+                read_settings=self.engine.settings.all,
+                apply_setting=self._apply_setting_from_home_assistant,
+                # Which settings entities are on the broker, so a later Report only clears exactly those.
+                advertised=AdvertisedTopics(mqtt_directory),
             )
             self.mqtt.start()
         except Exception as error:  # noqa: BLE001
@@ -97,7 +112,28 @@ class Plugin:
             return None
         return faceplate.status()
 
+    def _apply_setting_from_home_assistant(self, key, value):
+        """Called on the MQTT bridge's worker thread. Runs the UI's own set_setting on Decky's loop (so
+        anything set_setting does, now or in a later build, happens for Home Assistant too) and waits.
+
+        Raises ValueError from the settings store, TimeoutError if the loop did not run it in time (the
+        queued call is cancelled first, so it can never apply later), RuntimeError without a loop.
+        """
+        loop = self._loop
+        if loop is None or loop.is_closed():
+            raise RuntimeError("Decky's event loop is not running")
+        future = asyncio.run_coroutine_threadsafe(self.set_setting(key, value), loop)
+        try:
+            future.result(timeout=HA_APPLY_TIMEOUT_S)
+        except concurrent.futures.TimeoutError:
+            if not future.cancel():
+                return future.result()  # it finished just as the wait ended: report its real outcome
+            raise TimeoutError("GabeCubeAura did not apply the change in time") from None
+
     def _stop_mqtt(self):
+        # Drop the loop first: a Home Assistant change still queued on the bridge worker then fails at once
+        # with RuntimeError instead of reaching set_setting while the plugin unloads.
+        self._loop = None
         if self.mqtt is not None:
             try:
                 self.mqtt.stop()

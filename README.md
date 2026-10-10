@@ -291,8 +291,27 @@ else as it changes. **Turbo mode**, in the same settings page, sends every
 change in real time, up to once a second. Only turn it on if you have a reason
 to and have set up Home Assistant's recorder for these sensors.
 
-This first version only reports; Home Assistant cannot change anything. MQTT
-is off until you turn it on, and the password is kept in its own file that
+By default Home Assistant only watches. To let it change settings, choose
+**Home Assistant controls settings** for the light bar under **What Home
+Assistant can do**, which appears once GabeCubeAura has connected to your
+broker. Home Assistant then gets a switch, list or number for each light bar
+setting this plugin can check strictly: the display preset, Home and in-game
+displays, brightness, Audio Sync, Screen Sync, Customization+, artwork, Light
+Events, controller alerts, countdown and weather looks. A change goes through
+the same checks as the settings page and is applied within a second; rapid
+changes (a slider being dragged) collapse to the latest. Changing a
+display setting from Home Assistant switches GabeCubeAura to the Custom preset,
+as changing it here does, and sending a value that is already set changes
+nothing. Updates, the playtime countdown, Valve ownership, and StripMine or TW3
+SteamRGB integration can only be changed on the Steam Machine (their values are
+still published with the other settings); your weather city is never sent at
+all. Back on **Report only**, the controls disappear from Home Assistant;
+if you never allowed control, nothing about settings is ever sent.
+When Home Assistant asks for something GabeCubeAura cannot do (a Weather display
+without a city, say), the **Last command error** sensor says why, until that
+setting is changed from Home Assistant successfully.
+
+MQTT is off until you turn it on, and the password is kept in its own file that
 configuration export never includes. Notification and achievement text is
 never sent, only the kind of event.
 
@@ -499,7 +518,7 @@ exported JSON or the artwork cache; both stop a running personal timer.
 - A userspace guard that yields when Steam or another process changes the bar
 - A CPU/GPU thermal interlock that yields completely to Valve at 94°C and only
   resumes after both coherent readings stay below 90°C for 30 seconds
-- Home Assistant support is off by default, connects only to the broker you enter, and never publishes your weather location, file paths or notification text.
+- Home Assistant support is off by default, connects only to the broker you enter, and never publishes your weather location, file paths or notification text. Home Assistant can change settings only after you allow it on the Steam Machine, and never updates, your location, the playtime countdown or plugin integrations.
 
 GabeCubeAura only restores a previous frame when the hardware still matches its
 own last verified write. Missing or incoherent sensor data during a thermal

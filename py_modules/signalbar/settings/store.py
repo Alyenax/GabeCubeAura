@@ -180,6 +180,33 @@ DEFAULTS = {
     "updates_channel": "stable",
 }
 
+# Settings that may only be changed on the Steam Machine itself, never by MQTT, Home Assistant or
+# anything else remote. Add a key here when a wrong value can lock up hardware, changes what software
+# installs, hands the light bar to another plugin, overrides a parental control, or needs someone
+# physically present to recover. Values are still reported.
+LOCAL_ONLY_SETTINGS = frozenset({
+    "updates_auto_check",
+    "updates_channel",
+    "updates_check_interval_minutes",
+    "updates_notifications",
+    "parental_countdown_enabled",
+    "valve_ownership_policy",
+    "guard_cooldown_s",
+    "guard_stable_s",
+    "stripmine_integration_enabled",
+    "stripmine_priority_artwork",
+    "stripmine_priority_audio_sync",
+    "stripmine_priority_controller",
+    "stripmine_priority_customization",
+    "stripmine_priority_game_launches",
+    "stripmine_priority_light_events",
+    "stripmine_priority_performance",
+    "stripmine_priority_screen_sync",
+    "stripmine_priority_weather",
+    "tw3_steamrgb_integration_enabled",
+    "onboarding_completed",
+})
+
 VALID_MODES = {"artwork", "performance", "customization", "screen_sync", "audio_sync", "blackout", "events", "disabled"}
 VALID_HOME_DISPLAYS = {"steam", "blackout", "customization", "performance", "audio_sync", "weather", "controller"}
 VALID_GAME_DISPLAYS = {"steam", "blackout", "customization", "artwork", "performance", "screen_sync", "audio_sync", "weather", "controller"}

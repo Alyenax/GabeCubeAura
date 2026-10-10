@@ -1,7 +1,8 @@
-import { ButtonItem, Field, PanelSection, PanelSectionRow, TextField, ToggleField } from "@decky/ui";
+import { ButtonItem, DropdownItem, Field, PanelSection, PanelSectionRow, TextField, ToggleField } from "@decky/ui";
 import { useEffect, useRef, useState } from "react";
 
 import { getMqttStatus, setMqttConfig, type MqttState } from "./api";
+import { LEVEL_OPTIONS, PRESET_NOTE, levelRows, type MqttLevel } from "./home_assistant_levels";
 
 const POLL_MS = 2000;
 
@@ -56,7 +57,9 @@ export function HomeAssistantPanel() {
   const statusLine = !config.enabled ? "Off"
     : status.connected ? "Connected"
     : status.last_error ? `Not connected: ${status.last_error}` : "Connecting...";
-  const ready = status.connected_with_current_settings;
+  // Hidden until connected with these broker settings, greyed while reconnecting; saved levels are
+  // never reset by hiding (they live in mqtt.json).
+  const rows = levelRows(status);
   const shownError = error || pollError || config.load_error;
 
   return <>
@@ -111,15 +114,26 @@ export function HomeAssistantPanel() {
       </PanelSectionRow>}
     </PanelSection>
 
-    {ready && <PanelSection title="What Home Assistant can do">
+    {rows.visible && <PanelSection title="What Home Assistant can do">
       <PanelSectionRow>
-        <Field label="Light bar" description={status.connected ? "Report only" : "Reconnecting..."} focusable={false} />
+        <DropdownItem label="Light bar" rgOptions={LEVEL_OPTIONS} selectedOption={config.light_bar_level}
+          disabled={rows.disabled} description={rows.note || undefined}
+          onChange={(option) => void save({ light_bar_level: option.data as MqttLevel }, null)} />
       </PanelSectionRow>
+      {rows.faceplate && <PanelSectionRow>
+        <DropdownItem label="Faceplate" rgOptions={LEVEL_OPTIONS} selectedOption={config.faceplate_level}
+          disabled={rows.disabled} description={rows.note || undefined}
+          onChange={(option) => void save({ faceplate_level: option.data as MqttLevel }, null)} />
+      </PanelSectionRow>}
       <PanelSectionRow>
         <div style={{ width: "100%", fontSize: ".78em", opacity: .75 }}>
-          Home Assistant sees everything here but cannot change anything yet.
+          Home Assistant always sees everything here. With "Home Assistant controls settings" it can also
+          change that device's settings, with the same checks as this page. {PRESET_NOTE}
         </div>
       </PanelSectionRow>
+      {status.command_error && <PanelSectionRow>
+        <Field label="Last refused change" description={status.command_error} focusable={false} />
+      </PanelSectionRow>}
       <PanelSectionRow>
         <ToggleField label="Turbo mode" checked={config.turbo}
           description={"By default GabeCubeAura sends updates often enough for automations and Home Assistant "

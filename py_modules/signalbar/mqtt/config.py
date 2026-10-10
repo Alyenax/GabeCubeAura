@@ -13,7 +13,9 @@ import os
 import re
 import threading
 
-LEVELS = ("report",)
+# What Home Assistant may do, per device (light bar, faceplate). Append new levels (Phase 3 adds
+# "drive"); never reorder or rename, because saved files hold these strings.
+LEVELS = ("report", "settings")
 DEFAULTS = {
     "enabled": False,
     "host": "",
@@ -28,8 +30,8 @@ DEFAULTS = {
     "turbo": False,
 }
 # Settings the running bridge picks up by itself; changing only these must not reconnect (which would
-# also hide the Home Assistant section until the new connection is up).
-LIVE_KEYS = frozenset({"turbo"})
+# also hide the Home Assistant section until the new connection is up). Levels apply on the next step.
+LIVE_KEYS = frozenset({"turbo", "light_bar_level", "faceplate_level"})
 # No brackets: "[::1]" is URL syntax, and the socket layer wants the bare IPv6 address ("::1").
 _HOST = re.compile(r"^[A-Za-z0-9.\-:]{1,253}$")
 _TEXT_KEYS = ("host", "username", "discovery_prefix", "base_topic")

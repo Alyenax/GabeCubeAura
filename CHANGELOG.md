@@ -9,6 +9,9 @@
   with discovery. Report only; off by default.
 - Send updates at rates that keep Home Assistant's database small without any
   recorder configuration; Turbo mode sends every change in real time.
+- Let Home Assistant change light bar settings when you choose "Home Assistant
+  controls settings"; display settings changed from Home Assistant switch to
+  the Custom preset, as they do on the device. Off (report only) by default.
 
 ## 1.4.0 - 2026-10-05
 

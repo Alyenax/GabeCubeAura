@@ -1,6 +1,7 @@
 import { callable } from "@decky/api";
 import type { ArtworkPayload, Status, UpdateLabResult, UpdateStatus, WeatherLocation, WeatherCondition } from "./types";
 import type { ControllerTelemetry } from "./controller_monitor";
+import type { MqttLevel } from "./home_assistant_levels";
 
 export const getStatus = callable<[], Status>("get_status");
 export const exportConfiguration = callable<[], ConfigurationExportResult>("export_configuration");
@@ -111,8 +112,8 @@ export interface MqttConfig {
   username: string;
   discovery_prefix: string;
   base_topic: string;
-  light_bar_level: "report";
-  faceplate_level: "report";
+  light_bar_level: MqttLevel;
+  faceplate_level: MqttLevel;
   // Off: recorder-friendly update rates. On: every change, up to once a second. Applies without reconnecting.
   turbo: boolean;
   has_password: boolean;
@@ -126,6 +127,11 @@ export interface MqttBridgeStatus {
   last_error: string;
   messages_out: number;
   events_dropped: number;
+  // True only in builds whose faceplate has settings Home Assistant could change.
+  faceplate_controls: boolean;
+  // Why Home Assistant's last command was refused or changed; "" if none since the plugin started
+  // or since that same setting later applied from Home Assistant.
+  command_error: string;
 }
 
 export interface MqttState {

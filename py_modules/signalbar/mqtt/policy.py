@@ -89,6 +89,10 @@ class PublishingPolicy:
             return self._performance_moved(payload, last_payload)
         return True
 
+    def sent(self, area) -> bool:
+        """Whether this area was published since the last reset()."""
+        return area in self._last
+
     def published(self, area, payload, text, now):
         """Record a successful publish; deadbands and intervals are measured from here."""
         self._last[area] = (text, payload, now)

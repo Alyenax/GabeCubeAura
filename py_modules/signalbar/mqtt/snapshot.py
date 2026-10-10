@@ -216,6 +216,9 @@ def build_snapshot(engine_status, faceplate_status, update_status, facts) -> dic
             "frontend_connected": bool(facts.get("frontend_connected", False)),
             "events_dropped": _number(facts.get("events_dropped", 0), int),
             "version": _get(s, "version"),
+            # Why Home Assistant's last command was refused (the Last command error sensor); "" if none,
+            # or once that same setting later applied from Home Assistant.
+            "last_error": str(facts.get("last_error") or "")[:MAX_STRING],
         },
         # The Status diagnostic sensor's own state and attributes: tiny, stable, no counters.
         "info": {

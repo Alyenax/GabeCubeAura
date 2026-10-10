@@ -2,6 +2,7 @@ import { callable } from "@decky/api";
 import type { ArtworkPayload, Status, UpdateLabResult, UpdateStatus, WeatherLocation, WeatherCondition } from "./types";
 import type { ControllerTelemetry } from "./controller_monitor";
 import type { MqttLevel } from "./home_assistant_levels";
+import type { ConnectionStatus } from "./home_assistant_status";
 
 export const getStatus = callable<[], Status>("get_status");
 export const exportConfiguration = callable<[], ConfigurationExportResult>("export_configuration");
@@ -120,7 +121,8 @@ export interface MqttConfig {
   load_error: string;
 }
 
-export interface MqttBridgeStatus {
+// phase, reason, retry_in_s, broker, username, topic_root: the step-by-step connection line.
+export interface MqttBridgeStatus extends ConnectionStatus {
   enabled: boolean;
   connected: boolean;
   connected_with_current_settings: boolean;

@@ -221,7 +221,26 @@ class MqttBridge:
 
     def status(self) -> dict:
         client = self.client
+        settings = self.config.public()
+        # The settings page's step-by-step line (home_assistant_status.ts). Off: no client running.
+        phase, reason, retry_in = "off", "", None
+        if client is not None:
+            if client.connected:
+                phase = "connected"
+            else:
+                reason = getattr(client, "last_reason", "") or ""
+                retry = getattr(client, "retry_in", None)
+                retry_in = retry() if callable(retry) else None
+                phase = "waiting_retry" if retry_in is not None else "connecting"
+        host = settings["host"] if client is not None else ""
         return {
+            "phase": phase,
+            "reason": reason[:ERROR_LIMIT],
+            "retry_in_s": None if retry_in is None else round(retry_in, 1),
+            # Typed by the user on that page; never the password.
+            "broker": (f"[{host}]:{settings['port']}" if ":" in host else f"{host}:{settings['port']}") if host else "",
+            "username": settings["username"] if client is not None else "",
+            "topic_root": self.topics.root if client is not None and self.topics else "",
             "enabled": bool(self.config.public()["enabled"]),
             "connected": bool(client and client.connected),
             "connected_with_current_settings": bool(

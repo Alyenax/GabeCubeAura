@@ -3,11 +3,15 @@ import { useEffect, useRef, useState } from "react";
 
 import { getMqttStatus, setMqttConfig, type MqttState } from "./api";
 import { LEVEL_OPTIONS, PRESET_NOTE, levelRows, type MqttLevel } from "./home_assistant_levels";
+import { connectionLine } from "./home_assistant_status";
 
 const POLL_MS = 2000;
 
 export function HomeAssistantPanel() {
-  const [state, setState] = useState<MqttState | null>(null);
+  // The arrival time is stored with the status, so the countdown never lags a render behind it.
+  const [received, setReceived] = useState<{ state: MqttState; at: number } | null>(null);
+  const state = received?.state ?? null;
+  const setState = (next: MqttState) => setReceived({ state: next, at: Date.now() });
   const [draft, setDraft] = useState({ host: "", port: "1883", username: "", prefix: "homeassistant" });
   const [password, setPassword] = useState("");
   // A failed save stays visible; a successful poll only clears its own error.
@@ -35,6 +39,15 @@ export function HomeAssistantPanel() {
     return () => { cancelled = true; window.clearInterval(timer); };
   }, []);
 
+  // A 1 s tick keeps "retrying in N s" live between polls; it runs only while that countdown is shown.
+  const [, setTick] = useState(0);
+  const waiting = state?.status.phase === "waiting_retry";
+  useEffect(() => {
+    if (!waiting) return undefined;
+    const timer = window.setInterval(() => setTick((tick) => tick + 1), 1000);
+    return () => window.clearInterval(timer);
+  }, [waiting]);
+
   const save = async (changes: Parameters<typeof setMqttConfig>[0], newPassword: string | null) => {
     try {
       setState(await setMqttConfig(changes, newPassword));
@@ -54,9 +67,7 @@ export function HomeAssistantPanel() {
 
   const { config, status } = state;
   const port = Number.parseInt(draft.port, 10);
-  const statusLine = !config.enabled ? "Off"
-    : status.connected ? "Connected"
-    : status.last_error ? `Not connected: ${status.last_error}` : "Connecting...";
+  const statusLine = connectionLine(config.enabled, status, (Date.now() - (received?.at ?? Date.now())) / 1000);
   // Hidden until connected with these broker settings, greyed while reconnecting; saved levels are
   // never reset by hiding (they live in mqtt.json).
   const rows = levelRows(status);

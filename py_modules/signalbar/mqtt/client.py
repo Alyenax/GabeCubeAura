@@ -22,6 +22,66 @@ class MqttError(Exception):
     pass
 
 
+class TlsHandshakeTimeout(TimeoutError):
+    """TCP connected but the TLS handshake did not finish in time (still a TimeoutError)."""
+
+
+class ConnackError(MqttError):
+    """The broker answered CONNECT with a refusal (MQTT 3.1.1 return codes 1-5)."""
+
+    def __init__(self, code):
+        super().__init__(packets.CONNACK_ERRORS.get(code, f"connection refused ({code})"))
+        self.code = code
+
+
+# The settings page's words for each CONNACK refusal (last_error keeps packets.CONNACK_ERRORS' text).
+CONNACK_REASONS = {
+    1: "Bad protocol version",
+    2: "Broker rejected the client ID",
+    3: "Broker unavailable",
+    4: "Wrong username or password",
+    5: "Not authorised",
+}
+# What OpenSSL reports when the other end is not speaking TLS (plain MQTT on a TLS client, or the reverse).
+_TLS_MISMATCH_REASONS = {"UNEXPECTED_EOF_WHILE_READING", "WRONG_VERSION_NUMBER", "HTTP_REQUEST", "UNKNOWN_PROTOCOL",
+                         "RECORD_LAYER_FAILURE"}
+_MQTT_REASONS = {
+    "broker closed the connection": "Broker closed the connection",
+    "no answer from broker": "Broker did not answer (timed out)",
+    "keepalive timeout: broker stopped answering": "Broker stopped answering",
+}
+
+
+def describe_error(error, host, port) -> str:
+    """Why a connection attempt failed, in plain English, for the settings page. Host and port are
+    what the user typed there; no error raised here can carry the password."""
+    where = f"[{host}]:{port}" if ":" in str(host) else f"{host}:{port}"
+    if isinstance(error, ConnackError):
+        return CONNACK_REASONS.get(error.code, f"Broker refused the connection (code {error.code})")
+    if isinstance(error, ssl.SSLError):  # before OSError: SSLError is one
+        if not isinstance(error, ssl.SSLCertVerificationError) and (
+                isinstance(error, ssl.SSLEOFError) or getattr(error, "reason", None) in _TLS_MISMATCH_REASONS):
+            return "TLS mismatch: check the port and the TLS switch"
+        detail = getattr(error, "verify_message", None) or getattr(error, "reason", None) or type(error).__name__
+        return f"TLS failed: {str(detail)[:80]}"
+    if isinstance(error, socket.gaierror):
+        return "Broker name not found"
+    if isinstance(error, ConnectionRefusedError):
+        return f"Nothing listening at {where}"
+    if isinstance(error, TlsHandshakeTimeout):
+        return "Broker did not finish the TLS handshake (timed out)"
+    if isinstance(error, (socket.timeout, TimeoutError)):
+        return "Broker not reachable (timed out)"
+    if isinstance(error, packets.PacketError):
+        return "Broker sent something that is not MQTT"
+    if isinstance(error, MqttError):
+        text = str(error)
+        return _MQTT_REASONS.get(text) or (text[:1].upper() + text[1:80] if text else "MQTT error")
+    if isinstance(error, OSError):
+        return f"Network error: {(error.strerror or type(error).__name__)[:80]}"
+    return type(error).__name__
+
+
 def _tls_context():
     # Decky's bundled OpenSSL may not find SteamOS's roots; add them explicitly,
     # never disabling verification (same reasoning as providers/weather.py).
@@ -56,6 +116,12 @@ class MqttClient:
         self.connected = False
         self.connected_once = False
         self.last_error = ""
+        # For the settings page: the phase ("idle" before start, "connecting", "connected",
+        # "waiting_retry", "stopped"), why the last attempt failed in plain English ("" once connected),
+        # and when the next attempt starts while waiting (see retry_in).
+        self.phase = "idle"
+        self.last_reason = ""
+        self._retry_at = None
         self.messages_out = 0
 
     # ---- public API ----------------------------------------------------
@@ -79,6 +145,11 @@ class MqttClient:
         thread = self._thread
         if thread and thread.is_alive() and thread is not threading.current_thread():
             thread.join(timeout=3.0)
+
+    def retry_in(self):
+        """Seconds until the next connection attempt while waiting after a failure, else None."""
+        at = self._retry_at
+        return None if at is None else max(0.0, at - time.monotonic())
 
     def subscribe(self, topic):
         if topic not in self._topics:
@@ -105,22 +176,33 @@ class MqttClient:
     def _run(self):
         delay = self._backoff[0]
         while not self._stop.is_set():
+            self.phase = "connecting"
             try:
                 self._session()
                 delay = self._backoff[0]
             except (OSError, ssl.SSLError, packets.PacketError, MqttError) as error:
                 if not self._stop.is_set():
                     self.last_error = str(error) or type(error).__name__
+                    self.last_reason = describe_error(error, self.host, self.port)
             except Exception as error:  # noqa: BLE001 - nothing may end the connection thread
                 if not self._stop.is_set():
                     self.last_error = f"{type(error).__name__}: {error}"
+                    self.last_reason = describe_error(error, self.host, self.port)
                     if self.log:
                         self.log.warning(f"[GabeCubeAura] MQTT loop error: {self.last_error}")
             finally:
                 self._close()
-            if self._stop.wait(delay):
+            if self._stop.is_set():
+                break
+            self._retry_at = time.monotonic() + delay
+            self.phase = "waiting_retry"
+            stopped = self._stop.wait(delay)
+            self._retry_at = None
+            if stopped:
                 break
             delay = min(delay * 2, self._backoff[1])
+        self._retry_at = None
+        self.phase = "stopped"
 
     def _session(self):
         sock = socket.create_connection((self.host, self.port), timeout=self._connect_timeout)
@@ -128,7 +210,11 @@ class MqttClient:
             sock.close()
             raise MqttError("stopped")
         if self._tls:
-            sock = _tls_context().wrap_socket(sock, server_hostname=self.host)
+            try:
+                sock = _tls_context().wrap_socket(sock, server_hostname=self.host)
+            except (socket.timeout, TimeoutError) as error:
+                sock.close()
+                raise TlsHandshakeTimeout(str(error)) from error
         sock.settimeout(self._connect_timeout)
         self._sock = sock
         reader = packets.Reader()
@@ -149,12 +235,13 @@ class MqttClient:
             if found:
                 code = found[0][2][1] if len(found[0][2]) > 1 else 3
                 if code:
-                    raise MqttError(packets.CONNACK_ERRORS.get(code, f"connection refused ({code})"))
+                    raise ConnackError(code)
                 break
         if self._stop.is_set():
             raise MqttError("stopped")
         self.connected = True
         self.connected_once = True
+        self.phase, self.last_reason = "connected", ""
         # last_error is deliberately kept across a successful reconnect: it records why the
         # previous connection ended; callers read it only while `connected` is False.
         if self._topics:

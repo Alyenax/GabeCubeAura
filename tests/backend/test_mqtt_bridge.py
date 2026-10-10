@@ -161,6 +161,24 @@ class PublishingTests(BridgeTestCase):
         configs = [json.loads(p) for t, p, _ in client.published if t.startswith("homeassistant/event/")]
         self.assertTrue(any("did_thing" in c["event_types"] for c in configs))
 
+    def test_the_connection_status_reads_plainly_and_never_holds_the_password(self):
+        def connection():
+            status = self.bridge.status()
+            return tuple(status[key] for key in ("phase", "reason", "retry_in_s", "broker"))
+
+        self.assertEqual(connection(), ("off", "", None, ""))
+        self.config.update({"enabled": True, "host": "fd00::5", "port": 8883}, password="secret-pw")
+        self.bridge.start()
+        client = self.bridge.client
+        self.assertEqual(connection(), ("connecting", "", None, "[fd00::5]:8883"))
+        client.last_reason, client.last_error, client.retry = "Wrong username or password", "bad password", 12.34
+        self.assertEqual(connection(), ("waiting_retry", "Wrong username or password", 12.3, "[fd00::5]:8883"))
+        self.assertEqual(self.bridge.status()["last_error"], "bad password")
+        self.assertNotIn("secret-pw", json.dumps(self.bridge.status()))
+        client.go_online()
+        self.assertEqual(connection()[:2], ("connected", ""))
+        self.assertEqual(self.bridge.status()["topic_root"], ROOT)
+
 
 class WorkerTests(BridgeTestCase):
     @staticmethod

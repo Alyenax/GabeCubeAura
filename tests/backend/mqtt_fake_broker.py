@@ -110,7 +110,7 @@ class FakeClient:
     def __init__(self, host, port, client_id, **kwargs):
         self.kwargs = kwargs
         self.connected = self.connected_once = self.stopped = False
-        self.last_error, self.messages_out = "", 0
+        self.last_error, self.last_reason, self.messages_out, self.retry = "", "", 0, None
         self.published, self.subscriptions = [], []
         FakeClient.instances.append(self)
 
@@ -127,6 +127,9 @@ class FakeClient:
         if self.connected:
             self.published.append((topic, payload, retain))
         return self.connected
+
+    def retry_in(self):
+        return self.retry
 
     def go_online(self):
         self.connected = self.connected_once = True

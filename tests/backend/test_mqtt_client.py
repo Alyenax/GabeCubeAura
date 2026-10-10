@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import socket
+import ssl
 import time
 import unittest
 
 from mqtt_fake_broker import FakeBroker
 from signalbar.mqtt import packets
-from signalbar.mqtt.client import MqttClient
+from signalbar.mqtt.client import ConnackError, MqttClient, MqttError, TlsHandshakeTimeout, describe_error
 
 
 class PacketTests(unittest.TestCase):
@@ -70,7 +72,7 @@ class ClientTests(unittest.TestCase):
         info = broker.connects[0]
         self.assertEqual((info["username"], info["will_topic"], info["will_message"], info["will_retain"]),
                          ("u", "gca/availability", "offline", True))
-        self.assertEqual((connected, client.connected_once), ([1], True))
+        self.assertEqual((connected, client.phase, client.last_reason), ([1], "connected", ""))
 
     def test_a_wrong_password_is_reported_and_retried(self):
         broker = FakeBroker(username="u", password="right")
@@ -79,6 +81,7 @@ class ClientTests(unittest.TestCase):
         self.assertTrue(broker.wait_for(lambda: len(broker.connects) >= 2))
         self.assertFalse(client.connected_once)
         self.assertEqual(client.last_error, "bad username or password")
+        self.assertEqual(client.last_reason, "Wrong username or password")
 
     def test_reconnects_and_subscribes_again_after_a_drop_or_garbage(self):
         broker = FakeBroker()
@@ -110,7 +113,7 @@ class ClientTests(unittest.TestCase):
         self.assertTrue(broker.wait_for(lambda: client.connected))
         client.stop()
         self.assertTrue(broker.wait_for(lambda: broker.disconnects == 1))
-        self.assertFalse(client.connected)
+        self.assertEqual(client.phase, "stopped")
         slow = FakeBroker(connack_delay=1.5)
         connected = []
         late = self.make(slow, on_connect=lambda: connected.append(1))
@@ -121,6 +124,66 @@ class ClientTests(unittest.TestCase):
         self.assertLess(time.monotonic() - started, 1.0)
         time.sleep(2.0)
         self.assertEqual((connected, late.connected), ([], False))
+
+    def test_a_refused_connection_waits_with_a_countdown(self):
+        probe = socket.socket()
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+        probe.close()
+        client = MqttClient("127.0.0.1", port, "gca-test", backoff=(2.0, 2.0))
+        self.addCleanup(client.stop)
+        self.assertIsNone(client.retry_in())
+        client.start()
+        deadline = time.monotonic() + 3
+        while client.retry_in() is None and time.monotonic() < deadline:
+            time.sleep(0.01)
+        self.assertEqual((client.phase, client.last_reason), ("waiting_retry", f"Nothing listening at 127.0.0.1:{port}"))
+        self.assertTrue(0 < client.retry_in() <= 2.0)
+        client.stop()
+        self.assertIsNone(client.retry_in())
+
+
+class DescribeErrorTests(unittest.TestCase):
+    def describe(self, error):
+        return describe_error(error, "broker.lan", 1883)
+
+    @staticmethod
+    def ssl_error(reason, cls=ssl.SSLError, **fields):
+        error = cls(1, f"[SSL: {reason}] failed")
+        error.reason = reason
+        for name, value in fields.items():
+            setattr(error, name, value)
+        return error
+
+    def test_every_way_a_connection_fails_has_a_plain_reason(self):
+        mismatch = "TLS mismatch: check the port and the TLS switch"
+        cases = [(ConnackError(code), text) for code, text in enumerate((
+            "Bad protocol version", "Broker rejected the client ID", "Broker unavailable",
+            "Wrong username or password", "Not authorised",
+            "Broker refused the connection (code 6)"), start=1)]
+        cases += [
+            (ConnectionRefusedError(111, "Connection refused"), "Nothing listening at broker.lan:1883"),
+            (socket.timeout("timed out"), "Broker not reachable (timed out)"),
+            (TlsHandshakeTimeout("timed out"), "Broker did not finish the TLS handshake (timed out)"),
+            (socket.gaierror(-2, "Name or service not known"), "Broker name not found"),
+            (OSError(113, "No route to host"), "Network error: No route to host"),
+            (ssl.SSLEOFError(8, "EOF occurred in violation of protocol"), mismatch),
+            (self.ssl_error("WRONG_VERSION_NUMBER"), mismatch),
+            (self.ssl_error("HTTP_REQUEST"), mismatch),
+            (self.ssl_error("SSLV3_ALERT_HANDSHAKE_FAILURE"), "TLS failed: SSLV3_ALERT_HANDSHAKE_FAILURE"),
+            (self.ssl_error("CERTIFICATE_VERIFY_FAILED", ssl.SSLCertVerificationError,
+                            verify_message="certificate has expired"), "TLS failed: certificate has expired"),
+            (MqttError("broker closed the connection"), "Broker closed the connection"),
+            (MqttError("keepalive timeout: broker stopped answering"), "Broker stopped answering"),
+            (packets.PacketError("bad length"), "Broker sent something that is not MQTT"),
+            (ValueError("x"), "ValueError"),
+        ]
+        for error, expected in cases:
+            with self.subTest(error=repr(error)):
+                self.assertEqual(self.describe(error), expected)
+        self.assertEqual(describe_error(ConnectionRefusedError(), "fd00::5", 8883), "Nothing listening at [fd00::5]:8883")
+        self.assertEqual(str(ConnackError(4)), "bad username or password")
+        self.assertLessEqual(len(self.describe(self.ssl_error("R" * 200))), 92)
 
 
 if __name__ == "__main__":

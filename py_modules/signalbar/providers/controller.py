@@ -700,6 +700,11 @@ class ControllerProvider:
                                          values=values, player=0)
             return ProviderOutput("controller-battery", frame, "controller battery gauge")
 
+    def roster(self):
+        """Copies of the current controllers (id, name, percent, level, charging)."""
+        with self._lock:
+            return [dict(item) for item in self._controllers.values()]
+
     def status(self, values, game_running=False):
         with self._lock:
             self._expire()

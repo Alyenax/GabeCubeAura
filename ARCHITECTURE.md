@@ -209,6 +209,57 @@ becomes constant pure red; circulation remains the sole animation until the
 final eight seconds. Then a three-white-flash pattern repeats until zero before
 the arbiter returns immediately to the unchanged base provider.
 
+## Home Assistant bridge
+
+`signalbar/mqtt` publishes GabeCubeAura to an MQTT broker with Home Assistant
+discovery. It is started last from `main.py` and stopped first. `client.py` is
+a small MQTT 3.1.1 client (QoS 0, keepalive, last will, reconnect with
+backoff); `config.py` keeps the connection and password in an owner-only file
+in the runtime directory, outside the settings store, so export, import and
+reset never touch it. `bridge.py` reads `Engine.status()` and the update
+status once a second into areas built by `snapshot.py` without private
+fields (keys are redacted by name fragment at any depth, such as paths,
+coordinates, tokens and error output). `policy.py` then decides which changed
+areas to publish, because Home Assistant's recorder stores every state change
+and every distinct attribute blob. By default: performance only when a load
+moves 5 points or a temperature 2 °C from the last value sent, and at most every
+30 seconds; countdown in whole minutes (remaining rounds up) at most every 60
+seconds; session length in 5-minute steps; the flattened `status` area at most
+every 60 seconds; every other area on change, at most once a second. Thermal
+protection, countdown start, end, source and label, and game start, stop and
+title bypass those limits. Throttling at the source keeps measurement sensors
+recorded (excluding them would lose long-term statistics), and no entity uses
+`force_update`, so an unchanged value costs nothing. Areas that entities take
+as attributes carry no counters or timestamps, because each distinct attribute
+blob is stored (a test guards this); the update check time (and a faceplate
+upload counter, if a faceplate service exists) go only to the `status` area.
+The `status` area is an MQTT-only topic that no entity takes as attributes; the Status sensor has its
+own tiny `info` area (version, enabled, frontend connected). The `turbo`
+setting, read on every step and applied without reconnecting, publishes every
+changed area once a second with minutes to 0.1. A full republish, and a Turbo
+switch in either direction, resets the policy and sends everything at once.
+
+`main.py` passes the bridge a faceplate status getter that returns `None` when
+the plugin has no `faceplate` service, which is always the case in this build.
+The `faceplate` area then reports `available: false` and discovery leaves the
+Faceplate sensor out, so Home Assistant never gets a permanently unavailable
+entity. If the getter starts returning status (a build with a faceplate
+service), the bridge publishes the sensor's discovery config once, before its
+first state.
+
+Engine facts reach it through `signalbar/hub.py`: Engine methods call
+`hub.emit("<area>.<event>", data)` (game, light events, controllers,
+downloads), the hub fans them out on its own thread and drops the oldest when a
+subscriber falls behind. A new emit kind becomes a Home Assistant event type
+automatically. Hub events are redacted the same way, and events older than 60
+seconds (queued while the broker was unreachable or the machine slept) are
+dropped rather than replayed. Thermal, ownership and countdown transitions are
+derived from snapshots. Key art is published as JPEG, PNG or WebP read from
+Steam's local artwork, at most 2 MB, and cleared when the game stops. The client
+never closes its socket from another thread; it reconnects with backoff, and
+both a reconnect and Home Assistant's birth message trigger a full republish. The
+bridge accepts no commands.
+
 ## Runtime diagnostics
 
 Frontend lifecycle milestones are reported to the backend without influencing

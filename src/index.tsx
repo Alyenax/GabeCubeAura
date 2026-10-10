@@ -18,6 +18,8 @@ import { definePlugin, openFilePicker, routerHook } from "@decky/api";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { TbCubeSpark } from "react-icons/tb";
 
+import { HomeAssistantPanel } from "./home_assistant";
+
 import {
   exportConfiguration,
   exportUpdateTestReport,
@@ -3225,6 +3227,7 @@ function GabeCubeAuraSettings() {
     { title: "Weather", route: "/gabecubeaura/settings/weather", content: <Content page="weather" /> },
     { title: "Screen Sync", route: "/gabecubeaura/settings/screen-sync", content: <Content page="screen-sync" /> },
     { title: "Audio Sync", route: "/gabecubeaura/settings/audio-sync", content: <Content page="audio-sync" /> },
+    { title: "Home Assistant", route: "/gabecubeaura/settings/home-assistant", content: <HomeAssistantPanel /> },
     { title: "Updates", route: "/gabecubeaura/settings/updates", content: <Content page="updates" /> },
     "separator",
     { title: "Advanced / debug", route: "/gabecubeaura/settings/advanced", content: <Content page="advanced" /> },

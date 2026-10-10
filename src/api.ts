@@ -102,3 +102,39 @@ export interface ControllerBatteryUpdate {
   level: number | null;
   charging: boolean | null;
 }
+
+export interface MqttConfig {
+  enabled: boolean;
+  host: string;
+  port: number;
+  tls: boolean;
+  username: string;
+  discovery_prefix: string;
+  base_topic: string;
+  light_bar_level: "report";
+  faceplate_level: "report";
+  // Off: recorder-friendly update rates. On: every change, up to once a second. Applies without reconnecting.
+  turbo: boolean;
+  has_password: boolean;
+  load_error: string;
+}
+
+export interface MqttBridgeStatus {
+  enabled: boolean;
+  connected: boolean;
+  connected_with_current_settings: boolean;
+  last_error: string;
+  messages_out: number;
+  events_dropped: number;
+}
+
+export interface MqttState {
+  config: MqttConfig;
+  status: MqttBridgeStatus;
+}
+
+export const getMqttStatus = callable<[], MqttState>("get_mqtt_status");
+// password: null keeps the saved one, "" clears it.
+export const setMqttConfig = callable<[changes: Partial<MqttConfig>, password: string | null], MqttState>(
+  "set_mqtt_config",
+);

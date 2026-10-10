@@ -12,6 +12,8 @@ PLUGIN_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(PLUGIN_DIR, "py_modules"))
 
 from signalbar.backend import Engine  # noqa: E402
+from signalbar.mqtt import MqttBridge, MqttConfig  # noqa: E402
+from signalbar.mqtt.config import LIVE_KEYS as MQTT_LIVE_KEYS  # noqa: E402
 from signalbar.settings import SettingsStore  # noqa: E402
 from signalbar.settings.export import (  # noqa: E402
     configuration_export_path, read_configuration_import, write_configuration_export,
@@ -23,6 +25,10 @@ from signalbar.updates import UpdateManager  # noqa: E402
 
 
 class Plugin:
+    # Set in _main; None until then (and in tests that build a bare Plugin).
+    mqtt = None
+    mqtt_config = None
+
     @staticmethod
     def _migrate_legacy_settings(settings_directory: str):
         """Copy legacy settings once when GabeCubeAura is installed as a new plugin."""
@@ -61,16 +67,53 @@ class Plugin:
             decky.logger,
         )
         self.update_manager.start()
+        # Home Assistant is optional and last: a failure here must never stop
+        # the light bar or the updater.
+        try:
+            self.mqtt_config = MqttConfig(os.path.join(decky.DECKY_PLUGIN_RUNTIME_DIR, "mqtt"))
+            if self.mqtt_config.load_error:
+                decky.logger.warning(f"[GabeCubeAura] {self.mqtt_config.load_error}")
+            self.mqtt = MqttBridge(
+                self.mqtt_config, self.engine, self._faceplate_status,
+                self.update_manager.status, decky.logger,
+            )
+            self.mqtt.start()
+        except Exception as error:  # noqa: BLE001
+            decky.logger.warning(f"[GabeCubeAura] Home Assistant support unavailable: {error}")
+            self.mqtt = None
         if migrated_from:
             decky.logger.info(f"[GabeCubeAura] imported legacy {migrated_from} settings")
         decky.logger.info("[GabeCubeAura] loaded")
 
+    def _faceplate_status(self):
+        """Faceplate status for Home Assistant, or None when there is no faceplate service.
+
+        This build has no faceplate support, so this returns None and Home
+        Assistant is not offered a Faceplate sensor. A build that adds a
+        ``faceplate`` service gets the sensor without changes here.
+        """
+        faceplate = getattr(self, "faceplate", None)
+        if faceplate is None:
+            return None
+        return faceplate.status()
+
+    def _stop_mqtt(self):
+        if self.mqtt is not None:
+            try:
+                self.mqtt.stop()
+            except Exception as error:  # noqa: BLE001 - shutting down regardless, but say so
+                # Type only: the message of a connection error can carry broker details.
+                decky.logger.warning(
+                    f"[GabeCubeAura] Home Assistant bridge did not stop cleanly: {type(error).__name__}")
+
     async def _unload(self):
+        self._stop_mqtt()
         self.update_manager.stop()
         self.engine.stop()
         decky.logger.info("[GabeCubeAura] unloaded; LED ownership released")
 
     async def _uninstall(self):
+        self._stop_mqtt()
         self.update_manager.stop()
         self.engine.stop()
 
@@ -135,6 +178,24 @@ class Plugin:
                            source: str = ""):
         self.engine.set_game(appid, title, launch, source)
         return self.engine.status()
+
+    def _require_mqtt(self):
+        if self.mqtt is None or self.mqtt_config is None:
+            raise RuntimeError("Home Assistant support is not running")
+
+    async def get_mqtt_status(self):
+        self._require_mqtt()
+        return {"config": self.mqtt_config.public(), "status": self.mqtt.status()}
+
+    async def set_mqtt_config(self, changes: dict, password: str = None):
+        self._require_mqtt()
+        config = self.mqtt_config.update(changes, password)
+        # Live settings (Turbo mode) apply on the bridge's next step; reconnecting for them would only
+        # hide the Home Assistant section until the new connection is up.
+        if password is not None or set(changes) - MQTT_LIVE_KEYS:
+            # Reconnecting can take a few seconds; keep Decky's event loop free.
+            await asyncio.get_running_loop().run_in_executor(None, self.mqtt.reconfigure)
+        return {"config": config, "status": self.mqtt.status()}
 
     async def get_artwork(self, appid: int = 0, source: str = "hero", purpose: str = "artwork"):
         result = get_library_artwork(appid, source)

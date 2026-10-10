@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### NEW FEATURE: Home Assistant
+
+- Publish the running game, key art, light bar state, events, controllers,
+  countdowns, performance and weather to Home Assistant over MQTT,
+  with discovery. Report only; off by default.
+- Send updates at rates that keep Home Assistant's database small without any
+  recorder configuration; Turbo mode sends every change in real time.
+
 ## 1.4.0 - 2026-10-05
 
 Stable release. Changes since 1.3.2:

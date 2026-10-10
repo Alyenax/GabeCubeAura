@@ -265,6 +265,37 @@ GabeCubeAura previews, alerts, Game launches and playtime countdowns remain
 above the game HUD. The former experimental Witcher Lab is not bundled with
 GabeCubeAura 1.4.0.
 
+### Home Assistant
+
+GabeCubeAura can publish its state to Home Assistant over MQTT. It needs an
+MQTT broker and Home Assistant's MQTT integration with discovery turned on
+(the default). Open **Home
+Assistant** in the detailed settings, enter your broker's address, username
+and password, and turn on **Connect to Home Assistant**. Home Assistant then
+finds a "GabeCubeAura" device by itself: the running game with its key art and
+session length, the light bar's owner, display and brightness, recording,
+downloads, controllers and their batteries, playtime countdowns, CPU and GPU
+load and temperature, thermal protection and weather. Game
+launches, achievements, screenshots, controller connections and thermal trips
+arrive as events for automations. Key art comes from the game's library hero
+image, including custom artwork you set for a game or non-Steam shortcut; it
+is sent as JPEG, PNG or WebP up to 2 MB.
+
+Home Assistant keeps every state change in its database, so by default
+GabeCubeAura sends what automations need rather than a live stream, and you
+never have to edit `configuration.yaml`: CPU and GPU load and temperature
+update when they move by 5 points or 2 °C, at most every 30 seconds (thermal
+protection at once); countdowns in whole minutes, at most once a minute
+(starting and ending at once); session length in 5-minute steps; everything
+else as it changes. **Turbo mode**, in the same settings page, sends every
+change in real time, up to once a second. Only turn it on if you have a reason
+to and have set up Home Assistant's recorder for these sensors.
+
+This first version only reports; Home Assistant cannot change anything. MQTT
+is off until you turn it on, and the password is kept in its own file that
+configuration export never includes. Notification and achievement text is
+never sent, only the kind of event.
+
 ## How priorities work
 
 GabeCubeAura follows a strict order:
@@ -468,6 +499,7 @@ exported JSON or the artwork cache; both stop a running personal timer.
 - A userspace guard that yields when Steam or another process changes the bar
 - A CPU/GPU thermal interlock that yields completely to Valve at 94°C and only
   resumes after both coherent readings stay below 90°C for 30 seconds
+- Home Assistant support is off by default, connects only to the broker you enter, and never publishes your weather location, file paths or notification text.
 
 GabeCubeAura only restores a previous frame when the hardware still matches its
 own last verified write. Missing or incoherent sensor data during a thermal

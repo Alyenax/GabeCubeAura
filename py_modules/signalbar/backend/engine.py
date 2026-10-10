@@ -15,6 +15,7 @@ from signalbar.activation import ScreenSyncActivation
 from signalbar.arbiter import Arbiter, VanillaGuard
 from signalbar.hardware import ValveLedHardware
 from signalbar.integration import LightEventLease, StripMineClaimReader, Tw3SteamRgbClaimReader
+from signalbar.hub import EventHub
 from signalbar.models import GameState, ProviderOutput
 from signalbar.providers import (
     ArtworkProvider, CountdownProvider, CustomizationProvider,
@@ -95,6 +96,11 @@ class Engine:
         self.events.set_variants(settings.all())
         self.controllers = ControllerProvider()
         self.weather = WeatherProvider()
+        # Engine facts for subscribers such as the MQTT bridge. New features
+        # call self.hub.emit("<area>.<event>", {...}) to publish themselves.
+        self.hub = EventHub(logger)
+        self._controllers_seen = False
+        self._download_reported = False
         initial = settings.all()
         self.launch_artwork.configure(
             initial["launch_artwork_animation_enabled"], initial["launch_artwork_pattern"],
@@ -173,6 +179,9 @@ class Engine:
             self._thread = threading.Thread(target=self._run, name="signalbar-engine", daemon=True)
             self._thread.start()
 
+    def subscribe(self, callback):
+        return self.hub.subscribe(callback)
+
     def stop(self):
         self._stop.set()
         self.weather.stop()
@@ -195,6 +204,7 @@ class Engine:
             self._owner = "Valve"
             self._decision = "none"
             self._decision_at = time.monotonic()
+        self.hub.stop()
 
     def set_game(self, appid=0, title="", launch=False, source=""):
         try:
@@ -203,6 +213,7 @@ class Engine:
             appid = 0
         with self._lock:
             previous_appid = self._game.appid
+            previous_title = self._game.title
             changed = appid != previous_appid
             self._game = GameState(appid, str(title or ""))
             if changed:
@@ -243,6 +254,14 @@ class Engine:
             # context into the new Home or in-game selection instead of
             # flashing through a cold fallback palette.
             self.audio_sync.stop(preserve_palette=True)
+        if changed:
+            if previous_appid:
+                self.hub.emit("game.stopped", {"appid": previous_appid, "title": previous_title})
+            if appid:
+                self.hub.emit("game.started", {
+                    "appid": appid, "title": str(title or ""),
+                    "non_steam": appid >= 2 ** 31, "launch": bool(launch),
+                })
 
     def prepare_artwork(self, appid, fingerprint, filename="", source="hero"):
         artwork_settings = self.settings.artwork_for(appid)
@@ -313,6 +332,9 @@ class Engine:
                 self._steam_active_until = 0.0
                 self._steam_reason = ""
             thermal_active = self.thermal_protection.active
+        if bool(active) != self._download_reported:
+            self._download_reported = bool(active)
+            self.hub.emit("steam.download", {"active": bool(active)})
         values = self.settings.all()
         policy = values["valve_ownership_policy"]
         return {
@@ -460,7 +482,17 @@ class Engine:
             self._display_preset_preview_until = now + max(3.0, min(20.0, float(seconds)))
         return True
 
+    LIGHT_EVENT_KINDS = frozenset({"notification", "achievement", "screenshot", "record-start", "record-stop"})
+
     def trigger_event(self, kind, preview=False, variant=""):
+        shown = self._trigger_event(kind, preview, variant)
+        if not preview and kind in self.LIGHT_EVENT_KINDS:
+            with self._lock:
+                appid = self._game.appid
+            self.hub.emit("light_event", {"kind": kind, "appid": appid, "shown": bool(shown)})
+        return shown
+
+    def _trigger_event(self, kind, preview=False, variant=""):
         values = self.settings.all()
         kind = str(kind or "")
         if not preview and kind in {"record-start", "record-stop"}:
@@ -496,6 +528,7 @@ class Engine:
         return self.events.trigger(kind, preview=bool(preview), variant=variant)
 
     def update_controllers(self, controllers, source="Steam callback"):
+        before = {item["id"]: item for item in self.controllers.roster()}
         values = self.settings.all()
         with self._lock:
             running = self._game.running
@@ -507,8 +540,25 @@ class Engine:
             values = {**values, "controller_alerts_enabled": False}
         if self.controllers.update(controllers, values, running) == "low":
             self.events.clear_transients()
+        after = {item["id"]: item for item in self.controllers.roster()}
+        if not self._controllers_seen:
+            # The first list is a baseline, not a burst of connections.
+            self._controllers_seen = True
+            return
+        for identifier in after.keys() - before.keys():
+            item = after[identifier]
+            self.hub.emit("controller.connected", {"id": identifier, "name": item["name"],
+                                                    "percent": item["percent"], "charging": item["charging"]})
+        for identifier in before.keys() - after.keys():
+            self.hub.emit("controller.disconnected", {"id": identifier, "name": before[identifier]["name"]})
+        for identifier in after.keys() & before.keys():
+            old, new = before[identifier]["charging"], after[identifier]["charging"]
+            if old is not None and new is not None and old != new:
+                self.hub.emit("controller.charging", {"id": identifier, "name": after[identifier]["name"],
+                                                       "charging": new})
 
     def reset_controllers(self):
+        self._controllers_seen = False
         self.controllers.clear()
         with self._lock:
             self._runtime_debug["controller_callback_source"] = "waiting"

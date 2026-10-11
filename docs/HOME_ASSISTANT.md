@@ -145,6 +145,12 @@ stop a game for a moment. If the same game comes back within those 30
 seconds, nothing is sent: the session, its start time and its length carry
 on. A different game replaces it at once.
 
+Session length counts only the time the Steam Machine is awake: sleep pauses
+a session, so a game left running overnight and played again in the morning
+shows the minutes actually played, while its start time stays when the
+session began. If Decky restarts while the same game is still running, the
+session carries on from where it was.
+
 Key art is the game's Library Hero, including custom artwork set for a game or
 non-Steam shortcut. A shortcut with no hero uses its custom header or cover
 instead. Header art, Cover art and Logo images come from Steam's local library
@@ -156,11 +162,12 @@ attributes also carry Steam's own addresses for all four.
 
 A value that does not apply makes its entity unavailable instead of showing
 something made up: Playtime remaining while no countdown runs, Light bar
-brightness while Steam has the light bar, and Weather until weather is set up
-and has a reading. Last command error reads "No error" when there is none.
-Weather, Update and Light bar display read as words, such as "Partly cloudy",
-"Up to date" and "Home Assistant". Their codes, such as `breaks` and
-`up_to_date`, stay in the entities' attributes for automations.
+brightness while Steam has the light bar, Weather until weather is set up and
+has a reading, and Update until the updater reports. Last command error reads
+"No error" when there is none. Weather, Update and Light bar display read as
+words, such as "Partly cloudy", "Up to date" and "Home Assistant". Their
+codes, such as `breaks` and `up_to_date`, stay in the entities' attributes for
+automations.
 
 Home Assistant records every state change, so GabeCubeAura limits what it
 sends and `configuration.yaml` never needs editing:
@@ -174,9 +181,11 @@ sends and `configuration.yaml` never needs editing:
   once, and a game stop after 30 seconds;
 - everything else as it changes, at most once a second.
 
-After a restart, a sleep or a lost connection, GabeCubeAura sends fresh values
-before the device shows as available again, so Home Assistant never shows the
-values from before for a moment.
+After a lost connection or a Home Assistant restart, GabeCubeAura sends fresh
+values before the device shows as available again, and events after it, so
+Home Assistant does not show the values from before for a moment. Right after
+GabeCubeAura itself starts, CPU load needs a few seconds for its first
+reading, so the four performance sensors can follow up to 10 seconds later.
 
 Some changes only say something once they last:
 

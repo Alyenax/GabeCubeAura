@@ -237,7 +237,12 @@ blob. By default it sends:
   Assistant restart, Turbo toggle) it waits up to 10 s for a CPU load reading,
   which needs two samples, rather than record it as unknown;
 - the countdown in whole minutes, rounded up, at most every 60 seconds;
-- session length in 5-minute steps;
+- session length in 5-minute steps, counted on the monotonic clock, which
+  stops during suspend, so sleep pauses a session. `session.py` records the
+  appid, wall start and awake seconds in `session.json` beside `mqtt.json`
+  (atomically, at most once a minute and at bridge stop); the first game a new
+  bridge reports carries on from it if the appid matches and the record is
+  under 10 minutes old, else starts from 0;
 - the flattened `status` area at most every 60 seconds;
 - every other area on change, at most once a second.
 
@@ -285,18 +290,33 @@ Steam's placeholder, is sent with no percent until the reading changes or
 100%. While the frontend is away the area is not sent, and for
 `ROSTER_SETTLE_S` = 10 s after it returns an empty roster is not either. A
 `connected` event for a controller listed more than 10 s earlier, without a
-`disconnected` since, is a roster that lapsed and is dropped. A reconnect and
-Home Assistant's birth message both trigger a full republish. It sends the
-retained state areas, the frontend flag, the settings and the light state
-first and `availability` `online` last, so Home Assistant never makes the
-entities available with the values the broker kept from before the outage.
+`disconnected` since, is a roster that lapsed and is dropped. Once the
+frontend has been back for 10 s, a controller missing from the roster is
+forgotten, so its next `connected` is published. A held roster keeps what the
+bridge knew about each controller. A reconnect and Home Assistant's birth
+message both trigger a full republish. It sends the retained state areas, the
+frontend flag, the settings and the light state first, then `availability`
+`online`, then every event, hub and derived alike, so Home Assistant does not
+make the entities available with the values the broker kept from before the
+outage. Performance can still follow up to 10 s later at a bridge start, while
+CPU load waits for its second sample.
+
+The stop hold is decided from the game state. When the state shows the same
+appid back before the hub delivers its `started`, the held `stopped` is dropped
+and that `started` is dropped when it arrives. A held stop whose publish fails
+is held again as already decided, so the same game launched before the retry
+is a new session. A settings save restarts the bridge and keeps the held stop
+and the controllers it knew; a real stop (MQTT turned off, an unload) forgets
+them, and a held stop older than `EVENT_MAX_AGE_S` plus the hold is dropped
+like a queued event.
 
 Key art is the hero image with the light bar's fallbacks, published as JPEG,
 PNG or WebP from Steam's local artwork, at most 2 MB. Header, capsule and logo
 images come from `steam.find_game_art`, which looks for one kind only (custom
 grid art first, then both library cache layouts), skips any file over 2 MB and
 never substitutes another kind. Each is sent once per game and run, not again
-on a reconnect, looked up again after 30 s when missing, and declares its
+on a reconnect (a bridge restart, such as a settings save that reconfigures
+it, sends them again), looked up again after 30 s when missing, and declares its
 content type first. When the game stops nothing is sent: an availability
 entry on the `game` area makes the image entities unavailable while no game
 runs. Their entities are Header art, Cover art and Logo. There is no icon,

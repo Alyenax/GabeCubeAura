@@ -140,7 +140,9 @@ SENSORS = (
      {"unit_of_measurement": "min", "device_class": "duration"}),
     ("sensor", "light_bar_owner", "Light bar owner", "light_bar", "{{ value_json.owner }}",
      {"json_attributes_topic": "light_bar"}),
-    ("sensor", "light_bar_display", "Light bar display", "light_bar", _labelled("display", DISPLAY_LABELS), {}),
+    # Its one attribute changes with the state, so it costs no extra rows.
+    ("sensor", "light_bar_display", "Light bar display", "light_bar", _labelled("display", DISPLAY_LABELS),
+     {"json_attributes_topic": "light_bar", "json_attributes_template": _picked(("display",))}),
     # Valve's own brightness is not known while it owns the bar.
     ("sensor", "light_bar_brightness", "Light bar brightness", "light_bar", _num("brightness"),
      {"state_class": "measurement", "applies": "value_json.brightness is not none"}),

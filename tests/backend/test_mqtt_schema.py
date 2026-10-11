@@ -155,6 +155,9 @@ class DiscoveryTests(unittest.TestCase):
             self.assertIn(f"'{word}'", template)
             for code in codes:
                 self.assertRegex(template, f"'{code}': '[A-Z][^'_]+'", suffix)
+        display = self.by_suffix("_light_bar_display")
+        self.assertEqual((display["json_attributes_topic"], display["json_attributes_template"]),
+                         (self.topics.state("light_bar"), "{{ {'display': value_json.display} | tojson }}"))
         snapshot = build_snapshot({"current_display": "artwork"}, None, {"phase": "up_to_date"}, {})
         self.assertEqual((snapshot["light_bar"]["display"], snapshot["update"]["phase"]), ("artwork", "up_to_date"))
 

@@ -54,6 +54,7 @@ class BridgeTestCase(unittest.TestCase):
         self.store = SettingsStore(os.path.join(self.tmp.name, "config.json"))
         self.engine = FakeEngine()
         self.now = [100.0]
+        self.asleep = 0.0  # wall time spent suspended, which the monotonic clock skips
         self.applied = []
         self.bridge = self.make_bridge()
 
@@ -61,7 +62,7 @@ class BridgeTestCase(unittest.TestCase):
         # A fresh AdvertisedTopics on the same directory, as after a restart.
         bridge = MqttBridge(self.config, self.engine, lambda: None, lambda: {"phase": "idle"},
                             hostname="steammachine", client_factory=client_factory,
-                            clock=lambda: self.now[0], wall=lambda: 1_760_000_000.0 + self.now[0],
+                            clock=lambda: self.now[0], wall=lambda: 1_760_000_000.0 + self.now[0] + self.asleep,
                             run_thread=run_thread, read_settings=self.store.all, apply_setting=self.apply,
                             schema=schema, advertised=AdvertisedTopics(self.mqtt_dir))
         self.addCleanup(bridge.stop)
@@ -125,6 +126,15 @@ class PublishingTests(BridgeTestCase):
             client.published.clear()
             client.go_online()
             self.bridge.step()
+        # Events, derived ones too, follow it, so they reach an available entity.
+        client.connected = False
+        self.engine.state["thermal_protection"] = {"active": True}
+        self.settle()
+        client.published.clear()
+        client.go_online()
+        self.bridge.step()
+        topics = self.topics(client)
+        self.assertLess(topics.index(AVAILABILITY), topics.index(f"{ROOT}/event/thermal"))
 
     def test_only_changed_areas_go_out_at_most_once_a_second_and_status_once_a_minute(self):
         client = self.online()
@@ -243,8 +253,86 @@ class GameTests(BridgeTestCase):
         self.assertEqual(self.game_events(client), ["started", "stopped", "started", "stopped", "started"])
 
 
+    def test_a_game_back_before_its_started_event_is_still_one_session(self):
+        # The engine changes its state first; the hub delivers the event later.
+        client = self.online()
+        self.play(570)
+        self.play(0)
+        self.engine.state["game"] = {"appid": 570, "title": "Dota 2"}
+        self.settle()
+        self.engine.emit("game.started", {"appid": 570, "title": "Dota 2"})
+        self.settle(40.0)
+        self.assertEqual(self.game_events(client), ["started"])
+
+    def test_a_held_stop_is_sent_later_if_it_could_not_be_and_never_after_a_restart(self):
+        client = self.online()
+        self.play(570)
+        self.play(0)
+        publish = client.publish
+        client.publish = lambda topic, payload, retain=False: (
+            not topic.endswith("/event/game") and publish(topic, payload, retain))
+        self.settle(30.0)
+        client.publish = publish
+        self.engine.state["game"] = {"appid": 570, "title": "Dota 2"}  # relaunched before the retry
+        self.settle()
+        self.engine.emit("game.started", {"appid": 570, "title": "Dota 2"})
+        self.settle()
+        self.assertEqual(self.game_events(client), ["started", "stopped", "started"])
+        self.play(0)
+        self.bridge.stop()
+        self.now[0] += 3600
+        self.assertEqual(self.game_events(self.connect(1)), [])
+
+
+    def test_sleep_pauses_the_session_and_a_restart_carries_it_on(self):
+        client = self.online()
+        self.play(570)
+        started = self.games(client)[-1]["started_at"]
+        for minutes, asleep in ((20, 8 * 3600.0), (30, 0.0)):
+            for _ in range(minutes):
+                self.settle(60.0)
+            self.asleep += asleep  # overnight: the wall clock jumps, the monotonic one does not
+        self.assertEqual((self.games(client)[-1]["started_at"], self.games(client)[-1]["session_minutes"]),
+                         (started, 50))
+        self.bridge.stop()
+        # A Decky restart: the monotonic clock starts afresh, the wall clock goes on.
+        for appid, damaged, carries_on in ((570, False, True), (730, False, False), (730, True, False)):
+            if damaged:
+                with open(os.path.join(self.mqtt_dir, "session.json"), "w") as handle:
+                    handle.write("{not json")
+            self.engine.state["game"] = {"appid": appid, "title": "Dota 2"}
+            self.now[0] -= 10_000.0
+            self.asleep += 10_005.0
+            bridge = self.make_bridge()
+            game = self.last(self.connect(1, bridge), f"{ROOT}/state/game")
+            self.assertEqual((game["started_at"] == started, game["session_minutes"]),
+                             (True, 50) if carries_on else (False, 0), appid)
+            bridge.stop()
+
+    def test_a_settings_save_during_the_hold_keeps_the_stop(self):
+        client = self.online()
+        self.play(570)
+        self.play(0, seconds=5)
+        self.bridge.reconfigure()  # every settings save does this
+        client = self.bridge.client
+        client.go_online()
+        for _ in range(40):
+            self.settle(1.0)
+        self.assertEqual(self.game_events(client), ["stopped"])
+
+
 class SettlingTests(BridgeTestCase):
     PAD = {"id": "steam:1", "name": "Controller", "percent": 74, "level": None, "charging": False}
+
+    def test_a_settings_save_keeps_a_full_controller_reading(self):
+        self.online()
+        self.roster(self.PAD)
+        self.roster({**self.PAD, "percent": 100})
+        self.bridge.reconfigure()
+        client = self.bridge.client
+        client.go_online()
+        self.roster({**self.PAD, "percent": 100})
+        self.assertEqual(self.sent(client), [(1, [100])])
 
     def roster(self, *pads, seconds=1.1):
         self.engine.state["controllers"] = {"controllers": [dict(pad) for pad in pads]}
@@ -288,6 +376,20 @@ class SettlingTests(BridgeTestCase):
         self.assertEqual([count for count, _ in self.sent(client)], [1, 2])
         events = [json.loads(p) for p in client.payloads(f"{ROOT}/event/controllers")]
         self.assertEqual([(e["id"], "percent" in e) for e in events], [("steam:2", False)])
+
+
+    def test_a_controller_switched_on_long_after_a_lapse_is_a_new_connection(self):
+        client = self.online()
+        self.roster(self.PAD)
+        self.engine.state["debug"]["frontend_heartbeat_age_s"] = 30.0  # switched off meanwhile
+        self.roster(seconds=15)
+        self.engine.state["debug"]["frontend_heartbeat_age_s"] = 1.0
+        self.roster(seconds=3)
+        self.roster(seconds=60)
+        self.engine.emit("controller.connected", {"id": "steam:1", "name": "Controller", "percent": 100})
+        self.roster({**self.PAD, "percent": 100})
+        self.assertEqual([json.loads(p)["id"] for p in client.payloads(f"{ROOT}/event/controllers")], ["steam:1"])
+        self.assertEqual(self.sent(client)[-1], (1, [None]))  # a new listing again
 
 
 class WorkerTests(BridgeTestCase):

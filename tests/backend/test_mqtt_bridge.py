@@ -13,6 +13,7 @@ from signalbar.mqtt.bridge import MqttBridge
 from signalbar.mqtt.config import MqttConfig
 from signalbar.mqtt.schema import build_schema
 from signalbar.mqtt.session import SessionRecord
+from signalbar.mqtt.sleep import SleepWatch
 from signalbar.settings import SettingsStore
 from signalbar.settings import store as store_module
 
@@ -210,15 +211,84 @@ class PublishingTests(BridgeTestCase):
         self.settle(1.0)
         self.assertEqual((getattr(client, "reconnects", 0), client.payloads(AVAILABILITY)), (1, ["online"]))
 
-    def test_a_wake_drops_what_was_queued_before_the_sleep(self):
+    def test_going_to_sleep_marks_the_device_offline_and_waking_or_shutting_down_does_not(self):
         client = self.online()
-        client.connected = False  # the socket died with the sleep; nothing goes out
+        missing = SleepWatch(self.bridge.on_sleep, command=["/nonexistent/gdbus"])
+        missing.start()  # no gdbus is no error
+        missing.stop()
+        seen = []
+        watch = SleepWatch(lambda sleeping: seen.append(sleeping) or self.bridge.on_sleep(sleeping))
+        for name, value in (("PrepareForSleep", "false"), ("PrepareForShutdown", "true"), ("PrepareForSleep", "true")):
+            watch.handle(f"/org/freedesktop/login1: org.freedesktop.login1.Manager.{name} ({value},)\n")
+        self.assertEqual((seen, client.payloads(AVAILABILITY)), ([False, True], ["offline"]))
+
+    def test_a_suspend_whose_end_was_missed_comes_back_online_after_two_minutes(self):
+        # Steam's delay lock can hold a suspend for longer than 30 s before it starts.
+        client = self.online()
+        self.bridge.on_sleep(True)
+        for _ in range(119):
+            self.settle(1.0)
+        self.assertEqual(client.payloads(AVAILABILITY), ["offline"])
+        self.settle(2.0)
+        self.assertEqual(client.payloads(AVAILABILITY), ["offline", "online"])
+
+    def test_a_settings_save_during_a_sleep_announcement_does_not_keep_the_device_offline(self):
+        self.online()
+        self.bridge.on_sleep(True)
+        self.bridge.reconfigure()  # the wake signal would go to the old watch
+        client = self.bridge.client
+        client.go_online()
+        self.bridge.step()
+        self.assertEqual(client.payloads(AVAILABILITY), ["online"])
+
+    def test_one_wake_makes_one_new_connection_and_drops_what_came_before_the_sleep(self):
+        client = self.online()
+        self.bridge.on_sleep(True)
+        client.receive("homeassistant/status", b"online")  # a republish: online and events wait
         self.engine.emit("light_event", {"kind": "achievement"})
         self.settle(1.0)
         self.asleep += 8 * 3600.0
+        self.settle(1.0)  # the step sees the jump first
+        self.bridge.on_sleep(False)
         self.settle(1.0)
         self.assertEqual((client.reconnects, client.payloads(AVAILABILITY), client.payloads(f"{ROOT}/event/light_events")),
-                         (1, ["online"], []))
+                         (1, ["offline", "online"], []))
+
+    def test_a_wake_signal_before_the_step_sees_the_jump_makes_one_new_connection(self):
+        client = self.online()
+        self.bridge.on_sleep(True)
+        self.settle(1.0)
+        self.engine.emit("light_event", {"kind": "achievement"})  # inside Steam's delay, before the sleep
+        self.asleep += 600.0
+        self.bridge.on_sleep(False)
+        self.settle(1.0)
+        self.assertEqual((client.reconnects, client.payloads(f"{ROOT}/event/light_events")), (1, []))
+
+    def test_a_sleep_announced_while_online_goes_out_leaves_the_device_offline(self):
+        client = self.online()
+        publish = client.publish
+
+        def racing(topic, payload, retain=False):
+            sent = publish(topic, payload, retain)
+            if (topic, payload) == (AVAILABILITY, "online") and not client.payloads(AVAILABILITY)[:-1]:
+                self.bridge._sleep_at = self.now[0]  # the watch thread, past on_sleep's own offline
+            return sent
+        client.publish = racing
+        client.receive("homeassistant/status", b"online")
+        self.settle(1.0)
+        self.assertEqual(client.payloads(AVAILABILITY), ["online", "offline"])
+
+    def test_a_short_sleep_comes_back_online_on_the_wake_and_never_before(self):
+        client = self.online()
+        self.bridge.on_sleep(True)
+        client.receive("homeassistant/status", b"online")  # a republish under way still stays offline
+        self.settle(1.0)
+        self.asleep += 15.0  # too short to be seen as a clock jump
+        self.settle(1.0)
+        self.assertEqual(client.payloads(AVAILABILITY), ["offline"])
+        self.bridge.on_sleep(False)  # with a new connection: 12 s asleep can still leave the socket stalled
+        self.settle(1.0)
+        self.assertEqual((client.payloads(AVAILABILITY), getattr(client, "reconnects", 0)), (["offline", "online"], 1))
 
     def test_a_start_never_shows_the_last_runs_performance_as_current(self):
         # CPU load needs two samples; until then the broker holds the last run's.
@@ -234,11 +304,19 @@ class PublishingTests(BridgeTestCase):
     def test_a_reading_from_before_a_sleep_is_never_shown_after_it(self):
         # The monotonic clock stands still in sleep, so a kept reading would look seconds old.
         performance = f"{ROOT}/state/performance"
-        client = self.online()
-        self.engine.state["performance"] = {"cpu_load": None}
-        self.asleep += 600.0
-        self.settle(1.0)
-        self.assertIsNone(self.last(client, performance)["cpu_load"])
+        for signalled in (True, False):  # or seen only as a clock jump
+            client = self.online()
+            self.engine.state["performance"] = {"cpu_load": None}
+            if signalled:
+                self.bridge.on_sleep(True)
+                self.bridge.on_sleep(False)
+            else:
+                self.asleep += 600.0
+            self.settle(1.0)
+            self.assertIsNone(self.last(client, performance)["cpu_load"])
+            self.engine.state["performance"] = {"cpu_load": 20}
+            self.bridge.stop()
+            self.bridge = self.make_bridge()
 
     def test_only_a_start_waits_for_performance(self):
         client = self.online()

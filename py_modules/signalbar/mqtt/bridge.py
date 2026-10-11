@@ -55,6 +55,7 @@ from .policy import PublishingPolicy
 from .routed import RoutedDisplays
 from .schema import DEVICES, build_schema
 from .session import Published, SessionRecord
+from .sleep import SleepWatch
 from .snapshot import _json_safe, build_snapshot, frontend_connected, is_redacted
 
 SNAPSHOT_INTERVAL_S = 1.0
@@ -95,6 +96,10 @@ FRONTEND_GRACE_S = 30.0
 # gap this much larger between steps means the machine slept, and its
 # connection may be dead without the socket knowing for up to a keepalive.
 SUSPEND_JUMP_S = 20.0
+# logind sends PrepareForSleep(false) once the sleep job ends, cancelled or
+# failed included, so this only covers a missed signal. Steam's delay lock
+# can hold a suspend for tens of seconds before it starts.
+SLEEP_CANCEL_S = 120.0
 # Notifications and downloads over Steam's bar hand it to GabeCubeAura and
 # back within 3-4 s; only an owner that lasts this long is an event.
 OWNER_SETTLE_S = 10.0
@@ -154,7 +159,8 @@ def _shown(value) -> str:
 class MqttBridge:
     def __init__(self, config, engine, faceplate_status, update_status, logger=None, hostname=None,
                  client_factory=MqttClient, clock=time.monotonic, wall=time.time, run_thread=True,
-                 read_settings=None, apply_setting=None, schema=None, advertised=None, routed=None):
+                 read_settings=None, apply_setting=None, schema=None, advertised=None, routed=None,
+                 sleep_watch=SleepWatch):
         self.config = config
         self._read_settings = read_settings
         self._apply_setting = apply_setting
@@ -188,6 +194,7 @@ class MqttBridge:
         self.log = logger
         self.hostname = hostname or socket.gethostname()
         self._client_factory = client_factory
+        self._sleep_watch_factory, self._sleep_watch = sleep_watch, None
         self._clock, self._wall = clock, wall
         self.client = None
         self._unsubscribe = None
@@ -203,6 +210,8 @@ class MqttBridge:
         self._readings = {}  # performance field -> (last value, when)
         self._last_snapshot_at = None
         self._last_clocks = None  # (monotonic, wall) at the last step
+        self._sleep_at = None  # (monotonic, wall) when a suspend was announced; online waits
+        self._slept_from = None  # monotonic time a sleep began, for the worker to drop older events
         self._connected_key = None
         self._event_types = {area: list(types) for area, types in BASE_EVENT_TYPES.items()}
         self._previous = {}
@@ -290,6 +299,7 @@ class MqttBridge:
             self._drive_light = None
             self._drive_alerts.clear()
             self._ha_offline = False
+            self._sleep_at = None  # its wake signal went to the old sleep watch
         self._unreachable_since = None
         if not self._resume_checked:
             # Not before: MQTT may be turned on hours after Decky loaded.
@@ -317,10 +327,16 @@ class MqttBridge:
             self._thread = threading.Thread(target=self._run, args=(self._stop_event,),
                                             name="gabecubeaura-mqtt-bridge", daemon=True)
             self._thread.start()
+            if self._sleep_watch_factory is not None:
+                self._sleep_watch = self._sleep_watch_factory(self.on_sleep, logger=self.log)
+                self._sleep_watch.start()
 
     def _stop(self, final=False):
         """Stop the client and worker; final for Decky stopping, not a settings save."""
         self._stop_event.set()
+        watch, self._sleep_watch = self._sleep_watch, None
+        if watch is not None:
+            watch.stop()
         thread = self._thread
         if thread and thread.is_alive() and thread is not threading.current_thread():
             thread.join(timeout=self.join_timeout_s)
@@ -417,6 +433,33 @@ class MqttBridge:
             self._needs_full = True
             self._connected_key = self._key
             self._ha_offline = False
+
+    def on_sleep(self, sleeping=True):
+        """Before a suspend show the device offline now, rather than when the will fires.
+
+        After it, or when it was cancelled, republish and come back online.
+        Waking from a real sleep also makes a new connection.
+        """
+        if not sleeping:
+            with self._lock:
+                announced, self._sleep_at = self._sleep_at, None
+                if announced is not None:
+                    self._last_clocks = None  # so the next step does not reconnect for the jump too
+                self._needs_full = self._needs_full or announced is not None  # a jump already republished
+                if announced is not None and (self._wall() - announced[1]) - (self._clock() - announced[0]) > 1.0:
+                    self._slept_from = self._clock()  # it slept: all that is queued is from before
+            # Unless a clock jump did: a sleep too short to see as one can still
+            # stall the socket (online took 19 s to arrive after a 12 s sleep).
+            reconnect = getattr(self.client, "reconnect", None)
+            if announced is not None and callable(reconnect):
+                reconnect()
+            return
+        with self._lock:
+            self._sleep_at = (self._clock(), self._wall())
+        self._readings = {}  # kept on the monotonic clock, which stands still in sleep
+        client, topics = self.client, self.topics
+        if client is not None and topics is not None and client.connected:
+            client.publish(topics.availability, "offline", retain=True)
 
     def _on_message(self, topic, payload, retain):
         topics = self.topics
@@ -661,7 +704,15 @@ class MqttBridge:
             # first reading; events wait with it.
             if not self._policy.sent("performance") and self._performance_held_at is not None:
                 return
+            if self._sleep_at is not None:
+                return  # offline was sent for a suspend; online waits until it is over
             client.publish(self.topics.availability, "online", retain=True)
+            if self._sleep_at is not None:
+                # Announced while online went out, perhaps after its offline.
+                # Not published under the lock: a slow send would stall the
+                # client thread's callbacks.
+                client.publish(self.topics.availability, "offline", retain=True)
+                return
             self._online_pending = False
             self._online_once = True
         # One that does not go out waits for the next step, until it ages.
@@ -676,25 +727,26 @@ class MqttBridge:
                 self._outbox.append(event)
 
     def _check_wake(self, client, now):
-        """After a suspend, make a new connection and a full republish.
-
-        Events from before the sleep are history by its end, and kept
-        readings, counted on the monotonic clock, would look seconds old.
-        """
+        """After a suspend, make a new connection and a full republish."""
         wall, last = self._wall(), self._last_clocks
         self._last_clocks = (now, wall)
-        if last is None or (wall - last[1]) - (now - last[0]) <= SUSPEND_JUMP_S:
-            return
+        jumped = last is not None and (wall - last[1]) - (now - last[0]) > SUSPEND_JUMP_S
         with self._lock:
-            self._needs_full = True
-            before = len(self._events) + len(self._outbox)
-            self._events = collections.deque((e for e in self._events if e[0] > last[0]), maxlen=128)
-            self._outbox = [event for event in self._outbox if event[0] > last[0]]
-            self._stale_dropped += before - len(self._events) - len(self._outbox)
-        self._readings = {}
-        reconnect = getattr(client, "reconnect", None)
-        if callable(reconnect):
-            reconnect()
+            if jumped:
+                self._sleep_at, self._needs_full, self._slept_from = None, True, last[0]
+            elif self._sleep_at is not None and now - self._sleep_at[0] > SLEEP_CANCEL_S:
+                self._sleep_at, self._needs_full = None, True
+            slept_from, self._slept_from = self._slept_from, None
+            if slept_from is not None:  # events from before a sleep are history by its end
+                before = len(self._events) + len(self._outbox)
+                self._events = collections.deque((e for e in self._events if e[0] > slept_from), maxlen=128)
+                self._outbox = [event for event in self._outbox if event[0] > slept_from]
+                self._stale_dropped += before - len(self._events) - len(self._outbox)
+        if jumped:
+            self._readings = {}
+            reconnect = getattr(client, "reconnect", None)
+            if callable(reconnect):
+                reconnect()
 
     def _held_stale(self, now) -> bool:
         """Whether the held stop is older than a queued event may be, counted from when it was due."""

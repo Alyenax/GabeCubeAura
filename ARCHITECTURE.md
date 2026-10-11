@@ -331,11 +331,14 @@ settled owner, and after a reboot, or with no record, the truth goes out at
 once and the frontend flag is off until the first heartbeat. The content
 types it keeps make a restart with the same game send the same discovery.
 
-The bridge is not told about a suspend: Home Assistant shows the old state
-until the broker's keepalive gives up and sends the last will, about 45 s
-later. A step whose wall clock ran more than `SUSPEND_JUMP_S` = 20 s ahead of
-the monotonic one is a wake: it makes a new connection and a full republish
-at once, as the old socket may be dead without knowing it.
+`sleep.py` runs `gdbus monitor --system` on logind, since no D-Bus library can
+be relied on. `PrepareForSleep(true)` publishes `availability` `offline`, and
+nothing publishes `online` until `PrepareForSleep(false)` (sent when the sleep
+job ends, cancelled included), a clock jump or `SLEEP_CANCEL_S` = 120 s.
+Without gdbus or a system bus it does nothing. A step whose wall clock ran
+more than `SUSPEND_JUMP_S` = 20 s ahead of the monotonic one, or the wake
+signal, makes a new connection and a full republish, as the old socket may be
+dead without knowing it.
 
 Key art is the hero image with the light bar's fallbacks, published as JPEG,
 PNG or WebP from Steam's local artwork, at most 2 MB. Header, capsule and logo

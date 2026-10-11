@@ -196,10 +196,9 @@ Home Assistant does not show the values from before for a moment. Right after
 GabeCubeAura itself starts, CPU load needs a few seconds for its first
 reading, so the device can take up to 10 seconds to show as available. Events
 older than a minute when the connection comes back are not sent, a game stop
-included. While the Steam Machine sleeps, Home Assistant keeps showing its
-last state until the broker's keepalive gives up on it, about 45 seconds
-later, and then shows the device as unavailable. When it wakes, GabeCubeAura
-connects again at once and sends fresh values.
+included. Just before the Steam Machine sleeps the device shows as
+unavailable, and when it wakes GabeCubeAura connects again and the device is
+available once more, also when the sleep is cancelled.
 
 Some changes only say something once they last:
 

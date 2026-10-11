@@ -37,9 +37,9 @@
 - Show each MQTT connection step on the Home Assistant page, with a plain
   reason and a retry countdown after a failure.
 - Ride out a Decky restart, a frontend reload, an outage and a sleep without
-  blips or stale values: the running game's session carries on, GabeCubeAura
-  connects afresh as soon as the Steam Machine wakes, and after a reboot
-  nothing from before is shown.
+  blips or stale values: the running game's session carries on, the device
+  goes unavailable just before the Steam Machine sleeps and connects afresh
+  when it wakes, and after a reboot nothing from before is shown.
 - Add Header, Cover and Logo images of the running game beside Key art, with
   Steam's addresses for all four.
 - Send every status field that is not private, capped at 400 values with short

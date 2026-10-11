@@ -24,6 +24,7 @@ from signalbar.providers import (
 from signalbar.providers.artwork import artwork_vibrance
 from signalbar.renderer import Renderer
 from signalbar.settings import SettingsStore
+from signalbar.settings.store import DEFAULTS, LOCAL_ONLY_SETTINGS
 from signalbar.steam import find_library_artwork, get_library_artwork
 from signalbar.thermal import (
     THERMAL_SUSPENSION_MESSAGE,
@@ -673,6 +674,34 @@ class PersistenceTests(unittest.TestCase):
             self.assertEqual(values["weather_display"], "home")
             self.assertIsNone(values["weather_location"])
 
+    def test_change_refused_for_a_missing_weather_city_leaves_settings_untouched(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = SettingsStore(str(Path(directory) / "config.json"))
+            store.update({"display_preset": "immersive-plus"})
+            before = store.all()
+            for change in ({"home_display": "weather"}, {"night_mode_enabled": True}):
+                with self.subTest(change=change):
+                    with self.assertRaisesRegex(ValueError, "Choose a city before enabling Weather"):
+                        store.update(change)
+                    self.assertEqual(store.all(), before)
+                    self.assertEqual(store.all()["display_preset"], "immersive-plus")
+
+    def test_change_that_cannot_be_saved_leaves_settings_untouched(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = SettingsStore(str(Path(directory) / "config.json"))
+            store.update({"display_preset": "immersive-plus"})
+            before = store.all()
+            for change in ({"light_bar_day_brightness": 40}, {"home_display": "blackout"},
+                           {"display_preset": "focus"}):
+                with self.subTest(change=change):
+                    with patch.object(store, "save", side_effect=OSError("disk full")):
+                        with self.assertRaises(OSError):
+                            store.update(change)
+                    self.assertEqual(store.all(), before)
+                    self.assertEqual(store.all()["display_preset"], "immersive-plus")
+            store.update({"light_bar_day_brightness": 40})
+            self.assertEqual(store.all()["light_bar_day_brightness"], 40)
+
     def test_blackout_and_ownership_values_are_validated(self):
         with tempfile.TemporaryDirectory() as directory:
             store = SettingsStore(str(Path(directory) / "config.json"))
@@ -839,6 +868,17 @@ class PersistenceTests(unittest.TestCase):
             self.assertEqual(status["countdown"]["source"], "free")
             self.assertEqual(status["free_timer_minutes"], 35)
             self.assertEqual(status["countdown"]["remaining_seconds"], 2100)
+
+    def test_local_only_settings_cover_every_integration_and_update_key(self):
+        # A new updates_, stripmine_ or tw3_ setting must join LOCAL_ONLY_SETTINGS,
+        # or this test must change on purpose.
+        self.assertIsInstance(LOCAL_ONLY_SETTINGS, frozenset)
+        self.assertEqual(sorted(LOCAL_ONLY_SETTINGS - set(DEFAULTS)), [])
+        prefixed = {key for key in DEFAULTS if key.startswith(("updates_", "stripmine_", "tw3_"))}
+        self.assertEqual(sorted(prefixed - LOCAL_ONLY_SETTINGS), [])
+        for key in ("parental_countdown_enabled", "valve_ownership_policy", "guard_cooldown_s",
+                    "guard_stable_s", "onboarding_completed"):
+            self.assertIn(key, LOCAL_ONLY_SETTINGS)
 
     def test_artwork_cache_round_trip(self):
         with tempfile.TemporaryDirectory() as directory:

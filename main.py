@@ -1,6 +1,7 @@
 """Decky backend entry point for GabeCubeAura."""
 
 import asyncio
+import concurrent.futures
 import os
 from pathlib import Path
 import shutil
@@ -12,6 +13,10 @@ PLUGIN_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(PLUGIN_DIR, "py_modules"))
 
 from signalbar.backend import Engine  # noqa: E402
+from signalbar.mqtt import MqttBridge, MqttConfig  # noqa: E402
+from signalbar.mqtt.advertised import AdvertisedTopics  # noqa: E402
+from signalbar.mqtt.config import LIVE_KEYS as MQTT_LIVE_KEYS  # noqa: E402
+from signalbar.mqtt.routed import RoutedDisplays  # noqa: E402
 from signalbar.settings import SettingsStore  # noqa: E402
 from signalbar.settings.export import (  # noqa: E402
     configuration_export_path, read_configuration_import, write_configuration_export,
@@ -21,8 +26,19 @@ from signalbar.providers.weather import search_cities  # noqa: E402
 from signalbar import __version__  # noqa: E402
 from signalbar.updates import UpdateManager  # noqa: E402
 
+# How long the MQTT bridge waits for Decky's loop to apply a setting. It must
+# stay shorter than the bridge's 3 s stop join: when _unload, on the loop, joins
+# a worker that is waiting for the loop, the wait gives up first and the
+# unload carries on.
+HA_APPLY_TIMEOUT_S = 2.0
+
 
 class Plugin:
+    # Set in _main.
+    mqtt = None
+    mqtt_config = None
+    _loop = None
+
     @staticmethod
     def _migrate_legacy_settings(settings_directory: str):
         """Copy legacy settings once when GabeCubeAura is installed as a new plugin."""
@@ -61,16 +77,127 @@ class Plugin:
             decky.logger,
         )
         self.update_manager.start()
+        # Home Assistant is optional and starts last: a failure here must
+        # never stop the light bar or the updater.
+        try:
+            # Settings changes from Home Assistant run on this loop, like the UI's.
+            self._loop = asyncio.get_running_loop()
+            mqtt_directory = os.path.join(decky.DECKY_PLUGIN_RUNTIME_DIR, "mqtt")
+            self.mqtt_config = MqttConfig(mqtt_directory)
+            if self.mqtt_config.load_error:
+                decky.logger.warning(f"[GabeCubeAura] {self.mqtt_config.load_error}")
+            # A display the Home Assistant light replaced before a restart goes
+            # back first, before the bridge can drive anything.
+            routed = RoutedDisplays(mqtt_directory)
+            try:
+                refused = await self._restore_home_assistant_displays(routed)
+            except Exception as error:
+                decky.logger.warning(f"[GabeCubeAura] could not put back the displays Home Assistant "
+                                     f"replaced ({type(error).__name__})")
+                refused = []
+            self.mqtt = MqttBridge(
+                self.mqtt_config, self.engine, self._faceplate_status,
+                self.update_manager.status, decky.logger,
+                read_settings=self.engine.settings.all,
+                apply_setting=self._apply_setting_from_home_assistant,
+                advertised=AdvertisedTopics(mqtt_directory),
+                routed=routed,
+            )
+            for key, message in refused:
+                self.mqtt.note_refusal(key, message)
+            self.mqtt.start()
+        except Exception as error:
+            decky.logger.warning(f"[GabeCubeAura] Home Assistant support unavailable: {error}")
+            self.mqtt = None
         if migrated_from:
             decky.logger.info(f"[GabeCubeAura] imported legacy {migrated_from} settings")
         decky.logger.info("[GabeCubeAura] loaded")
 
+    async def _restore_home_assistant_displays(self, routed):
+        """Put back the displays the Home Assistant light replaced before this start.
+
+        Only where the store still says home_assistant, through set_setting
+        like any other change. Returns (key, message) for each one that could
+        not be put back; any failure but the store's own refusal stays
+        recorded for the next start.
+        """
+        displaced = routed.displays()
+        if routed.error:
+            decky.logger.warning(f"[GabeCubeAura] {routed.error}")
+        if not displaced:
+            return []
+        values = self.engine.settings.all()
+        if not isinstance(values, dict):
+            return []
+        refused = []
+        for key, previous in sorted(displaced.items()):
+            if values.get(key) == "home_assistant":
+                try:
+                    await self.set_setting(key, previous)
+                except Exception as error:
+                    # The store's own words, or just the type: a message could hold a path.
+                    reason = str(error) if isinstance(error, ValueError) else type(error).__name__
+                    message = f"{key}: could not put back {previous}: {reason}"[:200]
+                    decky.logger.warning(f"[GabeCubeAura] {message}")
+                    refused.append((key, message))
+                    if not isinstance(error, ValueError):
+                        continue  # not the store saying no: try again at the next start
+            routed.forget(key)
+        if routed.error:
+            decky.logger.warning(f"[GabeCubeAura] {routed.error}")
+        return refused
+
+    def _faceplate_status(self):
+        """Faceplate status for Home Assistant, or None when there is no faceplate service.
+
+        This build has no faceplate support, so this returns None and Home
+        Assistant is not offered a Faceplate sensor. A build that adds a
+        ``faceplate`` service gets the sensor without changes here.
+        """
+        faceplate = getattr(self, "faceplate", None)
+        if faceplate is None:
+            return None
+        return faceplate.status()
+
+    def _apply_setting_from_home_assistant(self, key, value):
+        """Run set_setting on Decky's loop for the MQTT bridge's worker thread, and wait.
+
+        Raises the store's ValueError, TimeoutError when the loop did not get
+        to it in time, and RuntimeError when there is no running loop. A
+        timed-out call that has not run yet is cancelled; one that ran just
+        before the cancel still counts.
+        """
+        loop = self._loop
+        if loop is None or loop.is_closed() or not loop.is_running():
+            raise RuntimeError("Decky's event loop is not running")
+        future = asyncio.run_coroutine_threadsafe(self.set_setting(key, value), loop)
+        try:
+            future.result(timeout=HA_APPLY_TIMEOUT_S)
+        except concurrent.futures.TimeoutError:
+            if not future.cancel():
+                return future.result()  # it finished just as the wait ended
+            raise TimeoutError("GabeCubeAura did not apply the change in time") from None
+
+    def _stop_mqtt(self):
+        # Let go of the loop first, so a change still waiting on the bridge
+        # worker fails at once instead of reaching set_setting mid-unload.
+        self._loop = None
+        if self.mqtt is not None:
+            try:
+                self.mqtt.stop()
+            except Exception as error:
+                # The type only: a connection error's message can name the broker.
+                decky.logger.warning(
+                    f"[GabeCubeAura] Home Assistant bridge did not stop cleanly: {type(error).__name__}")
+
     async def _unload(self):
+        self._stop_mqtt()
         self.update_manager.stop()
         self.engine.stop()
         decky.logger.info("[GabeCubeAura] unloaded; LED ownership released")
 
     async def _uninstall(self):
+        self._stop_mqtt()
         self.update_manager.stop()
         self.engine.stop()
 
@@ -135,6 +262,29 @@ class Plugin:
                            source: str = ""):
         self.engine.set_game(appid, title, launch, source)
         return self.engine.status()
+
+    def _require_mqtt(self):
+        if self.mqtt is None or self.mqtt_config is None:
+            raise RuntimeError("Home Assistant support is not running")
+
+    def _ha_alerts_enabled(self):
+        """Report the store's ha_alerts_enabled for the Home Assistant page."""
+        engine = getattr(self, "engine", None)
+        return bool(engine.settings.all().get("ha_alerts_enabled")) if engine is not None else False
+
+    async def get_mqtt_status(self):
+        self._require_mqtt()
+        return {"config": self.mqtt_config.public(), "status": self.mqtt.status(),
+                "ha_alerts_enabled": self._ha_alerts_enabled()}
+
+    async def set_mqtt_config(self, changes: dict, password: str = None):
+        self._require_mqtt()
+        config = self.mqtt_config.update(changes, password)
+        # Turbo mode and the tiers apply on the bridge's next step. Anything
+        # else reconnects, which can take a few seconds, so off the event loop.
+        if password is not None or set(changes) - MQTT_LIVE_KEYS:
+            await asyncio.get_running_loop().run_in_executor(None, self.mqtt.reconfigure)
+        return {"config": config, "status": self.mqtt.status(), "ha_alerts_enabled": self._ha_alerts_enabled()}
 
     async def get_artwork(self, appid: int = 0, source: str = "hero", purpose: str = "artwork"):
         result = get_library_artwork(appid, source)

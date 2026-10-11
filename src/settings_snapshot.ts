@@ -19,6 +19,7 @@ const artworkSource = { hero: "Library Hero", header: "Library Header", capsule:
 const artworkRow = { auto: "Auto", center: "Centre", lower: "Lower", manual: "Manual" };
 const displayMode = {
   artwork: "Artwork", performance: "Performance", customization: "Customization+", screen_sync: "Screen Sync", audio_sync: "Audio Sync", steam: "GabeCubeAura Off", blackout: "Blackout",
+  home_assistant: "Home Assistant",
   weather: "Weather", controller: "Controller status", events: "Signals only", disabled: "Disabled",
 };
 const response = { responsive: "Responsive", balanced: "Balanced", smooth: "Smooth" };

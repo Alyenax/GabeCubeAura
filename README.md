@@ -265,6 +265,97 @@ GabeCubeAura previews, alerts, Game launches and playtime countdowns remain
 above the game HUD. The former experimental Witcher Lab is not bundled with
 GabeCubeAura 1.4.0.
 
+### Home Assistant
+
+Follow the Steam Machine from Home Assistant and, if you allow it, let Home
+Assistant change settings and light the bar. GabeCubeAura talks to it over
+MQTT through a small server called a broker, and Home Assistant finds the
+Steam Machine by itself.
+
+If you do not use Home Assistant or MQTT, you can safely skip this section.
+It is off by default and GabeCubeAura works exactly the same without it. If
+you do use them, nearly everything GabeCubeAura knows is published, and you
+choose how much of the light bar Home Assistant may run.
+
+#### New to MQTT
+
+Open **Settings > Apps** in Home Assistant. If it shows **Install app**,
+follow these steps:
+
+1. Select **Install app**, choose **Mosquitto broker**, then **Install** and
+   **Start**.
+2. Go to **Settings > Devices & services**. Under **Discovered**, select
+   **Add** on the MQTT card, then **Submit**.
+3. Go to **Settings > People**, open **Users** and select **Add user**.
+   Enter `GabeCubeAura` as **Display name**, `gabecubeaura` as **Username**
+   and a new password twice. Leave **Local access only** and **Administrator**
+   off and select **Create**. The names `homeassistant` and `addons` are
+   reserved.
+4. Note Home Assistant's IP address under **Settings > System > Network**,
+   for example `192.168.1.20`. This is the broker host.
+
+If it shows "What is an app?" instead, your Home Assistant is Container or
+Core, which cannot run apps. Run Mosquitto
+yourself with a login for GabeCubeAura and add it to Home Assistant, as
+described in [the Home Assistant guide](docs/HOME_ASSISTANT.md#your-own-broker).
+
+#### Already using MQTT
+
+Open **Settings > Connectivity > MQTT > Connection** to see the broker Home
+Assistant uses, then close the dialog without submitting. Its password stays
+hidden, so give GabeCubeAura a new login. If the broker is `core-mosquitto`,
+that is the Mosquitto broker app: add a user as in step 3 and use Home
+Assistant's IP address. Otherwise add a login on your own broker and use the
+IP address of the machine it runs on. The guide covers
+[Zigbee2MQTT and other brokers](docs/HOME_ASSISTANT.md#a-broker-you-already-use).
+
+#### Connecting the Steam Machine
+
+1. Press the **...** button, open Decky and choose **GabeCubeAura**. Under
+   **Now showing**, select **Open settings** beside **Detailed settings**,
+   then **Home Assistant** in the list. The page is headed **Home Assistant
+   (MQTT)**.
+2. Type the IP address in **Broker host**, without `http://` or `:8123`.
+   Leave **Port** at 1883, **Use TLS** off and **Discovery prefix** at
+   `homeassistant`.
+3. Enter the login in **Username** and **Password**.
+4. Press **Save connection**. Nothing typed above is used until you do.
+5. Turn on **Connect to Home Assistant**. Within a few seconds **Status**
+   reads "Connected as gabecubeaura, publishing under" and the topic root,
+   such as `gabecubeaura/steammachine`. In Home Assistant the device appears
+   under **Settings > Devices & services > MQTT** as **GabeCubeAura** followed
+   by the Steam Machine's hostname in brackets.
+
+If **Status** reads "Off" after step 5, no broker host was saved: press **Save
+connection**. Any other message names the problem; the guide lists
+[each message and its fix](docs/HOME_ASSISTANT.md#if-it-does-not-connect).
+
+#### What Home Assistant can do
+
+Once connected, **What Home Assistant can do** appears below the connection.
+Its **Light bar** dropdown starts at Help out, so Home Assistant can already
+change settings and light the bar. Choose Watch only if you just want to
+follow the Steam Machine.
+
+- **Watch only**: Home Assistant sees everything and changes nothing.
+- **Help out** (default): it can change settings, send alerts and light the
+  bar. GabeCubeAura's own events and signals still win.
+- **Take the lead**: its light and alerts beat all but urgent warnings.
+- **In control**: only Home Assistant and urgent warnings use the bar.
+- **Full control**: Home Assistant takes the urgent warnings too, after asking.
+
+Steam's own animations, such as downloads, come first at every tier. Urgent
+warnings are Steam's other light bar indicators, thermal protection, a
+controller low on battery and the last five minutes of a playtime countdown.
+Current game reads "Not playing" when no game runs. A game that stops shows as
+stopped 30 seconds later, so waking from sleep or a mod launcher restarting
+the game does not end the session. A value that does not apply, such as
+Playtime remaining with no countdown, shows as unavailable. Weather, updates
+and the light bar display read as words, such as "Up to date".
+
+See [the Home Assistant guide](docs/HOME_ASSISTANT.md) for what Home Assistant
+receives, each tier in detail, automations and privacy.
+
 ## How priorities work
 
 GabeCubeAura follows a strict order:
@@ -285,6 +376,10 @@ GabeCubeAura follows a strict order:
    provides the selected permanent display.
 9. A single native transition is allowed to settle before GabeCubeAura restores its
    expected display. Repeated native writes keep control with Steam.
+
+From **Take the lead** up, Home Assistant's light and alerts move above
+everything GabeCubeAura shows itself except the urgent warnings. See [Home
+Assistant](#home-assistant).
 
 ## Install
 
@@ -468,6 +563,11 @@ exported JSON or the artwork cache; both stop a running personal timer.
 - A userspace guard that yields when Steam or another process changes the bar
 - A CPU/GPU thermal interlock that yields completely to Valve at 94°C and only
   resumes after both coherent readings stay below 90°C for 30 seconds
+- Optional Home Assistant support, off by default, that connects only to the
+  broker you enter and keeps its password in its own file, never shown or
+  exported. Home Assistant can never change its own tier or the settings only
+  the Steam Machine may change; see
+  [what is never sent](docs/HOME_ASSISTANT.md#privacy).
 
 GabeCubeAura only restores a previous frame when the hardware still matches its
 own last verified write. Missing or incoherent sensor data during a thermal

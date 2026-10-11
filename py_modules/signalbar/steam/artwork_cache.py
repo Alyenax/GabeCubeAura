@@ -31,6 +31,14 @@ CUSTOM_GRID_SUFFIXES = {
     "header": "",
     "capsule": "p",
 }
+# Every kind of art find_game_art looks for. The logo is not a light bar
+# source, so it is not in ARTWORK_SOURCES, whose keys are settings values.
+# There is no icon: Steam's library cache names it by a content hash.
+GAME_ART_STEMS = {
+    **{kind: specification["stems"] for kind, specification in ARTWORK_SOURCES.items()},
+    "logo": ("logo", "library_logo"),
+}
+GAME_ART_GRID_SUFFIXES = {**CUSTOM_GRID_SUFFIXES, "logo": "_logo"}
 
 
 def steam_roots():
@@ -64,11 +72,15 @@ def steam_roots():
 
 
 def artwork_candidates(cache: Path, appid: int, source="hero"):
-    aid = str(int(appid))
     specification = ARTWORK_SOURCES.get(source, ARTWORK_SOURCES["hero"])
+    return _cache_candidates(cache, appid, specification["stems"])
+
+
+def _cache_candidates(cache: Path, appid: int, stems):
+    aid = str(int(appid))
     candidates = []
     for extension in IMAGE_EXTENSIONS:
-        for name in specification["stems"]:
+        for name in stems:
             candidates.append(cache / aid / f"{name}.{extension}")
             candidates.extend(Path(value) for value in glob.glob(str(cache / aid / "*" / f"{name}.{extension}")))
             candidates.append(cache / f"{aid}_{name}.{extension}")
@@ -112,19 +124,23 @@ def _grid_directories(root: Path):
     return []
 
 
-def _valid_image(path: Path):
+def _valid_image(path: Path, max_bytes=MAX_BYTES):
     try:
-        return path.is_file() and 0 < path.stat().st_size <= MAX_BYTES
+        return path.is_file() and 0 < path.stat().st_size <= max_bytes
     except OSError:
         return False
 
 
 def _custom_artwork(root: Path, appid: int, source: str):
-    filename = f"{appid & 0xFFFFFFFF}{CUSTOM_GRID_SUFFIXES[source]}"
+    return _grid_artwork(root, appid, CUSTOM_GRID_SUFFIXES[source])
+
+
+def _grid_artwork(root: Path, appid: int, suffix: str, max_bytes=MAX_BYTES):
+    filename = f"{appid & 0xFFFFFFFF}{suffix}"
     for grid in _grid_directories(root):
         for extension in IMAGE_EXTENSIONS:
             candidate = grid / f"{filename}.{extension}"
-            if _valid_image(candidate):
+            if _valid_image(candidate, max_bytes):
                 return candidate
     return None
 
@@ -156,6 +172,31 @@ def _find_artwork_details(appid: int, source="hero"):
             if custom is not None:
                 return custom, fallback, True
     return None, source, False
+
+
+def find_game_art(appid, kind, max_bytes=MAX_BYTES):
+    """Find one kind of art for a game, or None.
+
+    Custom grid art comes first, as for the light bar, then Steam's library
+    cache. Unlike find_library_artwork it never falls back to another kind,
+    so a header is a header or nothing. Files over max_bytes are skipped.
+    """
+    try:
+        appid = int(appid)
+    except (TypeError, ValueError):
+        return None
+    if appid <= 0 or kind not in GAME_ART_STEMS:
+        return None
+    roots = steam_roots()
+    for root in roots:
+        custom = _grid_artwork(root, appid, GAME_ART_GRID_SUFFIXES[kind], max_bytes)
+        if custom is not None:
+            return custom
+    for root in roots:
+        for candidate in _cache_candidates(root / "appcache/librarycache", appid, GAME_ART_STEMS[kind]):
+            if _valid_image(candidate, max_bytes):
+                return candidate
+    return None
 
 
 def find_library_artwork(appid: int, source="hero"):

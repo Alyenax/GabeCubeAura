@@ -114,6 +114,8 @@ DEFAULTS = {
     "event_notification_variant": "notification-beacon",
     "event_achievement_variant": "achievement-constellation",
     "event_screenshot_variant": "screenshot-bloom",
+    # Short full-bar alerts sent by Home Assistant over MQTT.
+    "ha_alerts_enabled": True,
     "controller_battery_display": "off",
     # Charging choices are exclusive; legacy display/enabled keys are derived
     # for compatibility with older local beta settings.
@@ -172,6 +174,7 @@ DEFAULTS = {
     "stripmine_priority_customization": "stripmine",
     "stripmine_priority_screen_sync": "stripmine",
     "stripmine_priority_audio_sync": "stripmine",
+    "stripmine_priority_home_assistant": "stripmine",
     "guard_cooldown_s": 5.0,
     "guard_stable_s": 2.0,
     "updates_auto_check": True,
@@ -180,9 +183,41 @@ DEFAULTS = {
     "updates_channel": "stable",
 }
 
-VALID_MODES = {"artwork", "performance", "customization", "screen_sync", "audio_sync", "blackout", "events", "disabled"}
-VALID_HOME_DISPLAYS = {"steam", "blackout", "customization", "performance", "audio_sync", "weather", "controller"}
-VALID_GAME_DISPLAYS = {"steam", "blackout", "customization", "artwork", "performance", "screen_sync", "audio_sync", "weather", "controller"}
+# Settings only the Steam Machine itself may change, never Home Assistant or
+# anything else remote. A key belongs here when a wrong value could lock up
+# hardware, change what software installs, hand the light bar to another
+# plugin, override a parental control or need someone in the room to recover.
+# Their values are still reported.
+LOCAL_ONLY_SETTINGS = frozenset({
+    "updates_auto_check",
+    "updates_channel",
+    "updates_check_interval_minutes",
+    "updates_notifications",
+    "parental_countdown_enabled",
+    "valve_ownership_policy",
+    "guard_cooldown_s",
+    "guard_stable_s",
+    "stripmine_integration_enabled",
+    "stripmine_priority_artwork",
+    "stripmine_priority_audio_sync",
+    "stripmine_priority_controller",
+    "stripmine_priority_customization",
+    "stripmine_priority_game_launches",
+    "stripmine_priority_home_assistant",
+    "stripmine_priority_light_events",
+    "stripmine_priority_performance",
+    "stripmine_priority_screen_sync",
+    "stripmine_priority_weather",
+    "tw3_steamrgb_integration_enabled",
+    "onboarding_completed",
+    # Alerts let a remote system take the bar, so only the device may allow them.
+    "ha_alerts_enabled",
+})
+
+# "home_assistant" shows what Home Assistant sends over MQTT, or nothing.
+VALID_MODES = {"artwork", "performance", "customization", "screen_sync", "audio_sync", "home_assistant", "blackout", "events", "disabled"}
+VALID_HOME_DISPLAYS = {"steam", "blackout", "customization", "performance", "audio_sync", "home_assistant", "weather", "controller"}
+VALID_GAME_DISPLAYS = {"steam", "blackout", "customization", "artwork", "performance", "screen_sync", "audio_sync", "home_assistant", "weather", "controller"}
 VALID_DISPLAY_PRESETS = {
     "custom", "lights-out", "focus", "essential", "moderate",
     "atmosphere", "signals", "immersive", "immersive-plus", "festive",
@@ -709,6 +744,7 @@ class SettingsStore:
             "stripmine_priority_customization",
             "stripmine_priority_screen_sync",
             "stripmine_priority_audio_sync",
+            "stripmine_priority_home_assistant",
         ):
             if self._data[key] not in VALID_COMPANION_PRIORITIES:
                 self._data[key] = DEFAULTS[key]
@@ -864,7 +900,7 @@ class SettingsStore:
             "event_screenshots_enabled", "event_recording_enabled", "recording_marker_isolation",
             "controller_alerts_enabled", "controller_connect_enabled", "controller_low_enabled",
             "controller_charging_enabled", "audio_sync_hifi_lab_enabled",
-            "updates_auto_check", "updates_notifications",
+            "updates_auto_check", "updates_notifications", "ha_alerts_enabled",
         ):
             self._data[key] = bool(self._data[key])
         try:
@@ -949,7 +985,7 @@ class SettingsStore:
         self._data["performance_always"] = self._data["home_display"] == "performance"
         self._data["mode"] = (
             "disabled" if not self._data["signalbar_enabled"]
-            else self._data["game_display"] if self._data["game_display"] in {"artwork", "performance", "customization", "screen_sync", "audio_sync"}
+            else self._data["game_display"] if self._data["game_display"] in {"artwork", "performance", "customization", "screen_sync", "audio_sync", "home_assistant"}
             else "events"
         )
         charging_mode = self._data["controller_charging_mode"]
@@ -1093,6 +1129,22 @@ class SettingsStore:
                 if legacy_key in changes:
                     changes.setdefault(f"audio_sync_home_colour_{role}", changes[legacy_key])
                     changes.setdefault(f"audio_sync_game_colour_{role}", changes[legacy_key])
+            # Refuse before touching anything: the preset handling below
+            # changes the stored values, and a refused change must leave the
+            # settings exactly as they were.
+            wants_weather = (
+                changes.get("weather_display") not in (None, "off")
+                or changes.get("home_display") == "weather"
+                or changes.get("game_display") == "weather"
+                or changes.get("night_mode_enabled") is True
+            )
+            if (wants_weather
+                    and _valid_weather_location(changes.get("weather_location", self._data["weather_location"])) is None):
+                raise ValueError("Choose a city before enabling Weather or automatic night mode")
+            # Everything below edits the settings in place. A change that
+            # cannot be saved must not stay live in memory, as in
+            # replace_configuration.
+            previous = deepcopy(self._data)
             requested_preset = changes.pop("display_preset", None)
             if requested_preset is not None:
                 if requested_preset not in VALID_DISPLAY_PRESETS:
@@ -1144,15 +1196,6 @@ class SettingsStore:
                     **deepcopy(AUDIO_SYNC_STYLE_TUNING[requested_audio_style]),
                     **changes,
                 }
-            wants_weather = (
-                changes.get("weather_display") not in (None, "off")
-                or changes.get("home_display") == "weather"
-                or changes.get("game_display") == "weather"
-                or changes.get("night_mode_enabled") is True
-            )
-            if (wants_weather
-                    and _valid_weather_location(changes.get("weather_location", self._data["weather_location"])) is None):
-                raise ValueError("Choose a city before enabling Weather or automatic night mode")
             if "mode" in changes:
                 legacy_mode = changes["mode"]
                 if legacy_mode == "disabled":
@@ -1186,8 +1229,12 @@ class SettingsStore:
             for key, value in changes.items():
                 if key in DEFAULTS:
                     self._data[key] = value
-            self._validate()
-            self.save()
+            try:
+                self._validate()
+                self.save()
+            except Exception:
+                self._data = previous
+                raise
             return dict(self._data)
 
     def replace_configuration(self, global_values: dict, display_profiles: dict,
@@ -1305,7 +1352,7 @@ class SettingsStore:
             selected = default if override == "inherit" else override
             mode = (
                 "disabled" if not self._data["signalbar_enabled"]
-                else selected if selected in {"artwork", "performance", "customization", "screen_sync", "audio_sync", "blackout"} else "events"
+                else selected if selected in {"artwork", "performance", "customization", "screen_sync", "audio_sync", "home_assistant", "blackout"} else "events"
             )
             return {"default": default, "override": override, "selected": selected, "mode": mode}
 

@@ -15,6 +15,7 @@ from signalbar.activation import ScreenSyncActivation
 from signalbar.arbiter import Arbiter, VanillaGuard
 from signalbar.hardware import ValveLedHardware
 from signalbar.integration import LightEventLease, StripMineClaimReader, Tw3SteamRgbClaimReader
+from signalbar.hub import EventHub
 from signalbar.models import GameState, ProviderOutput
 from signalbar.providers import (
     ArtworkProvider, CountdownProvider, CustomizationProvider,
@@ -22,6 +23,8 @@ from signalbar.providers import (
     ScreenSyncProvider, AudioSyncProvider,
 )
 from signalbar.providers.controller import ControllerProvider
+from signalbar.providers.events import HA_ALERT_DURATIONS
+from signalbar.providers.home_assistant import HomeAssistantProvider
 from signalbar.providers.audio_sync import ADAPTIVE_STYLES
 from signalbar.providers.onboarding import immersive_preview_output
 from signalbar.providers.weather import WeatherProvider
@@ -95,6 +98,16 @@ class Engine:
         self.events.set_variants(settings.all())
         self.controllers = ControllerProvider()
         self.weather = WeatherProvider()
+        # Filled by the MQTT bridge; shown while the Home Assistant display is
+        # selected, and from tier 3 up whatever is selected.
+        self.home_assistant = HomeAssistantProvider()
+        # Set by the MQTT bridge every step and back to 1 when it stops.
+        self._home_assistant_tier = 1
+        # Engine facts for subscribers such as the MQTT bridge. New features
+        # call self.hub.emit("<area>.<event>", {...}) to publish themselves.
+        self.hub = EventHub(logger)
+        self._controllers_seen = False
+        self._download_reported = False
         initial = settings.all()
         self.launch_artwork.configure(
             initial["launch_artwork_animation_enabled"], initial["launch_artwork_pattern"],
@@ -173,6 +186,9 @@ class Engine:
             self._thread = threading.Thread(target=self._run, name="signalbar-engine", daemon=True)
             self._thread.start()
 
+    def subscribe(self, callback):
+        return self.hub.subscribe(callback)
+
     def stop(self):
         self._stop.set()
         self.weather.stop()
@@ -195,6 +211,7 @@ class Engine:
             self._owner = "Valve"
             self._decision = "none"
             self._decision_at = time.monotonic()
+        self.hub.stop()
 
     def set_game(self, appid=0, title="", launch=False, source=""):
         try:
@@ -203,6 +220,7 @@ class Engine:
             appid = 0
         with self._lock:
             previous_appid = self._game.appid
+            previous_title = self._game.title
             changed = appid != previous_appid
             self._game = GameState(appid, str(title or ""))
             if changed:
@@ -243,6 +261,14 @@ class Engine:
             # context into the new Home or in-game selection instead of
             # flashing through a cold fallback palette.
             self.audio_sync.stop(preserve_palette=True)
+        if changed:
+            if previous_appid:
+                self.hub.emit("game.stopped", {"appid": previous_appid, "title": previous_title})
+            if appid:
+                self.hub.emit("game.started", {
+                    "appid": appid, "title": str(title or ""),
+                    "non_steam": appid >= 2 ** 31, "launch": bool(launch),
+                })
 
     def prepare_artwork(self, appid, fingerprint, filename="", source="hero"):
         artwork_settings = self.settings.artwork_for(appid)
@@ -313,6 +339,9 @@ class Engine:
                 self._steam_active_until = 0.0
                 self._steam_reason = ""
             thermal_active = self.thermal_protection.active
+        if bool(active) != self._download_reported:
+            self._download_reported = bool(active)
+            self.hub.emit("steam.download", {"active": bool(active)})
         values = self.settings.all()
         policy = values["valve_ownership_policy"]
         return {
@@ -460,7 +489,17 @@ class Engine:
             self._display_preset_preview_until = now + max(3.0, min(20.0, float(seconds)))
         return True
 
+    LIGHT_EVENT_KINDS = frozenset({"notification", "achievement", "screenshot", "record-start", "record-stop"})
+
     def trigger_event(self, kind, preview=False, variant=""):
+        shown = self._trigger_event(kind, preview, variant)
+        if not preview and kind in self.LIGHT_EVENT_KINDS:
+            with self._lock:
+                appid = self._game.appid
+            self.hub.emit("light_event", {"kind": kind, "appid": appid, "shown": bool(shown)})
+        return shown
+
+    def _trigger_event(self, kind, preview=False, variant=""):
         values = self.settings.all()
         kind = str(kind or "")
         if not preview and kind in {"record-start", "record-stop"}:
@@ -468,6 +507,8 @@ class Engine:
             # event or persistent marker is disabled.
             self.events.set_recording(kind == "record-start")
         if values["mode"] == "disabled":
+            return False
+        if kind in self.LIGHT_EVENT_KINDS and self._gabecubeaura_events_skipped():
             return False
         if self.controllers.event_output().provider == "controller:low":
             return False
@@ -495,7 +536,108 @@ class Engine:
             return False
         return self.events.trigger(kind, preview=bool(preview), variant=variant)
 
+    def home_assistant_refusal(self):
+        """Return why the light bar refuses Home Assistant content now, or ""."""
+        # At Full control overheating and previews are Home Assistant's to deal with.
+        full = self.home_assistant_tier() >= 5
+        if self.thermal_protection.active and not full:
+            return "thermal protection is active"
+        if not self.settings.all()["signalbar_enabled"]:
+            return "Light bar control is off on the Steam Machine"
+        if full:
+            return ""
+        with self._lock:
+            previewing = time.monotonic() < self._display_preset_preview_until
+        if previewing:
+            return "a display preset preview is running"
+        return ""
+
+    def home_assistant_route(self):
+        """Return where the Home Assistant display would be selected for what is on screen.
+
+        That is the settings key (home_display, or game_display in a game),
+        the display selected there and the game's own override, "inherit"
+        when it has none.
+        """
+        with self._lock:
+            appid = self._game.appid
+        display = self.settings.display_for(appid)
+        return {"key": "game_display" if appid > 0 else "home_display",
+                "selected": display["selected"], "override": display["override"]}
+
+    def set_home_assistant_tier(self, tier):
+        """Set how far the light bar defers to Home Assistant, 1-5; the next tick applies it."""
+        if isinstance(tier, bool) or not isinstance(tier, int) or not 1 <= tier <= 5:
+            raise ValueError("tier must be 1-5")
+        with self._lock:
+            self._home_assistant_tier = tier
+
+    def home_assistant_tier(self):
+        with self._lock:
+            return self._home_assistant_tier
+
+    def _home_assistant_showing(self):
+        """Whether Home Assistant's light is on or one of its alerts is playing or waiting."""
+        return self.home_assistant.output().frame is not None or self.events.holds("ha")
+
+    def _gabecubeaura_events_skipped(self, tier=None):
+        """Whether GabeCubeAura's one-off flashes are dropped: always from tier 4, at 3 while Home Assistant shows."""
+        tier = self.home_assistant_tier() if tier is None else tier
+        return tier >= 4 or tier == 3 and self._home_assistant_showing()
+
+    def _home_assistant_status(self):
+        status = self.home_assistant.status()
+        tier = self.home_assistant_tier()
+        return {**status, "offered": status["offered"] and tier == 2, "tier": tier}
+
+    def trigger_home_assistant_alert(self, variant, colour, duration=None):
+        """Play a Home Assistant alert and return (shown, reason it was not).
+
+        Like a Steam event it is reported as a light_event (kind "ha")
+        whether or not it played.
+        """
+        reason = self._home_assistant_alert_refusal(variant)
+        shown = False
+        if not reason:
+            try:
+                shown = self.events.trigger_home_assistant(variant, colour, duration)
+            except ValueError:
+                reason = "the alert colour or duration is not valid"
+            else:
+                if not shown:
+                    reason = "the previous alert started less than a second ago"
+        with self._lock:
+            appid = self._game.appid
+        self.hub.emit("light_event", {"kind": "ha", "variant": variant, "appid": appid, "shown": shown,
+                                      "result": "shown" if shown else "dropped", "reason": reason})
+        return shown, reason
+
+    def _home_assistant_alert_refusal(self, variant):
+        if variant not in HA_ALERT_DURATIONS:
+            return "not a Home Assistant alert"
+        refusal = self.home_assistant_refusal()
+        if refusal:
+            return refusal
+        values = self.settings.all()
+        if not values["ha_alerts_enabled"]:
+            return "Home Assistant alerts are off on the Steam Machine"
+        if not values["events_enabled"]:
+            return "Light Events are off on the Steam Machine"
+        if self.home_assistant_tier() >= 5:
+            return ""  # the critical signals are Home Assistant's own job here
+        if self.controllers.event_output().provider == "controller:low":
+            return "a controller low-battery alert is showing"
+        with self._lock:
+            game_running = self._game.running
+        countdown = self.countdown.status(
+            allow_parental=values["parental_countdown_enabled"] and game_running,
+        )
+        if countdown["active"] and countdown["remaining_seconds"] <= 300:
+            return "a playtime countdown is in its last five minutes"
+        return ""
+
     def update_controllers(self, controllers, source="Steam callback"):
+        before = {item["id"]: item for item in self.controllers.roster()}
         values = self.settings.all()
         with self._lock:
             running = self._game.running
@@ -505,10 +647,27 @@ class Engine:
         if countdown["active"] and countdown["remaining_seconds"] <= 300:
             # Keep receiving real state, but don't consume an unseen low warning.
             values = {**values, "controller_alerts_enabled": False}
-        if self.controllers.update(controllers, values, running) == "low":
+        if self.controllers.update(controllers, values, running) == "low" and self.home_assistant_tier() < 5:
             self.events.clear_transients()
+        after = {item["id"]: item for item in self.controllers.roster()}
+        if not self._controllers_seen:
+            # The first list is a baseline, not a burst of connections.
+            self._controllers_seen = True
+            return
+        for identifier in after.keys() - before.keys():
+            item = after[identifier]
+            self.hub.emit("controller.connected", {"id": identifier, "name": item["name"],
+                                                    "percent": item["percent"], "charging": item["charging"]})
+        for identifier in before.keys() - after.keys():
+            self.hub.emit("controller.disconnected", {"id": identifier, "name": before[identifier]["name"]})
+        for identifier in after.keys() & before.keys():
+            old, new = before[identifier]["charging"], after[identifier]["charging"]
+            if old is not None and new is not None and old != new:
+                self.hub.emit("controller.charging", {"id": identifier, "name": after[identifier]["name"],
+                                                       "charging": new})
 
     def reset_controllers(self):
+        self._controllers_seen = False
         self.controllers.clear()
         with self._lock:
             self._runtime_debug["controller_callback_source"] = "waiting"
@@ -646,6 +805,7 @@ class Engine:
                 ("event_achievements_enabled", ("achievement",)),
                 ("event_screenshots_enabled", ("screenshot",)),
                 ("event_recording_enabled", ("record-start", "record-stop")),
+                ("ha_alerts_enabled", ("ha",)),
             ):
                 if key in changes and not values[key]:
                     self.events.cancel_kinds(kinds)
@@ -689,6 +849,8 @@ class Engine:
             return "weather"
         if provider.startswith("controller"):
             return "controller"
+        if provider.startswith("home-assistant"):
+            return "home_assistant"
         if provider.startswith("event:"):
             return "light_events"
         return "system"
@@ -883,7 +1045,9 @@ class Engine:
             thermal_active = self.thermal_protection.update(
                 self.performance.sample, now=time.monotonic(),
             )
-            if thermal_active:
+            # At Full control the warning is Home Assistant's job; protection
+            # still latches and is reported.
+            if thermal_active and self.home_assistant_tier() < 5:
                 self._suspend_for_thermal_protection(renderer)
                 event_was_active = False
                 event_preempted_valve = False
@@ -924,6 +1088,7 @@ class Engine:
             try:
                 now = time.monotonic()
                 values = self.settings.all()
+                ha_tier = self.home_assistant_tier()
                 if hardware.reverse != values["reverse_led_order"]:
                     # Restore with the old mapping before changing orientation;
                     # otherwise a later shutdown would restore the snapshot backwards.
@@ -962,7 +1127,7 @@ class Engine:
                             selected_preview
                             if selected_preview in {
                                 "artwork", "performance", "customization",
-                                "screen_sync", "audio_sync", "blackout",
+                                "screen_sync", "audio_sync", "home_assistant", "blackout",
                             } else "events"
                         ),
                     }
@@ -1028,11 +1193,15 @@ class Engine:
                     guard_allows=allowed,
                     guard_hard_priority=guard.hard_priority,
                 )
+                if ha_tier >= 5:
+                    # Full control takes back every Valve write except Steam's
+                    # own animations, which still play over Home Assistant.
+                    ownership_allowed = True
                 # Cooperative mode keeps the existing fail-safe handoff. The
                 # two protected modes instead reclaim ordinary Valve writes.
                 # Thermal protection is an independent sensor-driven gate.
                 event_interrupted = bool(
-                    event_was_active and signature_mismatch
+                    event_was_active and signature_mismatch and ha_tier < 5
                     and (ownership_policy == "cooperative" or steam_priority)
                 )
                 recovering_ownership = bool(
@@ -1081,6 +1250,7 @@ class Engine:
                 )
                 signal_critical = (
                     countdown_state["active"] and countdown_state["remaining_seconds"] <= 300
+                    and ha_tier < 5
                 )
                 game_screen_sync = (
                     values["mode"] == "screen_sync"
@@ -1120,14 +1290,15 @@ class Engine:
                     values, audio_sync_requested,
                 )
                 recording = self.events.recording
-                screen_sync_active = self._screen_sync_should_run(
+                # From tier 4 GabeCubeAura's displays never show, so nothing captures.
+                screen_sync_active = ha_tier < 4 and self._screen_sync_should_run(
                     values, screen_sync_requested or audio_screen_capture,
                     signal_critical, ownership_allowed,
                     stripmine_active, recording, steam_priority,
                 )
                 self.screen_sync.set_active(screen_sync_active)
                 screen_sync_base = self.screen_sync.output(values)
-                audio_sync_active = self._audio_sync_should_run(
+                audio_sync_active = ha_tier < 4 and self._audio_sync_should_run(
                     values, audio_sync_requested, signal_critical, ownership_allowed,
                     stripmine_active, steam_priority, tw3_steamrgb_active,
                 )
@@ -1200,6 +1371,11 @@ class Engine:
                     self.events.clear_transients()
                     self.controllers.clear_transients()
                     self.launch_artwork.cancel()
+                home_assistant_holds = self._gabecubeaura_events_skipped(ha_tier)
+                if home_assistant_holds:
+                    # Dropped, not held back, so nothing stale plays afterwards.
+                    self.events.cancel_kinds(self.LIGHT_EVENT_KINDS)
+                    self.controllers.cancel_alerts_except_low()
                 event = self.events.output()
                 controller_event = self.controllers.event_output()
                 if preview_preset == "signals" and controller_event.frame is None:
@@ -1230,6 +1406,12 @@ class Engine:
                         or screen_sync_fallback_active
                     ),
                 )
+                # The slot keeps Home Assistant's last request even while
+                # another display shows. From tier 3 it competes at any display.
+                home_assistant_base = (
+                    self.home_assistant.output()
+                    if current_display == "home_assistant" or ha_tier >= 3 else None
+                )
                 brief_alert = any(output is not None and output.frame is not None for output in (
                     event, controller_event,
                 ))
@@ -1244,6 +1426,7 @@ class Engine:
                 if self.launch_artwork.active and (
                     signal_critical or not launch_display_allowed or not launch_ownership_allowed
                     or steam_priority or not (ownership_allowed or stripmine_active)
+                    or home_assistant_holds
                 ):
                     self.launch_artwork.cancel()
                 launch_artwork = self.launch_artwork.output(
@@ -1251,7 +1434,7 @@ class Engine:
                     allow_start=(
                         launch_display_allowed and now >= self._launch_handoff_until
                         and not signal_critical and not brief_alert
-                        and not steam_priority
+                        and not steam_priority and not home_assistant_holds
                         and (ownership_allowed or stripmine_active) and launch_ownership_allowed
                     ),
                     paused=brief_alert,
@@ -1296,6 +1479,8 @@ class Engine:
                         customization_base if screen_sync_fallback_active else None
                     ),
                     audio_sync_base=audio_sync_base,
+                    home_assistant_base=home_assistant_base,
+                    home_assistant_tier=ha_tier,
                     launch_artwork=launch_artwork,
                     recording_marker=(
                         self.events.recording and values["events_enabled"]
@@ -1308,7 +1493,7 @@ class Engine:
                 )
 
                 hold_context_frame = (
-                    renderer.last_frame is not None
+                    renderer.last_frame is not None and ha_tier < 4
                     and self._hold_context_frame(
                         context_transition_active, audio_sync_requested,
                         launch_transition_active, steam_priority,
@@ -1398,10 +1583,8 @@ class Engine:
                     )
                     wrote = renderer.render(
                         output_frame,
-                        force=(
-                            ownership_policy != "cooperative"
-                            and signature_mismatch
-                            and not steam_priority
+                        force=signature_mismatch and not steam_priority and (
+                            ha_tier >= 5 or ownership_policy != "cooperative"
                         ),
                     )
                     if wrote:
@@ -1825,6 +2008,8 @@ class Engine:
                 "stripmine_priority_customization": values["stripmine_priority_customization"],
                 "stripmine_priority_screen_sync": values["stripmine_priority_screen_sync"],
                 "stripmine_priority_audio_sync": values["stripmine_priority_audio_sync"],
+                "stripmine_priority_home_assistant": values["stripmine_priority_home_assistant"],
+                "ha_alerts_enabled": values["ha_alerts_enabled"],
                 **{key: values[key] for key in values if key.startswith("weather_") and key.endswith("_variant")},
                 "weather": weather_status,
                 "customization": customization_status,
@@ -1832,6 +2017,7 @@ class Engine:
                 "audio_sync": audio_sync_status,
                 "controllers": controller_status,
                 "events": self.events.status(),
+                "home_assistant": self._home_assistant_status(),
                 "game": {"appid": self._game.appid, "title": self._game.title},
                 "performance": {
                     "sample_age_s": max(0.0, now - sample.sampled_at) if sample.sampled_at else None,

@@ -1,4 +1,4 @@
-"""Short, full-bar Steam event signals. No hardware I/O lives here."""
+"""Short, full-bar Steam event signals and Home Assistant alerts. No hardware I/O lives here."""
 
 from __future__ import annotations
 
@@ -49,6 +49,12 @@ VARIANT_DURATIONS = {
     "record-start": 1.35,
     "record-stop": 1.2,
 }
+# Home Assistant alerts (kind "ha"), whose variant and colour the automation
+# picks. These are the default lengths; an alert may ask for anything from
+# half a second to the longest Steam event.
+HA_ALERT_DURATIONS = {"ha-flash": 1.2, "ha-pulse": 2.0, "ha-sweep": 1.6}
+HA_ALERT_MIN_S = 0.5
+HA_ALERT_MAX_S = max(VARIANT_DURATIONS.values())
 
 
 def _duration(kind, variant):
@@ -251,6 +257,25 @@ def _variant_frame(variant, t):
     return normalize_frame(frame)
 
 
+def ha_alert_frame(variant, colour, t):
+    """One frame of a Home Assistant alert at progress t (0-1), drawn only in the alert's colour."""
+    colour = tuple(colour)
+    frame = [BLACK] * LED_COUNT
+    if variant not in HA_ALERT_DURATIONS:
+        raise ValueError(f"unknown Home Assistant alert: {variant}")
+    if t >= 1:
+        return normalize_frame(frame)
+    if variant == "ha-flash":
+        # Three hard blinks, each lit for the first 60 % of its third.
+        if (t * 3) % 1 < .6:
+            frame = [colour] * LED_COUNT
+    elif variant == "ha-pulse":
+        frame = [_blend(BLACK, colour, math.sin(math.pi * t))] * LED_COUNT
+    else:  # ha-sweep: one glow from the left end to the right end
+        _glow(frame, 16 * t, 2.4, colour, min(1.0, t * 12, (1 - t) * 12))
+    return normalize_frame(frame)
+
+
 def event_frame(kind, elapsed_seconds, variant=None):
     """Render the mockup's 17 logical pixels on a dark, exclusive canvas."""
     if kind not in DURATIONS:
@@ -313,9 +338,12 @@ class EventProvider:
     def __init__(self, clock=time.monotonic):
         self._clock = clock
         self._lock = threading.RLock()
+        # (kind, variant, colour, seconds): colour is None for Steam events, which draw their own.
         self._queue = deque(maxlen=3)
         self._active = None
         self._active_variant = ""
+        self._active_colour = None
+        self._active_duration = 0.0
         self._variants = {
             "notification": "notification-original",
             "achievement": "achievement-original",
@@ -325,6 +353,7 @@ class EventProvider:
         self._recording = False
         self._last_kind = ""
         self._last_trigger_at = 0.0
+        self._last_ha_at = float("-inf")
 
     @property
     def recording(self):
@@ -368,17 +397,49 @@ class EventProvider:
                 self._active = None
                 self._active_variant = ""
                 self._queue.clear()
-            if self._active is None:
-                self._active, self._started_at = kind, now
-                self._active_variant = selected
-            else:
-                self._queue.append((kind, selected))
+            self._start_or_queue((kind, selected, None, _duration(kind, selected)), now)
             return True
+
+    def trigger_home_assistant(self, variant, colour, duration=None):
+        """Queue a Home Assistant alert; False if it is not one or repeats within 0.8 s.
+
+        A bad colour or duration raises ValueError with a fixed reason. Steam
+        events keep their own repeat rule.
+        """
+        if variant not in HA_ALERT_DURATIONS:
+            return False
+        try:
+            seconds = HA_ALERT_DURATIONS[variant] if duration is None else float(duration)
+            if math.isnan(seconds):
+                raise ValueError
+            seconds = max(HA_ALERT_MIN_S, min(HA_ALERT_MAX_S, seconds))
+            colour = normalize_frame([colour] * LED_COUNT)[0]
+        except (ValueError, TypeError, OverflowError):
+            raise ValueError("invalid Home Assistant alert colour or duration") from None
+        now = self._clock()
+        with self._lock:
+            if now - self._last_ha_at < .8:
+                return False
+            self._last_ha_at = now
+            self._start_or_queue(("ha", variant, colour, seconds), now)
+            return True
+
+    def _start_or_queue(self, item, now):
+        if self._active is None:
+            self._activate(item, now)
+        else:
+            self._queue.append(item)
+
+    def _activate(self, item, now):
+        self._active, self._active_variant, self._active_colour, self._active_duration = item
+        self._started_at = now
+
+    def _deactivate(self):
+        self._active, self._active_variant, self._active_colour, self._active_duration = None, "", None, 0.0
 
     def clear_transients(self):
         with self._lock:
-            self._active = None
-            self._active_variant = ""
+            self._deactivate()
             self._queue.clear()
 
     def cancel_kinds(self, kinds):
@@ -386,8 +447,17 @@ class EventProvider:
         with self._lock:
             self._queue = deque((item for item in self._queue if item[0] not in kinds), maxlen=3)
             if self._active in kinds:
-                self._active, self._active_variant = self._queue.popleft() if self._queue else (None, "")
-                self._started_at = self._clock()
+                if self._queue:
+                    self._activate(self._queue.popleft(), self._clock())
+                else:
+                    self._deactivate()
+
+    def holds(self, kind):
+        """Whether an event of this kind is playing or waiting."""
+        now = self._clock()
+        with self._lock:
+            playing = self._active == kind and now - self._started_at < self._active_duration
+            return playing or any(item[0] == kind for item in self._queue)
 
     def clear_recording(self):
         with self._lock:
@@ -396,19 +466,20 @@ class EventProvider:
     def output(self):
         now = self._clock()
         with self._lock:
-            while self._active is not None and now - self._started_at >= _duration(self._active, self._active_variant):
+            while self._active is not None and now - self._started_at >= self._active_duration:
                 if self._queue:
-                    self._active, self._active_variant = self._queue.popleft()
-                    self._started_at = now
+                    self._activate(self._queue.popleft(), now)
                 else:
-                    self._active = None
-                    self._active_variant = ""
+                    self._deactivate()
             if self._active is None:
                 return ProviderOutput(self.name, None, "no active event")
             kind = self._active
             variant = self._active_variant
+            colour, duration = self._active_colour, self._active_duration
             elapsed = now - self._started_at
-        return ProviderOutput(f"event:{kind}", event_frame(kind, elapsed, variant), f"{variant} animation")
+        frame = (ha_alert_frame(variant, colour, elapsed / duration) if kind == "ha"
+                 else event_frame(kind, elapsed, variant))
+        return ProviderOutput(f"event:{kind}", frame, f"{variant} animation")
 
     def status(self):
         output = self.output()

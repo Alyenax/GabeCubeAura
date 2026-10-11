@@ -56,10 +56,16 @@ needs on top. Unloading for games helps, but it doesn't make that go away.
 
 ## Is it useful, though?
 
-This is the real open question and I don't have a good answer. There aren't
-any controls on the machine you'd want your voice for. Gaming knowledge is
-the obvious pitch, and wiring a Wikipedia or walkthrough lookup into a voice
-assistant is about the dumbest and worst way to get that information.
+This is the real open question and I don't have a good answer. What would
+it even do that's useful? Load games? You already have a controller in your
+hand. There aren't any controls on the machine you'd want your voice for.
+Gaming knowledge is the obvious pitch, and wiring a Wikipedia or walkthrough
+lookup into a voice assistant is about the dumbest and worst way to get that
+information.
+
+I guess it could read your achievements out loud or something. Even that has
+a memory cost, though, because good voice models aren't free either. It's a
+neat parlour trick, but...
 
 The Reddit video that started this may well be a basic text to speech fired
 by a controller button, not AI at all. If that's what people actually want,

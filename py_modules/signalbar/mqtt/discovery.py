@@ -156,14 +156,18 @@ SENSORS = (
      "{{ 'ON' if value_json.download_active else 'OFF' }}", {}),
     ("binary_sensor", "thermal_protection", "Thermal protection", "performance",
      "{{ 'ON' if value_json.thermal_protection else 'OFF' }}", {"device_class": "heat"}),
+    # A reading the machine cannot take (no GPU sensor, a failed read) is
+    # unavailable, not unknown.
     ("sensor", "cpu_load", "CPU load", "performance", _num("cpu_load"),
-     {"unit_of_measurement": "%", "state_class": "measurement"}),
+     {"unit_of_measurement": "%", "state_class": "measurement", "applies": "value_json.cpu_load is not none"}),
     ("sensor", "gpu_load", "GPU load", "performance", _num("gpu_load"),
-     {"unit_of_measurement": "%", "state_class": "measurement"}),
+     {"unit_of_measurement": "%", "state_class": "measurement", "applies": "value_json.gpu_load is not none"}),
     ("sensor", "cpu_temperature", "CPU temperature", "performance", _num("cpu_temperature"),
-     {"unit_of_measurement": "°C", "device_class": "temperature", "state_class": "measurement"}),
+     {"unit_of_measurement": "°C", "device_class": "temperature", "state_class": "measurement",
+      "applies": "value_json.cpu_temperature is not none"}),
     ("sensor", "gpu_temperature", "GPU temperature", "performance", _num("gpu_temperature"),
-     {"unit_of_measurement": "°C", "device_class": "temperature", "state_class": "measurement"}),
+     {"unit_of_measurement": "°C", "device_class": "temperature", "state_class": "measurement",
+      "applies": "value_json.gpu_temperature is not none"}),
     ("sensor", "controllers", "Controllers", "controllers", _num("count"),
      {"json_attributes_topic": "controllers", "icon": "mdi:controller", "state_class": "measurement"}),
     # Without a countdown a 0 would look like time ran out.
@@ -188,9 +192,10 @@ SENSORS = (
      "('Running' if value_json.frontend_connected else 'Frontend offline') }}",
      {"json_attributes_topic": "info", "entity_category": "diagnostic"}),
 )
+# Unavailable once the faceplate service is gone, as the entity stays.
 FACEPLATE_SENSOR = ("sensor", "faceplate", "Faceplate", "faceplate",
-                    "{{ value_json.mode if value_json.available else 'None' }}",
-                    {"json_attributes_topic": "faceplate", "icon": "mdi:grid"})
+                    "{{ value_json.mode if value_json.mode else 'Not set' }}",
+                    {"json_attributes_topic": "faceplate", "icon": "mdi:grid", "applies": "value_json.available"})
 
 
 def _device(topics, version, hostname):

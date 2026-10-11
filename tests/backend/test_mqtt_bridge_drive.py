@@ -41,7 +41,8 @@ class DriveEngine:
         return lambda: None
 
     def status(self):
-        return {"version": "1.4.0", "game": {"appid": 0, "title": ""}, "debug": {"frontend_heartbeat_age_s": 1.0}}
+        return {"version": "1.4.0", "game": {"appid": 0, "title": ""}, "debug": {"frontend_heartbeat_age_s": 1.0},
+                "performance": {"cpu_load": 20}}
 
     def home_assistant_refusal(self):
         return self.refusal
@@ -155,6 +156,22 @@ class DriveLightTests(DriveTestCase):
             self.settle()
         self.assertEqual(self.applied, [("home_display", "home_assistant"), ("home_display", "audio_sync")])
         self.assertEqual((self.frame(), self.recorded(), self.error()), (None, {}, ""))
+
+    def test_the_light_shows_at_once_through_the_startup_hold(self):
+        self.connect()
+        self.bridge.stop()
+        path = os.path.join(self.mqtt_dir, "published.json")  # written by the first run, with this boot
+        with open(path, encoding="utf-8") as handle:
+            record = json.load(handle)
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump({**record, "owner": "GabeCubeAura"}, handle)  # an owner from before the restart
+        self.bridge = self.make_bridge()
+        client = self.connect()
+        self.settle(1.1)
+        self.assertNotIn(f"{ROOT}/state/light_bar", [t for t, _, _ in client.published])
+        self.light_on()
+        self.settle(1.1)
+        self.assertIn(f"{ROOT}/state/light_bar", [t for t, _, _ in client.published])
 
     def test_nothing_is_written_when_the_display_is_already_routed_or_was_changed_since(self):
         self.store.update({"home_display": "home_assistant"})

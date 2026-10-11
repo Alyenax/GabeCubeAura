@@ -7,7 +7,7 @@ import unittest
 from unittest import mock
 
 from signalbar.mqtt.discovery import (
-    BASE_EVENT_TYPES, Topics, discovery_messages, drive_discovery, node_id_for, setting_discovery,
+    BASE_EVENT_TYPES, Topics, discovery_messages, drive_discovery, faceplate_discovery, node_id_for, setting_discovery,
 )
 from signalbar.mqtt.drive import AlertCommand, LightCommand, light_state, parse_alert, parse_frame, parse_light
 from signalbar.mqtt.schema import build_schema, denial
@@ -141,6 +141,19 @@ class DiscoveryTests(unittest.TestCase):
                                      f"{{{{ 'online' if {condition} else 'offline' }}}}"}, suffix)
             self.assertEqual(self.by_suffix(suffix)["availability_mode"], "all")
         self.assertNotIn("'None'", self.by_suffix("_last_command_error")["value_template"])
+
+    def test_a_missing_reading_a_gone_faceplate_or_a_long_title_never_reads_unknown(self):
+        for field in ("cpu_load", "gpu_load", "cpu_temperature", "gpu_temperature"):
+            self.assertEqual(self.by_suffix(f"_{field}")["availability"][-1],
+                             {"topic": self.topics.state("performance"), "value_template":
+                              f"{{{{ 'online' if value_json.{field} is not none else 'offline' }}}}"})
+        faceplate = faceplate_discovery(self.topics, "1.4.0", "steammachine")[1]
+        self.assertNotIn("'None'", faceplate["value_template"])
+        self.assertEqual(faceplate["availability"][-1]["value_template"],
+                         "{{ 'online' if value_json.available else 'offline' }}")
+        # Home Assistant refuses a state over 255 characters.
+        game = build_snapshot({"game": {"appid": 570, "title": "x" * 400}}, None, None, {})["game"]
+        self.assertEqual(len(game["title"]), 255)
 
     def test_codes_read_as_words_and_stay_in_the_attributes(self):
         update_codes = ("idle", "checking", "available", "up_to_date", "error", "authorization_required",

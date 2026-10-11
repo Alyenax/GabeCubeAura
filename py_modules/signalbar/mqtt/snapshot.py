@@ -16,6 +16,8 @@ REDACTED_FRAGMENTS = (
     "runtime_dir", "verification_uri", "user_code",
 )
 MAX_STRING = 256
+# Home Assistant refuses a state longer than this, and the game title is one.
+MAX_STATE = 255
 MAX_DEPTH = 8
 # Arrays of 17 pixels or audio levels change many times a second.
 NOISY_KEYS = frozenset({"colors", "levels", "dominant_colors", "screen_palette"})
@@ -198,7 +200,7 @@ def build_snapshot(engine_status, faceplate_status, update_status, facts) -> dic
         "game": {
             "running": bool(appid),
             "appid": appid,
-            "title": str(_get(s, "game", "title", default="")),
+            "title": str(_get(s, "game", "title", default=""))[:MAX_STATE],
             "non_steam": non_steam,
             "started_at": facts.get("started_at") or None,
             "session_minutes": facts.get("session_minutes", 0.0),

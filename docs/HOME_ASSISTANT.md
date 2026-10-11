@@ -148,8 +148,15 @@ on. A different game replaces it at once.
 Session length counts only the time the Steam Machine is awake: sleep pauses
 a session, so a game left running overnight and played again in the morning
 shows the minutes actually played, while its start time stays when the
-session began. If Decky restarts while the same game is still running, the
-session carries on from where it was.
+session began. When Decky restarts, the game's state stays as it was until
+the Decky frontend reports the game, for up to 30 seconds, and if the same game
+is still running the session carries on from where it was and no new start is
+sent. A game quit just before Decky stops is reported as stopped then. After
+the Steam Machine itself restarts nothing from before is kept: no game is
+running and a new one starts a new session.
+While Home Assistant is unreachable the same rules apply: a game back within
+30 seconds carries on, and one quit for longer is a new session, with its stop
+and start sent once the connection is back if that is within a minute.
 
 Key art is the game's Library Hero, including custom artwork set for a game or
 non-Steam shortcut. A shortcut with no hero uses its custom header or cover
@@ -162,7 +169,9 @@ attributes also carry Steam's own addresses for all four.
 
 A value that does not apply makes its entity unavailable instead of showing
 something made up: Playtime remaining while no countdown runs, Light bar
-brightness while Steam has the light bar, Weather until weather is set up and
+brightness while Steam has the light bar, a CPU or GPU reading the Steam
+Machine cannot take (one missing for under a minute keeps its last value),
+Faceplate while no faceplate service runs, Weather until weather is set up and
 has a reading, and Update until the updater reports. Last command error reads
 "No error" when there is none. Weather, Update and Light bar display read as
 words, such as "Partly cloudy", "Up to date" and "Home Assistant". Their
@@ -185,7 +194,12 @@ After a lost connection or a Home Assistant restart, GabeCubeAura sends fresh
 values before the device shows as available again, and events after it, so
 Home Assistant does not show the values from before for a moment. Right after
 GabeCubeAura itself starts, CPU load needs a few seconds for its first
-reading, so the four performance sensors can follow up to 10 seconds later.
+reading, so the device can take up to 10 seconds to show as available. Events
+older than a minute when the connection comes back are not sent, a game stop
+included. While the Steam Machine sleeps, Home Assistant keeps showing its
+last state until the broker's keepalive gives up on it, about 45 seconds
+later, and then shows the device as unavailable. When it wakes, GabeCubeAura
+connects again at once and sends fresh values.
 
 Some changes only say something once they last:
 
@@ -194,7 +208,20 @@ Some changes only say something once they last:
 - a newly connected controller shows no battery reading until Steam reports
   one, instead of the 100% Steam lists first, for up to a minute;
 - while the Decky frontend restarts, Controllers keeps its last value and a
-  controller it already knew is not reported as connected again.
+  controller it already knew is not reported as connected again;
+- for 30 seconds after Decky restarts, every light bar sensor keeps its value
+  from before, because the light bar settles in that time; after it, a
+  different owner is an `owner_changed` event. What Home Assistant's light
+  does shows at once. After the Steam Machine itself restarts, the light bar
+  shows what it is doing straight away.
+
+Current game, Game running, Session length, Controllers, Playtime remaining,
+the four images and the Controllers, Countdown, Game, Light events and Steam
+event entities depend on the Decky frontend. They become unavailable only once
+it has been gone for 30 seconds, so a Decky restart or a frontend reload, which
+takes a few seconds, does not interrupt them. Decky frontend, Status and Steam
+download follow the same rule. After the Steam Machine restarts they wait for
+the frontend's first heartbeat instead.
 
 **Turbo mode**, at the bottom of **What Home Assistant can do**, sends every
 change, up to once a second. Only turn it on if you need it and have set up

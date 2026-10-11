@@ -23,7 +23,9 @@ class PacketError(ValueError):
 
 
 def _bytes(value) -> bytes:
-    return value.encode("utf-8") if isinstance(value, str) else bytes(value)
+    # A lone surrogate (a cut emoji in a game title) is not UTF-8; it goes out
+    # as "?" rather than stopping every publish that carries it.
+    return value.encode("utf-8", errors="replace") if isinstance(value, str) else bytes(value)
 
 
 def _string(value) -> bytes:

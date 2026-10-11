@@ -131,6 +131,12 @@ class FakeClient:
     def retry_in(self):
         return self.retry
 
+    def reconnect(self):
+        # The broker answers the new connection at once.
+        self.reconnects = getattr(self, "reconnects", 0) + 1
+        self.connected = False
+        self.go_online()
+
     def go_online(self):
         self.connected = self.connected_once = True
         self.kwargs["on_connect"]()

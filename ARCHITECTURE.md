@@ -233,23 +233,25 @@ blob. By default it sends:
 - performance when a load moves 5 points or a temperature 2°C from the last
   value sent, at most every 30 seconds. Each reading has its own deadband:
   one that has not moved keeps the value last sent, so only the sensors that
-  moved record a row. After a policy reset (connect, Home
-  Assistant restart, Turbo toggle) it waits up to 10 s for a CPU load reading,
-  which needs two samples, rather than record it as unknown;
+  moved record a row. A reading that goes missing keeps its last value for
+  up to 60 s (not across a sleep), after which the sensor is unavailable;
 - the countdown in whole minutes, rounded up, at most every 60 seconds;
 - session length in 5-minute steps, counted on the monotonic clock, which
   stops during suspend, so sleep pauses a session. `session.py` records the
-  appid, wall start and awake seconds in `session.json` beside `mqtt.json`
-  (atomically, at most once a minute and at bridge stop); the first game a new
-  bridge reports carries on from it if the appid matches and the record is
-  under 10 minutes old, else starts from 0;
+  appid, wall start, awake seconds and boot ID in `session.json` beside
+  `mqtt.json` (atomically under one lock, at most once a minute and at bridge
+  stop, or as no game while a stop is held); the first game a new bridge
+  reports carries on from it if the appid matches, the record is under 10
+  minutes old and from the same boot, else starts from 0;
 - the flattened `status` area at most every 60 seconds;
 - every other area on change, at most once a second.
 
 Thermal protection, countdown start, end, source and label, and game start,
 stop and title bypass those limits. A game stop is reported only after
 `GAME_STOP_HOLD_S` = 30 s, together with its held `stopped` event; if the same
-appid returns first, the session carries on and both events are dropped.
+appid returns within the hold, the session carries on and both events are
+dropped. The game, its stop hold and its session are followed every second
+whether or not the broker is connected; only publishing waits for it.
 Throttling at the source keeps measurement
 sensors recorded, since excluding them would lose long-term statistics. No
 entity uses `force_update`, so an unchanged value costs nothing. Areas that
@@ -278,7 +280,9 @@ download facts. The hub fans them out on its own thread and drops the oldest
 when a subscriber falls behind. A new emit kind becomes a Home Assistant event
 type automatically. Hub events are redacted the same way, and events older
 than 60 seconds, queued while the broker was unreachable or the machine slept,
-are dropped rather than replayed. Thermal, ownership and countdown transitions
+are dropped rather than replayed, and so is every event from before a sleep
+once it ends. An event that does not go out waits for the next step until it
+ages. Thermal, ownership and countdown transitions
 are derived from snapshots; an ownership change is an event only once it has
 lasted `OWNER_SETTLE_S` = 10 s, so notification overlays on Valve's bar fire
 nothing. Light bar attributes leave out the overlay `provider`, and Current
@@ -298,17 +302,40 @@ message both trigger a full republish. It sends the retained state areas, the
 frontend flag, the settings and the light state first, then `availability`
 `online`, then every event, hub and derived alike, so Home Assistant does not
 make the entities available with the values the broker kept from before the
-outage. Performance can still follow up to 10 s later at a bridge start, while
-CPU load waits for its second sample.
+outage. A republish that fails part way runs again. Before the bridge first
+comes online after a start, availability also waits up to 10 s for a CPU load
+reading, which needs two samples, so the last run's readings never show as
+current; later reconnects do not wait.
 
 The stop hold is decided from the game state. When the state shows the same
 appid back before the hub delivers its `started`, the held `stopped` is dropped
-and that `started` is dropped when it arrives. A held stop whose publish fails
-is held again as already decided, so the same game launched before the retry
-is a new session. A settings save restarts the bridge and keeps the held stop
-and the controllers it knew; a real stop (MQTT turned off, an unload) forgets
-them, and a held stop older than `EVENT_MAX_AGE_S` plus the hold is dropped
-like a queued event.
+and that `started` is dropped when it arrives. A settings save (`reconfigure`,
+which is also how MQTT is turned off) restarts the bridge and keeps the held
+stop and the controllers it knew. A final stop, when Decky stops, publishes a
+held stop's game state and event before going offline. A held stop older than
+`EVENT_MAX_AGE_S` plus the hold is dropped like a queued event.
+
+A Decky restart starts a new engine that has no game until the frontend's
+first `game_synced` (its `game_sync_ms` leaves `None`), and whose startup
+settle can take the bar and give it back for 10 s or more. For up to
+`COLD_START_S` = 30 s after the bridge is created, the game area waits for that
+sync (or a reported game, and with a recorded session that resumes, for its
+game), and the `light_bar` area is not published at all, so Home Assistant
+keeps the broker's values. Home Assistant's own light ends the light bar hold.
+After it, the owner from before the restart is the baseline for
+`owner_changed`. The frontend flag, which 14 entities take as availability,
+goes online at once and offline only after `FRONTEND_GRACE_S` = 30 s without a
+heartbeat. All of this applies only on the same boot: `published.json`, beside
+`session.json`, records the boot ID with the image content types and the
+settled owner, and after a reboot, or with no record, the truth goes out at
+once and the frontend flag is off until the first heartbeat. The content
+types it keeps make a restart with the same game send the same discovery.
+
+The bridge is not told about a suspend: Home Assistant shows the old state
+until the broker's keepalive gives up and sends the last will, about 45 s
+later. A step whose wall clock ran more than `SUSPEND_JUMP_S` = 20 s ahead of
+the monotonic one is a wake: it makes a new connection and a full republish
+at once, as the old socket may be dead without knowing it.
 
 Key art is the hero image with the light bar's fallbacks, published as JPEG,
 PNG or WebP from Steam's local artwork, at most 2 MB. Header, capsule and logo
@@ -324,8 +351,9 @@ because the current library cache names it by a content hash.
 
 Values that do not apply use the same kind of entry on their own state topic,
 so Home Assistant shows them as unavailable: Playtime remaining without a
-countdown, Light bar brightness while Valve owns the bar, and Weather without
-a reading.
+countdown, Light bar brightness while Valve owns the bar, a CPU or GPU reading
+that is missing, Faceplate once its service is gone, and Weather without a
+reading. A game title is cut to 255 characters, Home Assistant's limit.
 
 Every field of the engine's and the updater's status reaches Home Assistant
 unless `snapshot.py` excludes it as private (`is_redacted`), noisy (17-pixel

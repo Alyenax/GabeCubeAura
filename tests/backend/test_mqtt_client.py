@@ -51,7 +51,8 @@ class PacketTests(unittest.TestCase):
 
 class ClientTests(unittest.TestCase):
     def make(self, broker, **kwargs):
-        client = MqttClient("127.0.0.1", broker.port, "gca-test", backoff=(0.05, 0.2), **kwargs)
+        kwargs.setdefault("backoff", (0.05, 0.2))
+        client = MqttClient("127.0.0.1", broker.port, "gca-test", **kwargs)
         self.addCleanup(broker.close)
         self.addCleanup(client.stop)  # runs before broker.close
         return client
@@ -86,7 +87,8 @@ class ClientTests(unittest.TestCase):
     def test_reconnects_and_subscribes_again_after_a_drop_or_garbage(self):
         broker = FakeBroker()
         connects = []
-        client = self.make(broker, on_connect=lambda: connects.append(1))
+        # Without a reset the waits would double across the drops: 0.05, 0.1, 0.2, then 0.4.
+        client = self.make(broker, on_connect=lambda: connects.append(1), backoff=(0.05, 5.0))
         client.subscribe("homeassistant/status")
         client.start()
         self.assertTrue(broker.wait_for(lambda: client.connected))
@@ -97,6 +99,20 @@ class ClientTests(unittest.TestCase):
         self.assertTrue(broker.wait_for(lambda: len(connects) == 3, timeout=5))
         client._sock.close()  # as a close() from another thread would
         self.assertTrue(broker.wait_for(lambda: len(connects) == 4, timeout=5))
+        client.reconnect()  # after a sleep, at the first wait rather than one doubled by the drops
+        self.assertTrue(broker.wait_for(lambda: len(connects) == 5, timeout=0.25))
+
+    def test_text_that_is_not_utf_8_goes_out_replaced_and_an_unsendable_publish_just_fails(self):
+        # A cut emoji leaves a lone surrogate in a game title.
+        broker = FakeBroker()
+        client = self.make(broker)
+        client.start()
+        self.assertTrue(broker.wait_for(lambda: client.connected))
+        self.assertTrue(client.publish("gca/state/game", "Shortcut \ud83d"))
+        self.assertFalse(client.publish("gca/" + "t" * 70_000, "x"))
+        self.assertTrue(client.publish("gca/state/light_bar", "ok"))
+        self.assertTrue(broker.wait_for(lambda: len(broker.published) == 2))
+        self.assertEqual([p[1] for p in broker.published], [b"Shortcut ?", b"ok"])
 
     def test_a_silent_broker_is_caught_by_the_keepalive(self):
         broker = FakeBroker(answer_pings=False)

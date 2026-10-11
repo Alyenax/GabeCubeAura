@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import collections
 import json
+import math
 import os
 import re
 import socket
@@ -37,6 +38,7 @@ from .discovery import (
     BASE_EVENT_TYPES,
     DEFAULT_KEY_ART_TYPE,
     GAME_ART,
+    KEY_ART_TYPES,
     art_discovery,
     PRESET_NOTE,
     Topics,
@@ -52,7 +54,7 @@ from .drive import light_state, parse_alert, parse_frame, parse_light
 from .policy import PublishingPolicy
 from .routed import RoutedDisplays
 from .schema import DEVICES, build_schema
-from .session import SessionRecord
+from .session import Published, SessionRecord
 from .snapshot import _json_safe, build_snapshot, frontend_connected, is_redacted
 
 SNAPSHOT_INTERVAL_S = 1.0
@@ -62,9 +64,14 @@ KEY_ART_RETRY_S = 30.0
 # achievement from hours ago would fire automations for nothing.
 EVENT_MAX_AGE_S = 60.0
 COALESCE_S = 1.0
-# CPU load needs two /proc/stat samples, so the first status has none. Waiting
-# a little keeps Home Assistant from recording "unknown" for the next 30 s.
+# CPU load needs two /proc/stat samples, so a new engine's first status has
+# none. Until then, or this long, the device stays offline after a start, so
+# the last run's readings are never shown as current.
 PERFORMANCE_HOLD_S = 10.0
+# A reading that goes missing for a moment keeps its last value this long, so
+# the sensor's history has no gap; after it the sensor is unavailable.
+READING_KEEP_S = 60.0
+READINGS = ("cpu_load", "gpu_load", "cpu_temperature", "gpu_temperature")
 ERROR_LIMIT = 200
 DRIVE_INTERVAL_S = 0.25
 # Long enough that restarting Home Assistant does not flip the bar.
@@ -73,6 +80,21 @@ FALLBACK_AFTER_S = 30.0
 # Waking from sleep clears the game until Steam confirms it again, and mod
 # launchers stop and restart theirs within a few seconds.
 GAME_STOP_HOLD_S = 30.0
+# After a Decky restart the new engine has no game until the frontend syncs
+# it, a few seconds later, and its startup settle can take the light bar and
+# give it back for 10 s or more without saying when it is done. So for this
+# long after the bridge is created the game state waits for the frontend and
+# the light bar state waits out the settle, keeping the broker's values. Only
+# on the same boot: after a reboot those values are stale.
+COLD_START_S = 30.0
+# Fourteen entities follow the frontend flag. A Decky restart or a frontend
+# reload stops the heartbeat for about 7 s, so the flag goes offline only once
+# the heartbeat has been missing this long; it comes back online at once.
+FRONTEND_GRACE_S = 30.0
+# The wall clock runs on through a suspend and the monotonic one does not. A
+# gap this much larger between steps means the machine slept, and its
+# connection may be dead without the socket knowing for up to a keepalive.
+SUSPEND_JUMP_S = 20.0
 # Notifications and downloads over Steam's bar hand it to GabeCubeAura and
 # back within 3-4 s; only an owner that lasts this long is an event.
 OWNER_SETTLE_S = 10.0
@@ -171,11 +193,16 @@ class MqttBridge:
         self._unsubscribe = None
         self._lock = threading.Lock()
         self._events = collections.deque(maxlen=128)
+        self._outbox = []  # (stamped, area, event type, payload) not yet published
+        self._online_pending = False  # availability online still to follow a full republish
+        self._online_once = False
         self._needs_full = False
         self._policy = PublishingPolicy()
         self._turbo = False
         self._performance_held_at = None
+        self._readings = {}  # performance field -> (last value, when)
         self._last_snapshot_at = None
+        self._last_clocks = None  # (monotonic, wall) at the last step
         self._connected_key = None
         self._event_types = {area: list(types) for area, types in BASE_EVENT_TYPES.items()}
         self._previous = {}
@@ -188,28 +215,40 @@ class MqttBridge:
         self._lifecycle_lock = threading.RLock()
         self._key_art_state = None
         self._key_art_retry = (None, 0.0)
-        self._key_art_type = DEFAULT_KEY_ART_TYPE
         self._art_state, self._art_retry = {}, {}
-        self._art_type = {kind: DEFAULT_KEY_ART_TYPE for kind in GAME_ART}
+        path = getattr(config, "path", None)
+        # The types announced last, so the first discovery after a restart
+        # matches the art the same game will send.
+        self._published = Published(os.path.dirname(path) if path else None, KEY_ART_TYPES)
+        known = self._published.art_types
+        self._key_art_type = known.get("key_art", DEFAULT_KEY_ART_TYPE)
+        self._art_type = {kind: known.get(kind, DEFAULT_KEY_ART_TYPE) for kind in GAME_ART}
         self._faceplate_described = False
         self._version = None
         # (appid, wall time it started, clock reading it started at), as
         # reported. The session length counts on the monotonic clock, which
         # stops while the machine sleeps, so sleep pauses a session.
         self._game = (0, None, None)
-        path = getattr(config, "path", None)
         self._session = SessionRecord(os.path.dirname(path) if path else None)
-        self._session_first = True
+        # (appid, started, awake s): only the first game this bridge reports
+        # may carry on a recorded session.
+        self._resume, self._resume_checked = None, False
+        same_boot = self._published.same_boot
+        self._cold_until = clock() + COLD_START_S if same_boot else None
+        self._game_cold = same_boot
+        # With no owner from before (a first install) there is nothing to keep.
+        self._owner_before = self._published.owner if same_boot else None
+        self._bar_cold = self._owner_before is not None
+        # (heartbeat seen, since when), the raw frontend state. After a reboot
+        # the frontend flag is off until the first heartbeat, not in its grace.
+        self._frontend = (None, None) if same_boot else (False, -math.inf)
         self._session_saved_at = None
         self._game_seen = None  # the reported game's status and colours
         self._game_stopped_at = None
         self._held_stop = None  # its "stopped" event, sent when the hold ends
         self._held_at = 0.0
-        self._held_decided = False  # already released once; only its publish failed
-        self._forget = False
-        self._swallow_start = None  # appid whose "started" is still to come and to drop
+        self._swallow_start = None  # (appid, until): a "started" still to come and to drop
         self._owner_pending = None  # (owner, since) not yet an event
-        self._frontend_up_at = None
         self._pads = {}  # controller id -> (listed at, placeholder percent or None)
         self._pads_known = {}  # controller id -> first listed, until it disconnects
         self._download_active = False
@@ -228,10 +267,7 @@ class MqttBridge:
 
     def stop(self):
         with self._lifecycle_lock:
-            # A real stop, unlike a settings save's reconfigure: the next run
-            # starts without the held game stop and the controllers known.
-            self._forget = True
-            self._stop()
+            self._stop(final=True)
 
     def reconfigure(self):
         with self._lifecycle_lock:
@@ -255,6 +291,12 @@ class MqttBridge:
             self._drive_alerts.clear()
             self._ha_offline = False
         self._unreachable_since = None
+        if not self._resume_checked:
+            # Not before: MQTT may be turned on hours after Decky loaded.
+            self._resume_checked = True
+            self._resume = self._session.resume(self._wall())
+            if not self._published.same_boot:
+                self._published.save()  # records this boot
         self._log_advertised_error()
         self.client = self._client_factory(
             settings["host"], settings["port"], f"gabecubeaura-{self.topics.node_id}",
@@ -276,16 +318,26 @@ class MqttBridge:
                                             name="gabecubeaura-mqtt-bridge", daemon=True)
             self._thread.start()
 
-    def _stop(self):
+    def _stop(self, final=False):
+        """Stop the client and worker; final for Decky stopping, not a settings save."""
         self._stop_event.set()
-        game = self._game
-        if game[0]:
-            # Up to the second, for a next run that finds the game still going.
-            self._session.save(game[0], game[1], self._clock() - game[2], self._wall())
         thread = self._thread
         if thread and thread.is_alive() and thread is not threading.current_thread():
             thread.join(timeout=self.join_timeout_s)
         self._thread = None
+        # After the join, so the worker's own save does not land after this
+        # one (unless the join timed out; each write is whole either way).
+        game = self._game
+        if final and self._game_stopped_at is not None:
+            # Quit inside the stop hold: say so now, or the broker would keep
+            # the game as running and its stop would never be sent.
+            self._send_held_stop()
+        if game[0] and self._game_stopped_at is not None:
+            # A next run must not carry on a game quit inside the hold.
+            self._session.save()
+        elif game[0]:
+            # Up to the second, for a next run that finds the game still going.
+            self._session.save(game[0], game[1], self._clock() - game[2], self._wall())
         with self._lock:
             self._commands.clear()
             self._drive_light = None
@@ -309,6 +361,17 @@ class MqttBridge:
             if client.connected and self.topics:
                 client.publish(self.topics.availability, "offline", retain=True)
             client.stop()
+
+    def _send_held_stop(self):
+        client, topics = self.client, self.topics
+        status = self._safe(lambda: self.engine.status())
+        if client is None or topics is None or not client.connected or not isinstance(status, dict):
+            return
+        game = self._policy.shape("game", build_snapshot(status, None, None, {})["game"], self._turbo)
+        client.publish(topics.state("game"), _json(game), retain=True)
+        if self._held_stop is not None:
+            client.publish(topics.event("game"), _json(self._held_stop))
+            self._held_stop = None
 
     def status(self) -> dict:
         client = self.client
@@ -504,28 +567,52 @@ class MqttBridge:
             self._settings_text = None
             self._drive_text = None
             self._owner_pending = None
-            # A held stop survives a settings save; after a real stop, or
-            # once older than a queued event may be, it is history.
-            stale = self._held_stop is not None and (
-                self._clock() - self._held_at > EVENT_MAX_AGE_S + GAME_STOP_HOLD_S)
-            if self._forget or stale:
+            # A held stop survives a settings save, until it is older than a
+            # queued event may be.
+            if self._held_stale(self._clock()):
                 self._held_stop = self._swallow_start = None
                 self._game_stopped_at = self._game_seen = None
-            if self._forget:
-                self._pads, self._pads_known = {}, {}
-            self._forget = False
+        # First, so nothing else in the step trusts a connection that slept.
+        self._check_wake(client, self._clock())
         self._apply_due_commands(stop_event)
         self._step_drive(stop_event)
-        if not client.connected:
+        now = self._clock()
+        connected = client.connected
+        with self._lock:
+            full, self._needs_full = (self._needs_full, False) if connected else (False, True)
+        try:
+            tracked = None
+            if full or self._last_snapshot_at is None or now - self._last_snapshot_at >= SNAPSHOT_INTERVAL_S:
+                # The game and its session are followed while offline too, so
+                # Home Assistant sees what is true now when the connection
+                # comes back.
+                self._last_snapshot_at = now
+                tracked = self._track_game(now)
+            if connected:
+                self._publish_step(client, full, tracked, now)
+        except Exception:
+            # Availability goes out last, so a full republish that failed part
+            # way must run again or the device would stay unavailable.
             with self._lock:
                 self._needs_full = True
+            raise
+
+    def _publish_step(self, client, full, tracked, now):
+        if tracked is None and full:
+            with self._lock:
+                self._needs_full = True  # no fresh state to send before online
             return
+        status = tracked[0] if tracked is not None else None
         with self._lock:
-            full, self._needs_full = self._needs_full, False
             queued = list(self._events)
             self._events.clear()
-        now = self._clock()
+        # Events a failed step had taken out wait here until they go out or age.
         events = []
+        for stamped, area, event_type, payload in self._outbox:
+            if now - stamped > EVENT_MAX_AGE_S:
+                self._stale_dropped += 1
+            else:
+                events.append((stamped, area, event_type, payload))
         for stamped, kind, data in queued:
             if now - stamped > EVENT_MAX_AGE_S:
                 self._stale_dropped += 1
@@ -537,18 +624,20 @@ class MqttBridge:
                 self._stale_dropped += 1
                 continue
             if area == "game":
-                events.extend(self._game_events(event_type, payload, now))
+                found = self._game_events(event_type, payload, stamped, now)
             elif area == "controllers":
-                events.extend(self._controller_events(event_type, payload, now))
+                found = self._controller_events(event_type, payload, now)
             else:
-                events.append((area, event_type, payload))
+                found = [(area, event_type, payload)]
+            events.extend((stamped, *event) for event in found)
+        self._outbox = events
         new_types = False
-        for area, event_type, _ in events:
+        for _, area, event_type, _ in events:
             if event_type not in self._event_types.setdefault(area, []):
                 self._event_types[area].append(event_type)
                 new_types = True
         if full or new_types:
-            self._publish_discovery(client)
+            self._publish_discovery(client, status)
         if full:
             self._policy.reset()
             self._frontend_published = None
@@ -559,48 +648,87 @@ class MqttBridge:
             self._described = None
             self._settings_text = None
             self._drive_text = None
-        derived = []
-        if full or self._last_snapshot_at is None or now - self._last_snapshot_at >= SNAPSHOT_INTERVAL_S:
-            self._last_snapshot_at = now
-            derived = self._publish_snapshot(client, full, now)
+        if tracked is not None:
+            self._outbox += [(now, *event) for event in self._publish_snapshot(client, *tracked, full, now)]
         self._sync_settings(client)
         if full:
+            self._online_pending = True
+        if self._online_pending:
             # Last, after the retained state and the frontend flag: the broker
             # still holds the values from before the outage, and Home
-            # Assistant would show those first.
+            # Assistant would show those first. Right after a start that
+            # includes performance, which can wait a few seconds for its
+            # first reading; events wait with it.
+            if not self._policy.sent("performance") and self._performance_held_at is not None:
+                return
             client.publish(self.topics.availability, "online", retain=True)
-        for area, event_type, payload in events + derived:
+            self._online_pending = False
+            self._online_once = True
+        # One that does not go out waits for the next step, until it ages.
+        events, self._outbox = self._outbox, []
+        for event in events:
             try:
-                sent = client.publish(self.topics.event(area), _json(payload))
-            except Exception:
+                text = _json(event[3])
+            except (TypeError, ValueError):  # keys that cannot be sorted
                 self._stale_dropped += 1
                 continue
-            if not sent and (area, event_type) == ("game", "stopped") and self._held_stop is None:
-                # Sent with the next snapshot instead, as already decided:
-                # the same game launched again by then is a new session.
-                self._hold_stop(payload, now, decided=True)
+            if not client.publish(self.topics.event(event[1]), text):
+                self._outbox.append(event)
 
-    def _hold_stop(self, payload, now, decided=False):
-        self._held_stop, self._held_at, self._held_decided = payload, now, decided
+    def _check_wake(self, client, now):
+        """After a suspend, make a new connection and a full republish.
 
-    def _game_events(self, event_type, payload, now) -> list:
+        Events from before the sleep are history by its end, and kept
+        readings, counted on the monotonic clock, would look seconds old.
+        """
+        wall, last = self._wall(), self._last_clocks
+        self._last_clocks = (now, wall)
+        if last is None or (wall - last[1]) - (now - last[0]) <= SUSPEND_JUMP_S:
+            return
+        with self._lock:
+            self._needs_full = True
+            before = len(self._events) + len(self._outbox)
+            self._events = collections.deque((e for e in self._events if e[0] > last[0]), maxlen=128)
+            self._outbox = [event for event in self._outbox if event[0] > last[0]]
+            self._stale_dropped += before - len(self._events) - len(self._outbox)
+        self._readings = {}
+        reconnect = getattr(client, "reconnect", None)
+        if callable(reconnect):
+            reconnect()
+
+    def _held_stale(self, now) -> bool:
+        """Whether the held stop is older than a queued event may be, counted from when it was due."""
+        return self._held_stop is not None and now - self._held_at > EVENT_MAX_AGE_S + GAME_STOP_HOLD_S
+
+    def _release_held(self, now) -> list:
+        """Let go of the held stop: as an event, or dropped if it is history by now."""
+        held, stale = self._held_stop, self._held_stale(now)
+        self._held_stop = None
+        if stale:
+            self._stale_dropped += 1
+            return []
+        return [("game", "stopped", held)]
+
+    def _game_events(self, event_type, payload, stamped, now) -> list:
         """Hold a "stopped" event until the game stop is reported; drop it if the same game starts again."""
         out = []
         held, appid = self._held_stop, payload.get("appid")
+        if event_type == "started" and self._resume is not None and self._resume[0] == appid:
+            return out  # the recorded session carries on
         if event_type == "started" and self._swallow_start is not None:
-            swallow, self._swallow_start = self._swallow_start, None
-            if swallow == appid:
+            (swallow, until), self._swallow_start = self._swallow_start, None
+            if swallow == appid and stamped <= until:
                 return out  # the snapshot already saw the same game come back
         if event_type == "stopped":
             if held is not None:
-                out.append(("game", "stopped", held))
-            self._hold_stop(payload, now)
+                out.extend(self._release_held(now))
+            self._held_stop, self._held_at = payload, stamped
             return out
         if event_type == "started" and held is not None:
-            self._held_stop = None
-            if held.get("appid") == appid and not self._held_decided:
-                return out  # the same session carries on
-            out.append(("game", "stopped", held))
+            if held.get("appid") == appid and stamped - self._held_at < GAME_STOP_HOLD_S:
+                self._held_stop = None
+                return out  # back within the hold: the same session carries on
+            out.extend(self._release_held(now))
         out.append(("game", event_type, payload))
         return out
 
@@ -629,7 +757,8 @@ class MqttBridge:
         listed controller's 100% shows as no reading until it changes or
         PLACEHOLDER_HOLD_S passes.
         """
-        hold = not frontend_up or (not area["count"] and now - self._frontend_up_at < ROSTER_SETTLE_S)
+        up_for = now - self._frontend[1] if frontend_up else 0.0
+        hold = not frontend_up or (not area["count"] and up_for < ROSTER_SETTLE_S)
         pads, shown = (dict(self._pads) if hold else {}), []
         for pad in area["controllers"]:
             identifier, percent = pad.get("id"), pad.get("percent")
@@ -639,7 +768,7 @@ class MqttBridge:
             pads[identifier] = (listed_at, placeholder)
             self._pads_known.setdefault(identifier, now)
             shown.append(pad if placeholder is None else {**pad, "percent": None})
-        if not hold and now - self._frontend_up_at >= ROSTER_SETTLE_S:
+        if not hold and up_for >= ROSTER_SETTLE_S:
             # Settled: a controller missing now has gone, even with no
             # "disconnected" to say so, and its next "connected" is real.
             self._pads_known = {key: at for key, at in self._pads_known.items() if key in pads}
@@ -650,15 +779,17 @@ class MqttBridge:
         """Start the reported game's session at 0, or carry on the recorded one.
 
         Only the first game this bridge reports may carry on, after a Decky
-        restart with the same game still running.
+        restart with the same game still running. Its "started" is not news.
         """
-        first, self._session_first = self._session_first, False
+        resume, self._resume = self._resume, None
         if not appid:
             self._record_session(None, now)
             return (0, None, None)
-        wall = self._wall()
-        resumed = self._session.resume(appid, wall) if first else None
-        game = (appid, resumed[0], now - resumed[1]) if resumed else (appid, wall, now)
+        if resume and resume[0] == appid:
+            game = (appid, resume[1], now - resume[2])
+            self._swallow_start = (appid, now + GAME_STOP_HOLD_S)
+        else:
+            game = (appid, self._wall(), now)
         self._record_session(game, now)
         return game
 
@@ -858,6 +989,7 @@ class MqttBridge:
             provider.set_light(False)
             self._restore_routes(stop_event)
             self._clear_refusal(key)
+            self._bar_cold = False  # Home Assistant's own change shows at once
             return
         refusal = self._drive_refusal()
         if refusal:
@@ -874,9 +1006,10 @@ class MqttBridge:
             self._reject(key, f"{key}: {error}")
             return
         self._clear_refusal(key)
+        self._bar_cold = False
 
     def _clear_refusal(self, key):
-        """Forget a refusal once the same command applies, as for settings."""
+        """Forget a refusal once the same command applies."""
         with self._lock:
             self._last_logged = ""
             if self._last_error_key == key:
@@ -1045,7 +1178,9 @@ class MqttBridge:
         current = values.get(key)
         if _same(current, value):
             # The store treats any write of a preset-controlled key as an edit
-            # and leaves the display preset, even when nothing changes.
+            # and leaves the display preset, even when nothing changes. It
+            # still succeeded, so an earlier refusal for the key is over.
+            self._clear_refusal(key)
             return
         try:
             self._apply_setting(key, value)
@@ -1062,13 +1197,10 @@ class MqttBridge:
         if not _same(stored, value):
             self._reject(key, f"{key}: GabeCubeAura kept {_shown(stored)} instead of {_shown(value)}")
             return
-        with self._lock:
-            self._last_logged = ""
-            if self._last_error_key == key:
-                self._last_error, self._last_error_key = "", None
+        self._clear_refusal(key)
 
-    def _publish_discovery(self, client):
-        version = self.engine.status().get("version") if hasattr(self.engine, "status") else None
+    def _publish_discovery(self, client, status=None):
+        version = status.get("version") if status is not None else self._version
         self._version = version
         faceplate = isinstance(self._safe(self._faceplate_status), dict)
         published = True
@@ -1086,34 +1218,58 @@ class MqttBridge:
         if client.publish(topic, _json(payload), retain=True):
             self._faceplate_described = True
 
-    def _publish_snapshot(self, client, full=False, now=None):
-        now = self._clock() if now is None else now
-        status = self.engine.status()
-        engine_appid = (status.get("game") or {}).get("appid") if isinstance(status, dict) else None
+    def _track_game(self, now):
+        """Return (status with the game stop held, the engine's own appid), or None without a status.
+
+        Follows the game and writes its session down, connected or not.
+        """
+        status = self._safe(lambda: self.engine.status())
+        if not isinstance(status, dict):
+            return None
+        engine_appid = (status.get("game") or {}).get("appid")
         status = self._hold_game(status, now)
         appid = int((status.get("game") or {}).get("appid") or 0)
-        if appid != self._game[0]:
+        # game_sync_ms is None in a new engine until the frontend's first
+        # game_synced, which it reports once the engine has taken the game;
+        # its first, the seed, still says source "startup".
+        debug = status.get("debug") if isinstance(status.get("debug"), dict) else {}
+        synced = debug.get("game_sync_ms") is not None
+        if self._cold_until is not None and now >= self._cold_until:
+            self._cold_until, self._game_cold, self._bar_cold = None, False, False
+        self._game_cold = self._game_cold and not (appid or synced)
+        if self._resume is not None and not appid and (synced or self._cold_until is None):
+            self._game = self._new_session(0, now)  # it was not still running after all
+        elif appid != self._game[0]:
             self._game = self._new_session(appid, now)
         elif appid:
             self._record_session(self._game, now)
-        started = self._game[1]
-        frontend_up = frontend_connected(status)
-        if not frontend_up:
-            self._frontend_up_at = None
+        # Followed here, connected or not, so an outage does not restart the grace.
+        up = frontend_connected(status)
+        if self._frontend[0] is not up:
+            self._frontend = (up, now)
+        return status, engine_appid
+
+    def _frontend_shown(self, now) -> bool:
+        """The frontend flag as published: offline only after FRONTEND_GRACE_S without a heartbeat."""
+        up, since = self._frontend
+        return bool(up) or since is None or now - since < FRONTEND_GRACE_S
+
+    def _publish_snapshot(self, client, status, engine_appid, full, now):
+        started, frontend_up, shown = self._game[1], bool(self._frontend[0]), self._frontend_shown(now)
+        if not shown:
             with self._lock:
-                self._download_active = False
-        elif self._frontend_up_at is None:
-            self._frontend_up_at = now
+                self._download_active = False  # the frontend reports downloads; it has been gone too long
         facts = {
             "started_at": datetime.fromtimestamp(started, timezone.utc).isoformat() if started else "",
             "session_minutes": round(max(0.0, now - self._game[2]) / 60.0, 1) if started else 0.0,
-            "download_active": self._download_active and frontend_up,
+            "download_active": self._download_active and shown,
             "events_dropped": self._events_dropped(),
-            "frontend_connected": frontend_up,
+            "frontend_connected": shown,
             "last_error": self._last_error,
         }
         snapshot = build_snapshot(status, self._safe(self._faceplate_status), self._safe(self._update_status), facts)
         snapshot["controllers"], hold_roster = self._settle_controllers(snapshot["controllers"], frontend_up, now)
+        snapshot["performance"] = self._steady_readings(snapshot["performance"], now)
         if snapshot["faceplate"]["available"] and not self._faceplate_described:
             self._publish_faceplate_discovery(client)
         frontend = "online" if facts["frontend_connected"] else "offline"
@@ -1124,45 +1280,61 @@ class MqttBridge:
         if turbo != self._turbo:
             self._turbo = turbo
             self._policy.reset()
+        # Before the game state: the images become available with it, and the
+        # broker still holds the last game's.
+        self._publish_key_art(client, snapshot["game"], now)
+        self._publish_game_art(client, snapshot["game"], now)
         for area, payload in snapshot.items():
             if (area == "performance" and self._hold_performance(payload, now)
-                    or area == "controllers" and hold_roster):
+                    or area == "controllers" and hold_roster
+                    or area == "game" and (self._resume is not None or self._game_cold)
+                    or area == "light_bar" and self._bar_cold):
                 continue
             shaped = self._policy.shape(area, payload, turbo)
             text = _json(shaped)
             if self._policy.due(area, shaped, text, now, turbo) and client.publish(
                     self.topics.state(area), text, retain=True):
                 self._policy.published(area, shaped, text, now)
-        events = self._settle_game_stop(engine_appid) + self._derive_events(snapshot, now)
-        self._publish_key_art(client, snapshot["game"], now)
-        self._publish_game_art(client, snapshot["game"], now)
-        return events
+        return self._settle_game_stop(engine_appid, now) + self._derive_events(snapshot, now)
 
-    def _settle_game_stop(self, engine_appid) -> list:
+    def _settle_game_stop(self, engine_appid, now) -> list:
         """Decide a held "stopped" event from the game state once no stop is being held.
 
         The engine changes its state before the hub delivers the events, so
         the state may show the same game back before its "started" arrives:
-        then both are dropped. Otherwise the stop goes out. A stop already
-        decided, whose publish failed, goes out without asking again.
+        then both are dropped. Otherwise the stop goes out. One held over an
+        outage longer than a queued event may wait is dropped.
         """
         held = self._held_stop
-        if held is None or (self._game_stopped_at is not None and not self._held_decided):
+        if held is None or self._game_stopped_at is not None:
             return []
-        self._held_stop = None
-        if engine_appid and engine_appid == held.get("appid") and not self._held_decided:
-            self._swallow_start = engine_appid
+        if self._held_stale(now):
+            return self._release_held(now)
+        if engine_appid and engine_appid == held.get("appid"):
+            self._held_stop = None
+            # Only for as long as a hub event takes, so it never eats a later launch.
+            self._swallow_start = (engine_appid, now + GAME_STOP_HOLD_S)
             return []
-        return [("game", "stopped", held)]
+        return self._release_held(now)
+
+    def _steady_readings(self, area, now) -> dict:
+        """Fill a missing CPU or GPU reading with the last one for up to READING_KEEP_S."""
+        out = dict(area)
+        for field in READINGS:
+            if area.get(field) is not None:
+                self._readings[field] = (area[field], now)
+            elif field in self._readings and now - self._readings[field][1] <= READING_KEEP_S:
+                out[field] = self._readings[field][0]
+        return out
 
     def _hold_performance(self, payload, now) -> bool:
-        """Whether to hold back the first performance publish until CPU load has a reading.
+        """Whether to hold back the first performance publish after a start until CPU load has a reading.
 
-        It waits at most PERFORMANCE_HOLD_S. Leaving the field out would not
-        help, since the sensor templates show a missing field as unknown too.
+        It waits at most PERFORMANCE_HOLD_S, and only before this bridge first
+        came online: after that a reconnect has nothing stale to hide.
         Thermal protection is news and never waits.
         """
-        if (self._policy.sent("performance") or payload.get("cpu_load") is not None
+        if (self._online_once or self._policy.sent("performance") or payload.get("cpu_load") is not None
                 or payload.get("thermal_protection")):
             self._performance_held_at = None
             return False
@@ -1172,26 +1344,31 @@ class MqttBridge:
 
     def _derive_events(self, snapshot, now) -> list:
         """Thermal, ownership and countdown transitions, as (area, event type, payload)."""
-        owner = snapshot["light_bar"]["owner"]
+        owner, known = snapshot["light_bar"]["owner"], self._previous.get("light_bar")
+        # The cold engine's owner is no change. After it the owner from before
+        # the restart is the baseline, so only a different one is an event.
+        cold = self._bar_cold
         current = {
             "thermal": snapshot["performance"]["thermal_protection"],
-            "light_bar": self._previous.get("light_bar", owner),
+            "light_bar": None if cold else known or self._owner_before or owner,
             "countdown": snapshot["countdown"]["active"],
         }
-        if owner == current["light_bar"]:
+        if cold or owner == current["light_bar"]:
             self._owner_pending = None
         elif self._owner_pending is None or self._owner_pending[0] != owner:
             self._owner_pending = (owner, now)
         elif now - self._owner_pending[1] >= OWNER_SETTLE_S:
             current["light_bar"], self._owner_pending = owner, None
         previous, self._previous = self._previous, current
+        if current["light_bar"] is not None and current["light_bar"] != self._published.owner:
+            self._published.save(owner=current["light_bar"])
         if not previous:
             return []
         out = []
         if current["thermal"] != previous["thermal"]:
             kind = "tripped" if current["thermal"] else "recovered"
             out.append(("thermal", kind, {"event_type": kind}))
-        if current["light_bar"] != previous["light_bar"]:
+        if current["light_bar"] != previous["light_bar"] and None not in (current["light_bar"], previous["light_bar"]):
             out.append(("light_bar", "owner_changed", {"event_type": "owner_changed", "owner": current["light_bar"]}))
         if current["countdown"] != previous["countdown"]:
             kind = "started" if current["countdown"] else "ended"
@@ -1228,6 +1405,7 @@ class MqttBridge:
         if not client.publish(topic, _json(payload), retain=True):
             return False
         self._key_art_type = content_type
+        self._save_art_types()
         return True
 
     def _publish_game_art(self, client, game, now):
@@ -1258,7 +1436,11 @@ class MqttBridge:
         if not client.publish(topic, _json(payload), retain=True):
             return False
         self._art_type[kind] = content_type
+        self._save_art_types()
         return True
+
+    def _save_art_types(self):
+        self._published.save(art_types={"key_art": self._key_art_type, **self._art_type})
 
     @classmethod
     def _read_game_art(cls, appid, kind):

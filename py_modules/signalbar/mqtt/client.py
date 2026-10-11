@@ -121,6 +121,7 @@ class MqttClient:
         self.last_reason = ""
         self._retry_at = None
         self.messages_out = 0
+        self._session_up = False  # this attempt reached CONNACK
 
     def start(self):
         if self._thread and self._thread.is_alive():
@@ -143,6 +144,11 @@ class MqttClient:
         if thread and thread.is_alive() and thread is not threading.current_thread():
             thread.join(timeout=3.0)
 
+    def reconnect(self):
+        """Drop the connection and make a new one, for a socket that may have died during sleep."""
+        if self.connected:
+            self._abort()
+
     def retry_in(self):
         """Seconds until the next connection attempt while waiting after a failure, else None."""
         at = self._retry_at
@@ -162,8 +168,12 @@ class MqttClient:
         if not self.connected:
             return False
         try:
-            self._send(packets.publish(topic, payload, retain))
-        except (OSError, MqttError, packets.PacketError):
+            data = packets.publish(topic, payload, retain)
+        except (ValueError, TypeError):
+            return False  # nothing was sent, so the connection is fine
+        try:
+            self._send(data)
+        except (OSError, MqttError):
             self._abort()
             return False
         self.messages_out += 1
@@ -172,7 +182,7 @@ class MqttClient:
     def _run(self):
         delay = self._backoff[0]
         while not self._stop.is_set():
-            self.phase = "connecting"
+            self.phase, self._session_up = "connecting", False
             try:
                 self._session()
                 delay = self._backoff[0]
@@ -187,6 +197,9 @@ class MqttClient:
                     if self.log:
                         self.log.warning(f"[GabeCubeAura] MQTT loop error: {self.last_error}")
             finally:
+                if self._session_up:
+                    # A connection that worked starts the waits afresh.
+                    delay = self._backoff[0]
                 self._close()
             if self._stop.is_set():
                 break
@@ -235,7 +248,7 @@ class MqttClient:
                 break
         if self._stop.is_set():
             raise MqttError("stopped")
-        self.connected = True
+        self.connected = self._session_up = True
         self.connected_once = True
         self.phase, self.last_reason = "connected", ""
         # last_error is kept: it says why the previous connection ended, and

@@ -25,6 +25,8 @@ AREA_INTERVAL_S = {"performance": 30.0, "countdown": 60.0, "status": 60.0}
 # percentage points for load, degrees for temperature.
 LOAD_DEADBAND = 5
 TEMPERATURE_DEADBAND = 2.0
+DEADBANDS = {"cpu_load": LOAD_DEADBAND, "gpu_load": LOAD_DEADBAND,
+             "cpu_temperature": TEMPERATURE_DEADBAND, "gpu_temperature": TEMPERATURE_DEADBAND}
 SESSION_STEP_MINUTES = 5
 IMMEDIATE_KEYS = {
     "performance": ("thermal_protection",),
@@ -68,6 +70,12 @@ class PublishingPolicy:
             return {**payload, "session_minutes": _whole(
                 payload.get("session_minutes"),
                 lambda v: (v // SESSION_STEP_MINUTES) * SESSION_STEP_MINUTES)}
+        if area == "performance" and area in self._last:
+            # A reading inside its deadband keeps the value last sent, so one
+            # moving sensor does not record a row for the other three.
+            last = self._last[area][1]
+            return {**payload, **{key: last.get(key) for key, deadband in DEADBANDS.items()
+                                  if not _moved(payload.get(key), last.get(key), deadband)}}
         return payload
 
     def due(self, area, payload, text, now, turbo) -> bool:
@@ -84,11 +92,9 @@ class PublishingPolicy:
         if isinstance(payload, dict) and isinstance(last_payload, dict) and any(
                 payload.get(key) != last_payload.get(key) for key in IMMEDIATE_KEYS.get(area, ())):
             return True
-        if elapsed < AREA_INTERVAL_S.get(area, BASE_INTERVAL_S):
-            return False
-        if area == "performance":
-            return self._performance_moved(payload, last_payload)
-        return True
+        # Performance readings that stayed inside their deadband were shaped
+        # back to the last value sent, so any difference left is a real move.
+        return elapsed >= AREA_INTERVAL_S.get(area, BASE_INTERVAL_S)
 
     def sent(self, area) -> bool:
         """Whether this area was published since the last reset()."""
@@ -97,12 +103,3 @@ class PublishingPolicy:
     def published(self, area, payload, text, now):
         """Record a successful publish; deadbands and intervals count from it."""
         self._last[area] = (text, payload, now)
-
-    @staticmethod
-    def _performance_moved(payload, last) -> bool:
-        if not isinstance(payload, dict) or not isinstance(last, dict):
-            return True
-        return any(_moved(payload.get(key), last.get(key), LOAD_DEADBAND)
-                   for key in ("cpu_load", "gpu_load")) or any(
-            _moved(payload.get(key), last.get(key), TEMPERATURE_DEADBAND)
-            for key in ("cpu_temperature", "gpu_temperature"))

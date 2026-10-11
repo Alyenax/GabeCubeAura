@@ -9,6 +9,10 @@
   discovery. MQTT is off by default.
 - Throttle updates so Home Assistant's database stays small without any
   recorder configuration. Turbo mode sends every change, up to once a second.
+- Report only what is true: Current game reads "Not playing", a game stop
+  shows after 30 seconds so a short stop stays one session, values that do
+  not apply are unavailable, codes read as words, and fresh values arrive
+  before the device comes back online.
 - Choose how far the light bar defers to Home Assistant: Watch only, Help out
   (the default), Take the lead, In control or Full control. From Take the lead
   up Home Assistant's light and alerts come first, from In control

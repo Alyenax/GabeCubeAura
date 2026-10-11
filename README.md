@@ -347,6 +347,12 @@ follow the Steam Machine.
 Steam's own animations, such as downloads, come first at every tier. Urgent
 warnings are Steam's other light bar indicators, thermal protection, a
 controller low on battery and the last five minutes of a playtime countdown.
+Current game reads "Not playing" when no game runs. A game that stops shows as
+stopped 30 seconds later, so waking from sleep or a mod launcher restarting
+the game does not end the session. A value that does not apply, such as
+Playtime remaining with no countdown, shows as unavailable. Weather, updates
+and the light bar display read as words, such as "Up to date".
+
 See [the Home Assistant guide](docs/HOME_ASSISTANT.md) for what Home Assistant
 receives, each tier in detail, automations and privacy.
 

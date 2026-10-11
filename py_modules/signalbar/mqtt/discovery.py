@@ -45,6 +45,42 @@ def _num(field) -> str:
             f"and value_json.{field} is not none else 'None' }}}}")
 
 
+def _picked(fields) -> str:
+    """Attributes template keeping only these fields of the area."""
+    return "{{ {" + ", ".join(f"'{field}': value_json.{field}" for field in fields) + "} | tojson }}"
+
+
+# Current game's attributes. session_minutes has its own sensor; in the
+# attributes it would record a row every 5 minutes.
+GAME_ATTRIBUTES = ("appid", "title", "non_steam", "started_at", "dominant_colours",
+                   "key_art_url", "header_url", "capsule_url", "logo_url")
+
+
+def _labelled(field, labels) -> str:
+    """Template that shows a code as words; an unknown code shows as itself."""
+    table = ", ".join(f"'{code}': '{word}'" for code, word in labels.items())
+    return f"{{{{ {{{table}}}.get(value_json.{field}, value_json.{field}) }}}}"
+
+
+# The codes themselves stay in each entity's attributes for automations.
+WEATHER_LABELS = {
+    "clear_day": "Clear", "clear_night": "Clear", "breaks": "Partly cloudy", "breaks_night": "Partly cloudy",
+    "cloud": "Cloudy", "cloud_night": "Cloudy", "rain": "Rain", "snow": "Snow", "storm": "Thunderstorm",
+}
+UPDATE_LABELS = {
+    "idle": "Idle", "checking": "Checking", "available": "Update available", "up_to_date": "Up to date",
+    "error": "Error", "authorization_required": "Sign-in needed", "downloading": "Downloading",
+    "verifying": "Verifying", "ready": "Ready to install", "installing": "Installing",
+    "swap_started": "Installing", "swapped": "Installing", "restart_pending": "Restart needed",
+    "updated": "Updated", "rolled_back": "Rolled back",
+}
+DISPLAY_LABELS = {
+    "steam": "Steam", "blackout": "Blackout", "customization": "Customization+", "artwork": "Artwork",
+    "performance": "Performance", "screen_sync": "Screen Sync", "audio_sync": "Audio Sync",
+    "home_assistant": "Home Assistant", "weather": "Weather", "controller": "Controller status",
+}
+
+
 def node_id_for(hostname) -> str:
     return re.sub(r"[^a-z0-9_]", "_", str(hostname or "steammachine").lower()).strip("_") or "steammachine"
 
@@ -96,16 +132,18 @@ class Topics:
 # (component, key, name, area, value template, extra discovery fields)
 SENSORS = (
     ("sensor", "current_game", "Current game", "game",
-     "{{ value_json.title if value_json.running else 'None' }}",
-     {"icon": "mdi:gamepad-variant", "json_attributes_topic": "game"}),
+     "{{ (value_json.title or value_json.appid) if value_json.running else 'Not playing' }}",
+     {"icon": "mdi:gamepad-variant", "json_attributes_topic": "game",
+      "json_attributes_template": _picked(GAME_ATTRIBUTES)}),
     ("binary_sensor", "game_running", "Game running", "game", "{{ 'ON' if value_json.running else 'OFF' }}", {}),
     ("sensor", "session_minutes", "Session length", "game", _num("session_minutes"),
      {"unit_of_measurement": "min", "device_class": "duration"}),
     ("sensor", "light_bar_owner", "Light bar owner", "light_bar", "{{ value_json.owner }}",
      {"json_attributes_topic": "light_bar"}),
-    ("sensor", "light_bar_display", "Light bar display", "light_bar", "{{ value_json.display }}", {}),
+    ("sensor", "light_bar_display", "Light bar display", "light_bar", _labelled("display", DISPLAY_LABELS), {}),
+    # Valve's own brightness is not known while it owns the bar.
     ("sensor", "light_bar_brightness", "Light bar brightness", "light_bar", _num("brightness"),
-     {"state_class": "measurement"}),
+     {"state_class": "measurement", "applies": "value_json.brightness is not none"}),
     ("binary_sensor", "night_mode", "Night mode", "light_bar",
      "{{ 'ON' if value_json.night_mode_active else 'OFF' }}", {}),
     ("binary_sensor", "recording", "Recording", "light_bar",
@@ -126,16 +164,19 @@ SENSORS = (
      {"unit_of_measurement": "°C", "device_class": "temperature", "state_class": "measurement"}),
     ("sensor", "controllers", "Controllers", "controllers", _num("count"),
      {"json_attributes_topic": "controllers", "icon": "mdi:controller", "state_class": "measurement"}),
-    ("sensor", "countdown", "Playtime remaining", "countdown",
-     "{{ value_json.remaining_minutes if value_json.active else 'None' }}",
-     {"unit_of_measurement": "min", "json_attributes_topic": "countdown"}),
-    ("sensor", "weather", "Weather", "weather", "{{ value_json.condition }}", {"json_attributes_topic": "weather"}),
-    ("sensor", "update", "Update", "update", "{{ value_json.phase }}", {"json_attributes_topic": "update"}),
+    # Without a countdown a 0 would look like time ran out.
+    ("sensor", "countdown", "Playtime remaining", "countdown", "{{ value_json.remaining_minutes }}",
+     {"unit_of_measurement": "min", "json_attributes_topic": "countdown", "applies": "value_json.active"}),
+    ("sensor", "weather", "Weather", "weather", _labelled("condition", WEATHER_LABELS),
+     {"json_attributes_topic": "weather", "applies": "value_json.condition"}),
+    ("sensor", "update", "Update", "update", _labelled("phase", UPDATE_LABELS),
+     {"json_attributes_topic": "update", "applies": "value_json.phase"}),
     ("binary_sensor", "frontend_connected", "Decky frontend", "bridge",
      "{{ 'ON' if value_json.frontend_connected else 'OFF' }}",
      {"device_class": "connectivity", "entity_category": "diagnostic"}),
+    # Not "None": Home Assistant reads that as unknown.
     ("sensor", "last_command_error", "Last command error", "bridge",
-     "{{ value_json.last_error if value_json.last_error else 'None' }}",
+     "{{ value_json.last_error if value_json.last_error else 'No error' }}",
      {"entity_category": "diagnostic", "icon": "mdi:alert-circle-outline"}),
     # Fed by the tiny "info" area rather than "status": that one holds hundreds
     # of keys, and the recorder would store it again on every change. It stays
@@ -160,14 +201,26 @@ def _device(topics, version, hostname):
     }
 
 
-def _availability(topics, area):
+def _availability(topics, area, applies=None):
+    """The device's availability, the frontend's for its areas, and optionally a condition on the area.
+
+    A value that does not apply (no countdown, Valve owning the bar) makes the
+    entity unavailable rather than showing a made-up value. Home Assistant
+    reads the condition from the same message as the state.
+    """
     entries = [{"topic": topics.availability}]
     if area in FRONTEND_AREAS:
         entries.append({"topic": topics.frontend})
+    if applies:
+        entries.append({"topic": topics.state(area),
+                        "value_template": f"{{{{ 'online' if {applies} else 'offline' }}}}"})
     return {"availability": entries, "availability_mode": "all"}
 
 
 GAME_ART = {"header": "Header art", "capsule": "Cover art", "logo": "Logo"}
+# The images keep the last game's art, so they are unavailable while no game
+# runs rather than sent empty.
+GAME_RUNNING = "value_json.running"
 
 
 def art_discovery(topics, version, hostname, kind, content_type=DEFAULT_KEY_ART_TYPE):
@@ -179,7 +232,7 @@ def art_discovery(topics, version, hostname, kind, content_type=DEFAULT_KEY_ART_
         "image_topic": topics.art_image(kind),
         "content_type": content_type if content_type in KEY_ART_TYPES else DEFAULT_KEY_ART_TYPE,
         "device": _device(topics, version, hostname),
-        **_availability(topics, "game"),
+        **_availability(topics, "game", GAME_RUNNING),
     })
 
 
@@ -192,7 +245,7 @@ def key_art_discovery(topics, version, hostname, content_type=DEFAULT_KEY_ART_TY
         "image_topic": topics.key_art_image,
         "content_type": content_type if content_type in KEY_ART_TYPES else DEFAULT_KEY_ART_TYPE,
         "device": _device(topics, version, hostname),
-        **_availability(topics, "game"),
+        **_availability(topics, "game", GAME_RUNNING),
     })
 
 
@@ -206,10 +259,11 @@ def _sensor_message(topics, device, entry):
         "state_topic": topics.state(area),
         "value_template": template,
         "device": device,
-        **_availability(topics, area),
+        **_availability(topics, area, extra.get("applies")),
     }
     for field, value in extra.items():
-        payload[field] = topics.state(value) if field == "json_attributes_topic" else value
+        if field != "applies":
+            payload[field] = topics.state(value) if field == "json_attributes_topic" else value
     return (f"{topics.prefix}/{component}/{unique_id}/config", payload)
 
 

@@ -180,6 +180,12 @@ class PolicyTests(unittest.TestCase):
         self.assertIsNotNone(self.offer("performance", perf(cpu=29, cpu_t=52.0), 71.0))
         self.assertIsNotNone(self.offer("performance", perf(cpu=29, cpu_t=52.0, thermal=True), 71.5))
 
+    def test_performance_resends_only_the_readings_that_moved(self):
+        self.offer("performance", perf(), 0.0)
+        shaped = self.offer("performance", perf(cpu=23, cpu_t=53.0), 30.0)
+        self.assertEqual((shaped["cpu_load"], shaped["cpu_temperature"]), (20, 53.0))
+        self.assertIsNone(self.offer("performance", perf(cpu=24, cpu_t=53.5), 90.0))
+
     def test_other_areas_have_their_own_cadence(self):
         shaped = self.offer("countdown", {"active": True, "source": "parental", "label": "",
                                           "remaining_minutes": 12.3, "total_minutes": 59.6}, 0.0)

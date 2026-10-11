@@ -208,7 +208,8 @@ def build_snapshot(engine_status, faceplate_status, update_status, facts) -> dic
         "light_bar": {
             "owner": _get(s, "owner", default="Valve"),
             "active": bool(_get(s, "active", default=False)),
-            "provider": _get(s, "provider", default="none"),
+            # No "provider": every notification overlay changed it twice. It
+            # is still in "status".
             "display": _get(s, "current_display"),
             "home_display": _get(s, "home_display"),
             "game_display": _get(s, "game_display"),

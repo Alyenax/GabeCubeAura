@@ -84,7 +84,18 @@ class GameArtBridgeTests(unittest.TestCase):
         self.now[0] += seconds
         self.bridge.step()
 
-    def test_art_is_published_retained_once_per_game_and_emptied_when_it_ends(self):
+    def test_art_stays_when_the_game_ends_and_is_never_sent_twice(self):
+        self.art = {"hero": self.file("hero.jpg", JPEG), "header": self.file("h.png", PNG)}
+        self.connect()
+        self.play()
+        self.play(0)
+        self.play(0, seconds=30)
+        self.client.receive("homeassistant/status", b"online")  # a full republish
+        self.play(0)
+        self.play()
+        self.assertEqual((self.images("key_art"), self.images("header")), ([JPEG], [PNG]))
+
+    def test_art_is_published_retained_once_per_game_and_emptied_when_missing(self):
         self.engine.appid = 730  # the broker may still hold an earlier run's art
         self.connect()
         self.assertEqual(self.images("key_art"), [b""])
@@ -98,8 +109,6 @@ class GameArtBridgeTests(unittest.TestCase):
                          ([JPEG], [PNG], []))
         self.assertTrue(all(r for t, _, r in self.client.published if t.startswith(IMAGE)))
         self.assertEqual(self.calls.count((570, "header")), 1)
-        self.play(0)
-        self.assertEqual((self.images("key_art")[-1], self.images("header")[-1]), (b"", b""))
 
     def test_missing_art_is_looked_up_again_after_30_seconds(self):
         self.connect()

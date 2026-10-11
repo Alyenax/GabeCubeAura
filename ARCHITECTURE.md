@@ -231,7 +231,9 @@ Assistant's recorder stores every state change and every distinct attribute
 blob. By default it sends:
 
 - performance when a load moves 5 points or a temperature 2°C from the last
-  value sent, at most every 30 seconds. After a policy reset (connect, Home
+  value sent, at most every 30 seconds. Each reading has its own deadband:
+  one that has not moved keeps the value last sent, so only the sensors that
+  moved record a row. After a policy reset (connect, Home
   Assistant restart, Turbo toggle) it waits up to 10 s for a CPU load reading,
   which needs two samples, rather than record it as unknown;
 - the countdown in whole minutes, rounded up, at most every 60 seconds;
@@ -240,7 +242,10 @@ blob. By default it sends:
 - every other area on change, at most once a second.
 
 Thermal protection, countdown start, end, source and label, and game start,
-stop and title bypass those limits. Throttling at the source keeps measurement
+stop and title bypass those limits. A game stop is reported only after
+`GAME_STOP_HOLD_S` = 30 s, together with its held `stopped` event; if the same
+appid returns first, the session carries on and both events are dropped.
+Throttling at the source keeps measurement
 sensors recorded, since excluding them would lose long-term statistics. No
 entity uses `force_update`, so an unchanged value costs nothing. Areas that
 entities take as attributes carry no counters or timestamps, because each
@@ -269,18 +274,38 @@ when a subscriber falls behind. A new emit kind becomes a Home Assistant event
 type automatically. Hub events are redacted the same way, and events older
 than 60 seconds, queued while the broker was unreachable or the machine slept,
 are dropped rather than replayed. Thermal, ownership and countdown transitions
-are derived from snapshots. A reconnect and Home Assistant's birth message
-both trigger a full republish.
+are derived from snapshots; an ownership change is an event only once it has
+lasted `OWNER_SETTLE_S` = 10 s, so notification overlays on Valve's bar fire
+nothing. Light bar attributes leave out the overlay `provider`, and Current
+game's `json_attributes_template` leaves out `session_minutes`.
+
+Controllers are settled in the bridge too. A newly listed controller at 100%,
+Steam's placeholder, is sent with no percent until the reading changes or
+`PLACEHOLDER_HOLD_S` = 60 s pass, and `connected` events never carry that
+100%. While the frontend is away the area is not sent, and for
+`ROSTER_SETTLE_S` = 10 s after it returns an empty roster is not either. A
+`connected` event for a controller listed more than 10 s earlier, without a
+`disconnected` since, is a roster that lapsed and is dropped. A reconnect and
+Home Assistant's birth message both trigger a full republish. It sends the
+retained state areas, the frontend flag, the settings and the light state
+first and `availability` `online` last, so Home Assistant never makes the
+entities available with the values the broker kept from before the outage.
 
 Key art is the hero image with the light bar's fallbacks, published as JPEG,
-PNG or WebP from Steam's local artwork, at most 2 MB, and cleared when the game
-stops. Header, capsule and logo images come from `steam.find_game_art`, which
-looks for one kind only (custom grid art first, then both library cache
-layouts), skips any file over 2 MB and never substitutes another kind. Each is
-sent once per game, looked up again after 30 s when missing, emptied when the
-game stops, and declares its content type first. Their entities are Header art,
-Cover art and Logo. There is no icon, because the current library cache names
-it by a content hash.
+PNG or WebP from Steam's local artwork, at most 2 MB. Header, capsule and logo
+images come from `steam.find_game_art`, which looks for one kind only (custom
+grid art first, then both library cache layouts), skips any file over 2 MB and
+never substitutes another kind. Each is sent once per game and run, not again
+on a reconnect, looked up again after 30 s when missing, and declares its
+content type first. When the game stops nothing is sent: an availability
+entry on the `game` area makes the image entities unavailable while no game
+runs. Their entities are Header art, Cover art and Logo. There is no icon,
+because the current library cache names it by a content hash.
+
+Values that do not apply use the same kind of entry on their own state topic,
+so Home Assistant shows them as unavailable: Playtime remaining without a
+countdown, Light bar brightness while Valve owns the bar, and Weather without
+a reading.
 
 Every field of the engine's and the updater's status reaches Home Assistant
 unless `snapshot.py` excludes it as private (`is_redacted`), noisy (17-pixel

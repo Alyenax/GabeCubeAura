@@ -68,6 +68,18 @@ ERROR_LIMIT = 200
 DRIVE_INTERVAL_S = 0.25
 # Long enough that restarting Home Assistant does not flip the bar.
 FALLBACK_AFTER_S = 30.0
+# A game that stops is reported only once it has stayed stopped this long.
+# Waking from sleep clears the game until Steam confirms it again, and mod
+# launchers stop and restart theirs within a few seconds.
+GAME_STOP_HOLD_S = 30.0
+# Notifications and downloads over Steam's bar hand it to GabeCubeAura and
+# back within 3-4 s; only an owner that lasts this long is an event.
+OWNER_SETTLE_S = 10.0
+# The frontend's controller roster lapses when it stops (a gamescope restart)
+# and comes back a few seconds after it does.
+ROSTER_SETTLE_S = 10.0
+# Steam lists a new controller at 100% until its first battery report.
+PLACEHOLDER_HOLD_S = 60.0
 UPDATE_BUSY_PHASES = frozenset({"installing", "swap_started", "swapped", "restart_pending"})
 DRIVE_PARSERS = {"light": parse_light, "frame": parse_frame, "alert": parse_alert}
 ALERT_BACKLOG = 3
@@ -180,7 +192,14 @@ class MqttBridge:
         self._art_type = {kind: DEFAULT_KEY_ART_TYPE for kind in GAME_ART}
         self._faceplate_described = False
         self._version = None
-        self._game = (0, None)  # (appid, wall time it started)
+        self._game = (0, None)  # (appid, wall time it started), as reported
+        self._game_seen = None  # the reported game's status and colours
+        self._game_stopped_at = None
+        self._held_stop = None  # its "stopped" event, sent when the hold ends
+        self._owner_pending = None  # (owner, since) not yet an event
+        self._frontend_up_at = None
+        self._pads = {}  # controller id -> (listed at, placeholder percent or None)
+        self._pads_known = {}  # controller id -> first listed, until it disconnects
         self._download_active = False
         self._frontend_published = None
         self._stop_event = threading.Event()
@@ -487,7 +506,12 @@ class MqttBridge:
             except Exception:
                 self._stale_dropped += 1
                 continue
-            events.append((area, event_type, payload))
+            if area == "game":
+                events.extend(self._game_events(event_type, payload))
+            elif area == "controllers":
+                events.extend(self._controller_events(event_type, payload, now))
+            else:
+                events.append((area, event_type, payload))
         new_types = False
         for area, event_type, _ in events:
             if event_type not in self._event_types.setdefault(area, []):
@@ -496,24 +520,106 @@ class MqttBridge:
         if full or new_types:
             self._publish_discovery(client)
         if full:
-            client.publish(self.topics.availability, "online", retain=True)
             self._policy.reset()
             self._frontend_published = None
-            self._key_art_state = None
+            # The broker still holds the images sent on this run, so a
+            # reconnect looks up only the ones that were missing.
             self._key_art_retry = (None, 0.0)
-            self._art_state, self._art_retry = {}, {}
+            self._art_retry = {}
             self._described = None
             self._settings_text = None
             self._drive_text = None
+        if full or self._last_snapshot_at is None or now - self._last_snapshot_at >= SNAPSHOT_INTERVAL_S:
+            self._last_snapshot_at = now
+            self._publish_snapshot(client, full, now)
+        self._sync_settings(client)
+        if full:
+            # Last, after the retained state and the frontend flag: the broker
+            # still holds the values from before the outage, and Home
+            # Assistant would show those first.
+            client.publish(self.topics.availability, "online", retain=True)
         for area, _, payload in events:
             try:
                 client.publish(self.topics.event(area), _json(payload))
             except Exception:
                 self._stale_dropped += 1
-        if full or self._last_snapshot_at is None or now - self._last_snapshot_at >= SNAPSHOT_INTERVAL_S:
-            self._last_snapshot_at = now
-            self._publish_snapshot(client, full, now)
-        self._sync_settings(client)
+
+    def _game_events(self, event_type, payload) -> list:
+        """Hold a "stopped" event until the game stop is reported; drop it if the same game starts again."""
+        out = []
+        held, appid = self._held_stop, payload.get("appid")
+        if event_type == "stopped":
+            if held is not None:
+                out.append(("game", "stopped", held))
+            self._held_stop = payload
+            return out
+        if event_type == "started" and held is not None:
+            self._held_stop = None
+            if held.get("appid") == appid:
+                return out  # the same session carries on
+            out.append(("game", "stopped", held))
+        out.append(("game", event_type, payload))
+        return out
+
+    def _controller_events(self, event_type, payload, now) -> list:
+        """Drop "connected" for a controller listed again after its roster lapsed.
+
+        Steam's placeholder 100% is left out of the event.
+        """
+        identifier = payload.get("id")
+        if event_type == "disconnected":
+            self._pads_known.pop(identifier, None)
+        elif event_type == "connected":
+            known = self._pads_known.setdefault(identifier, now)
+            if now - known >= ROSTER_SETTLE_S:
+                return []
+            if payload.get("percent") == 100:
+                payload = {key: value for key, value in payload.items() if key != "percent"}
+        return [("controllers", event_type, payload)]
+
+    def _settle_controllers(self, area, now) -> dict:
+        """Show a newly listed controller's 100% as no reading until it changes or PLACEHOLDER_HOLD_S passes."""
+        pads, shown = {}, []
+        for pad in area["controllers"]:
+            identifier, percent = pad.get("id"), pad.get("percent")
+            listed_at, placeholder = self._pads.get(identifier, (now, 100 if percent == 100 else None))
+            if placeholder is not None and (percent != placeholder or now - listed_at >= PLACEHOLDER_HOLD_S):
+                placeholder = None
+            pads[identifier] = (listed_at, placeholder)
+            self._pads_known.setdefault(identifier, now)
+            shown.append(pad if placeholder is None else {**pad, "percent": None})
+        self._pads = pads
+        return {**area, "controllers": shown}
+
+    def _hold_roster(self, area, frontend_up, now) -> bool:
+        """Whether to keep the controllers last sent.
+
+        The roster lapses while the frontend is away and is empty for a few
+        seconds after it returns; sending that would record 0 then 1.
+        """
+        if not frontend_up:
+            return True
+        return not area["count"] and now - self._frontend_up_at < ROSTER_SETTLE_S
+
+    def _hold_game(self, status, now) -> dict:
+        """Return the status with a game that stopped less than GAME_STOP_HOLD_S ago still in it.
+
+        Another game replaces it at once. The colours are held too, so
+        nothing about the game is published for a short stop.
+        """
+        game = status.get("game") if isinstance(status.get("game"), dict) else {}
+        artwork = status.get("artwork") if isinstance(status.get("artwork"), dict) else {}
+        if game.get("appid") or not self._game[0]:
+            self._game_stopped_at = None
+            self._game_seen = (dict(game), artwork.get("dominant_colors")) if game.get("appid") else None
+            return status
+        if self._game_stopped_at is None:
+            self._game_stopped_at = now
+        if self._game_seen is None or now - self._game_stopped_at >= GAME_STOP_HOLD_S:
+            self._game_stopped_at = self._game_seen = None
+            return status
+        held, colours = self._game_seen
+        return {**status, "game": held, "artwork": {**artwork, "dominant_colors": colours}}
 
     def _controlled_devices(self) -> frozenset:
         """Devices that take settings commands, plus "drive" for the light and alerts."""
@@ -912,15 +1018,18 @@ class MqttBridge:
 
     def _publish_snapshot(self, client, full=False, now=None):
         now = self._clock() if now is None else now
-        status = self.engine.status()
+        status = self._hold_game(self.engine.status(), now)
         appid = int((status.get("game") or {}).get("appid") or 0)
         if appid != self._game[0]:
             self._game = (appid, self._wall() if appid else None)
         started = self._game[1]
         frontend_up = frontend_connected(status)
         if not frontend_up:
+            self._frontend_up_at = None
             with self._lock:
                 self._download_active = False
+        elif self._frontend_up_at is None:
+            self._frontend_up_at = now
         facts = {
             "started_at": datetime.fromtimestamp(started, timezone.utc).isoformat() if started else "",
             "session_minutes": round((self._wall() - started) / 60.0, 1) if started else 0.0,
@@ -930,6 +1039,7 @@ class MqttBridge:
             "last_error": self._last_error,
         }
         snapshot = build_snapshot(status, self._safe(self._faceplate_status), self._safe(self._update_status), facts)
+        snapshot["controllers"] = self._settle_controllers(snapshot["controllers"], now)
         if snapshot["faceplate"]["available"] and not self._faceplate_described:
             self._publish_faceplate_discovery(client)
         frontend = "online" if facts["frontend_connected"] else "offline"
@@ -941,14 +1051,18 @@ class MqttBridge:
             self._turbo = turbo
             self._policy.reset()
         for area, payload in snapshot.items():
-            if area == "performance" and self._hold_performance(payload, now):
+            if (area == "performance" and self._hold_performance(payload, now)
+                    or area == "controllers" and self._hold_roster(payload, frontend_up, now)):
                 continue
             shaped = self._policy.shape(area, payload, turbo)
             text = _json(shaped)
             if self._policy.due(area, shaped, text, now, turbo) and client.publish(
                     self.topics.state(area), text, retain=True):
                 self._policy.published(area, shaped, text, now)
-        self._derive_events(client, snapshot)
+        if self._held_stop is not None and self._game_stopped_at is None:
+            client.publish(self.topics.event("game"), _json(self._held_stop))
+            self._held_stop = None
+        self._derive_events(client, snapshot, now)
         self._publish_key_art(client, snapshot["game"], now)
         self._publish_game_art(client, snapshot["game"], now)
 
@@ -967,12 +1081,19 @@ class MqttBridge:
             self._performance_held_at = now
         return now - self._performance_held_at < PERFORMANCE_HOLD_S
 
-    def _derive_events(self, client, snapshot):
+    def _derive_events(self, client, snapshot, now):
+        owner = snapshot["light_bar"]["owner"]
         current = {
             "thermal": snapshot["performance"]["thermal_protection"],
-            "light_bar": snapshot["light_bar"]["owner"],
+            "light_bar": self._previous.get("light_bar", owner),
             "countdown": snapshot["countdown"]["active"],
         }
+        if owner == current["light_bar"]:
+            self._owner_pending = None
+        elif self._owner_pending is None or self._owner_pending[0] != owner:
+            self._owner_pending = (owner, now)
+        elif now - self._owner_pending[1] >= OWNER_SETTLE_S:
+            current["light_bar"], self._owner_pending = owner, None
         previous, self._previous = self._previous, current
         if not previous:
             return
@@ -989,11 +1110,9 @@ class MqttBridge:
 
     def _publish_key_art(self, client, game, now):
         appid = game["appid"]
-        if not appid:
-            if self._key_art_state != "empty" and client.publish(self.topics.key_art_image, b"", retain=True):
-                self._key_art_state = "empty"
-            return
-        if self._key_art_state == appid:
+        # With no game the entity is unavailable and the broker keeps the
+        # last game's art, so the same game coming back sends nothing.
+        if not appid or self._key_art_state == appid:
             return
         retry_appid, retry_at = self._key_art_retry
         if retry_appid == appid and now < retry_at:
@@ -1024,12 +1143,10 @@ class MqttBridge:
     def _publish_game_art(self, client, game, now):
         """Publish header, cover and logo art the same way as key art."""
         appid = game["appid"]
+        if not appid:
+            return
         for kind in GAME_ART:
             topic, state = self.topics.art_image(kind), self._art_state.get(kind)
-            if not appid:
-                if state != "empty" and client.publish(topic, b"", retain=True):
-                    self._art_state[kind] = "empty"
-                continue
             retry_appid, retry_at = self._art_retry.get(kind, (None, 0.0))
             if state == appid or (retry_appid == appid and now < retry_at):
                 continue

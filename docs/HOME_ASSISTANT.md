@@ -139,24 +139,53 @@ playtime remaining; CPU and GPU load and temperature; thermal protection;
 weather; updates; and diagnostics (Decky frontend, Last command error and
 Status).
 
+Current game reads "Not playing" when no game runs. A game that stops is
+reported 30 seconds later, because waking from sleep and some mod launchers
+stop a game for a moment. If the same game comes back within those 30
+seconds, nothing is sent: the session, its start time and its length carry
+on. A different game replaces it at once.
+
 Key art is the game's Library Hero, including custom artwork set for a game or
 non-Steam shortcut. A shortcut with no hero uses its custom header or cover
 instead. Header art, Cover art and Logo images come from Steam's local library
 cache or your custom grid art. Each image is JPEG, PNG or WebP up to 2 MB and
 is sent once per game. Header art, Cover art and Logo stay empty when the game
-has none of that kind. For Steam games, the game's attributes also carry
-Steam's own addresses for all four.
+has none of that kind. While no game runs the four images are unavailable, and
+the same game coming back sends nothing again. For Steam games, the game's
+attributes also carry Steam's own addresses for all four.
+
+A value that does not apply makes its entity unavailable instead of showing
+something made up: Playtime remaining while no countdown runs, Light bar
+brightness while Steam has the light bar, and Weather until weather is set up
+and has a reading. Last command error reads "No error" when there is none.
+Weather, Update and Light bar display read as words, such as "Partly cloudy",
+"Up to date" and "Home Assistant". Their codes, such as `breaks` and
+`up_to_date`, stay in the entities' attributes for automations.
 
 Home Assistant records every state change, so GabeCubeAura limits what it
 sends and `configuration.yaml` never needs editing:
 
 - CPU and GPU load and temperature when they move by 5 points or 2°C, at most
-  every 30 seconds;
+  every 30 seconds, each on its own, so one moving reading does not resend
+  the other three;
 - countdowns in whole minutes, at most once a minute;
 - session length in 5-minute steps;
-- game start and stop, thermal protection and the start and end of a
-  countdown at once;
+- game start, thermal protection and the start and end of a countdown at
+  once, and a game stop after 30 seconds;
 - everything else as it changes, at most once a second.
+
+After a restart, a sleep or a lost connection, GabeCubeAura sends fresh values
+before the device shows as available again, so Home Assistant never shows the
+values from before for a moment.
+
+Some changes only say something once they last:
+
+- a new light bar owner is an `owner_changed` event after 10 seconds, so a
+  notification shown over Steam's bar for a moment is not;
+- a newly connected controller shows no battery reading until Steam reports
+  one, instead of the 100% Steam lists first, for up to a minute;
+- while the Decky frontend restarts, Controllers keeps its last value and a
+  controller it already knew is not reported as connected again.
 
 **Turbo mode**, at the bottom of **What Home Assistant can do**, sends every
 change, up to once a second. Only turn it on if you need it and have set up
@@ -275,7 +304,8 @@ refuses them. Turning the light off always works.
 
 Each area has an event entity, and these events arrive as they happen:
 
-- Game events: `started`, `stopped`
+- Game events: `started`, `stopped` (30 seconds after the game stops, as
+  above)
 - Light events: `notification`, `achievement`, `screenshot`, `record-start`,
   `record-stop`, `ha` (a Home Assistant alert)
 - Controllers events: `connected`, `disconnected`, `charging`

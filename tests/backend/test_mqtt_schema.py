@@ -11,7 +11,8 @@ from signalbar.mqtt.discovery import (
 )
 from signalbar.mqtt.drive import AlertCommand, LightCommand, light_state, parse_alert, parse_frame, parse_light
 from signalbar.mqtt.schema import build_schema, denial
-from signalbar.mqtt.snapshot import is_redacted
+from signalbar.mqtt.snapshot import build_snapshot, is_redacted
+from signalbar.providers.weather import CONDITIONS
 from signalbar.settings import SettingsStore
 from signalbar.settings import store as store_module
 
@@ -122,6 +123,47 @@ class DiscoveryTests(unittest.TestCase):
         self.assertNotIn({"topic": self.topics.frontend}, self.by_suffix("_thermal_protection")["availability"])
         # Hundreds of status keys as attributes would be recorded again on every change.
         self.assertNotIn(self.topics.state("status"), {p.get("json_attributes_topic") for _, p in self.messages})
+
+    def test_no_game_reads_not_playing(self):
+        # "None" is Home Assistant's word for unknown.
+        template = self.by_suffix("_current_game")["value_template"]
+        self.assertIn("'Not playing'", template)
+        self.assertNotIn("'None'", template)
+
+    def test_values_that_do_not_apply_make_their_entity_unavailable(self):
+        for suffix, area, condition in (("_countdown", "countdown", "value_json.active"),
+                                        ("_light_bar_brightness", "light_bar", "value_json.brightness is not none"),
+                                        ("_weather", "weather", "value_json.condition"),
+                                        ("_key_art", "game", "value_json.running"),
+                                        ("_logo_art", "game", "value_json.running")):
+            entry = self.by_suffix(suffix)["availability"][-1]
+            self.assertEqual(entry, {"topic": self.topics.state(area), "value_template":
+                                     f"{{{{ 'online' if {condition} else 'offline' }}}}"}, suffix)
+            self.assertEqual(self.by_suffix(suffix)["availability_mode"], "all")
+        self.assertNotIn("'None'", self.by_suffix("_last_command_error")["value_template"])
+
+    def test_codes_read_as_words_and_stay_in_the_attributes(self):
+        update_codes = ("idle", "checking", "available", "up_to_date", "error", "authorization_required",
+                        "downloading", "verifying", "ready", "installing", "swap_started", "swapped",
+                        "restart_pending", "updated", "rolled_back")
+        displays = store_module.VALID_HOME_DISPLAYS | store_module.VALID_GAME_DISPLAYS
+        for suffix, field, codes, word in (("_weather", "condition", CONDITIONS, "Partly cloudy"),
+                                           ("_update", "phase", update_codes, "Up to date"),
+                                           ("_light_bar_display", "display", displays, "Home Assistant")):
+            template = self.by_suffix(suffix)["value_template"]
+            self.assertIn(f"value_json.{field}", template)
+            self.assertIn(f"'{word}'", template)
+            for code in codes:
+                self.assertRegex(template, f"'{code}': '[A-Z][^'_]+'", suffix)
+        snapshot = build_snapshot({"current_display": "artwork"}, None, {"phase": "up_to_date"}, {})
+        self.assertEqual((snapshot["light_bar"]["display"], snapshot["update"]["phase"]), ("artwork", "up_to_date"))
+
+    def test_attributes_leave_out_what_has_its_own_sensor_or_flickers(self):
+        game = self.by_suffix("_current_game")
+        self.assertIn("'title': value_json.title", game["json_attributes_template"])
+        self.assertNotIn("session_minutes", game["json_attributes_template"])
+        self.assertEqual(self.by_suffix("_session_minutes")["value_template"].count("session_minutes"), 3)
+        self.assertNotIn("provider", build_snapshot({"provider": "event:notification"}, None, None, {})["light_bar"])
 
     def test_setting_entities_follow_the_schema(self):
         controls = build_schema().controls

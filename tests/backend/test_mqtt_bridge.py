@@ -111,6 +111,21 @@ class PublishingTests(BridgeTestCase):
         for forbidden in ("latitude", "longitude", "pw\"", "password"):
             self.assertNotIn(forbidden, blob)
 
+    def test_fresh_state_goes_out_before_the_device_comes_online(self):
+        # Otherwise Home Assistant shows the values from before the outage first.
+        client = self.connect(2)
+        for _ in range(2):
+            topics = self.topics(client)
+            fresh = [t for t in topics if t.startswith(f"{ROOT}/state/") or t == f"{ROOT}/frontend"]
+            self.assertTrue({SETTINGS, f"{ROOT}/frontend", f"{ROOT}/state/game"} <= set(fresh))
+            self.assertEqual(topics[len(topics) - topics[::-1].index(AVAILABILITY):], [])
+            self.assertEqual(topics.count(AVAILABILITY), 1)
+            client.connected = False
+            self.settle()
+            client.published.clear()
+            client.go_online()
+            self.bridge.step()
+
     def test_only_changed_areas_go_out_at_most_once_a_second_and_status_once_a_minute(self):
         client = self.online()
         self.bridge.step()
@@ -178,6 +193,101 @@ class PublishingTests(BridgeTestCase):
         client.go_online()
         self.assertEqual(connection()[:2], ("connected", ""))
         self.assertEqual(self.bridge.status()["topic_root"], ROOT)
+
+
+class GameTests(BridgeTestCase):
+    def play(self, appid, title="Dota 2", seconds=1.1):
+        before = self.engine.state["game"]
+        self.engine.state["game"] = {"appid": appid, "title": title if appid else ""}
+        if appid != before["appid"]:
+            if before["appid"]:
+                self.engine.emit("game.stopped", dict(before))
+            if appid:
+                self.engine.emit("game.started", {"appid": appid, "title": title})
+        self.settle(seconds)
+
+    @staticmethod
+    def games(client):
+        return [json.loads(p) for p in client.payloads(f"{ROOT}/state/game")]
+
+    @staticmethod
+    def game_events(client):
+        return [json.loads(p)["event_type"] for p in client.payloads(f"{ROOT}/event/game")]
+
+    def test_a_game_back_within_30_seconds_is_one_session_and_sends_nothing(self):
+        # Waking from sleep and mod launchers both stop the game for a moment.
+        client = self.online()
+        self.play(570)
+        self.play(0)
+        for _ in range(25):
+            self.settle(1.0)
+        self.play(570)
+        self.settle(40.0)
+        self.assertEqual([g["appid"] for g in self.games(client)], [570])
+        self.assertEqual(self.game_events(client), ["started"])
+
+    def test_a_real_stop_shows_30_seconds_late_and_another_game_at_once(self):
+        client = self.online()
+        self.play(570)
+        started = self.games(client)[-1]["started_at"]
+        self.play(0)
+        self.settle(27.0)
+        self.assertEqual((self.games(client)[-1]["started_at"], self.game_events(client)), (started, ["started"]))
+        self.settle(3.0)
+        self.assertEqual((self.games(client)[-1]["running"], self.game_events(client)), (False, ["started", "stopped"]))
+        self.play(570)
+        self.play(0)
+        self.play(730, "Counter-Strike 2")
+        self.assertEqual([(g["appid"], g["title"]) for g in self.games(client)[-2:]],
+                         [(570, "Dota 2"), (730, "Counter-Strike 2")])
+        self.assertEqual(self.game_events(client), ["started", "stopped", "started", "stopped", "started"])
+
+
+class SettlingTests(BridgeTestCase):
+    PAD = {"id": "steam:1", "name": "Controller", "percent": 74, "level": None, "charging": False}
+
+    def roster(self, *pads, seconds=1.1):
+        self.engine.state["controllers"] = {"controllers": [dict(pad) for pad in pads]}
+        self.settle(seconds)
+
+    @staticmethod
+    def sent(client):
+        return [(c["count"], [pad["percent"] for pad in c["controllers"]])
+                for c in map(json.loads, client.payloads(f"{ROOT}/state/controllers"))]
+
+    def test_an_owner_change_that_reverts_within_seconds_is_not_an_event(self):
+        # A notification over Steam's bar hands it to GabeCubeAura for 3-4 s.
+        client = self.online()
+        for owner, seconds in (("Valve", 4), ("GabeCubeAura", 4), ("Valve", 12)):
+            self.engine.state["owner"] = owner
+            for _ in range(seconds):
+                self.settle(1.0)
+        self.assertEqual([json.loads(p)["owner"] for p in client.payloads(f"{ROOT}/event/light_bar")], ["Valve"])
+
+    def test_a_new_controller_battery_waits_for_a_real_reading(self):
+        # Steam lists a new controller at 100% until its first battery report.
+        client = self.online()
+        full = {**self.PAD, "percent": 100}
+        self.roster(full)
+        self.roster(self.PAD)
+        self.roster(self.PAD, {**full, "id": "steam:2"})
+        self.roster(self.PAD, {**full, "id": "steam:2"}, seconds=60)
+        self.assertEqual(self.sent(client), [(1, [None]), (1, [74]), (2, [74, None]), (2, [74, 100])])
+
+    def test_a_lapsed_roster_is_neither_a_zero_nor_a_new_connection(self):
+        client = self.online()
+        self.roster(self.PAD)
+        self.engine.state["debug"]["frontend_heartbeat_age_s"] = 30.0  # gamescope restarting
+        self.roster(seconds=15)
+        self.engine.state["debug"]["frontend_heartbeat_age_s"] = 1.0
+        self.roster(seconds=3)
+        self.engine.emit("controller.connected", {"id": "steam:1", "name": "Controller", "percent": 74})
+        self.roster(self.PAD)
+        self.engine.emit("controller.connected", {"id": "steam:2", "name": "Controller", "percent": 100})
+        self.roster(self.PAD, {**self.PAD, "id": "steam:2"})
+        self.assertEqual([count for count, _ in self.sent(client)], [1, 2])
+        events = [json.loads(p) for p in client.payloads(f"{ROOT}/event/controllers")]
+        self.assertEqual([(e["id"], "percent" in e) for e in events], [("steam:2", False)])
 
 
 class WorkerTests(BridgeTestCase):

@@ -48,6 +48,12 @@ game, so it unloads when one starts. Qwen3 1.7B (about 1.2 GB) is the light
 option; a 32 GB machine fits Qwen3 8B. Cloud mode only keeps the wake word
 loaded, plus Piper if the provider answers in text.
 
+Even the small stuff is a problem, though. Parakeet on its own is around 2 GB,
+and this is a machine built to run games that, if we're being honest, is
+already a bit under-specced. Nothing on it expects a random 2 GB of memory
+pressure to show up out of nowhere, never mind the extra the actual model
+needs on top. Unloading for games helps, but it doesn't make that go away.
+
 ## Is it useful, though?
 
 This is the real open question and I don't have a good answer. There aren't
@@ -126,3 +132,6 @@ Mood GIFs are optional: `idle.gif`, `curious.gif`, `thinking.gif` and
   game starting cut speech off mid-sentence.
 - Measure what the paused voice process still holds during a game.
 - Decide whether any of this is worth it. See above.
+
+I absolutely do not expect this to be merged. It doesn't even work in its
+current form; this is just an example of how the pieces could go together.

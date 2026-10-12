@@ -23,6 +23,151 @@ releases remain available to everyone.
 
 [![Support GabeCubeAura on Ko-fi](docs/media/support-kofi.svg)](https://ko-fi.com/alyenax)
 
+## In development
+
+A look at what's being developed: animated game artwork, useful dashboards
+for the **JSAUX PIXEL Faceplate**, and Gabe Assistant. These experimental
+features are **not included in the current public release** and may change.
+
+<table>
+<tr><th>Game artwork</th><th>Weather & dashboards</th><th>Gabe Assistant</th></tr>
+<tr>
+<td align="center"><img src="docs/media/development/session.gif" width="230" alt="Animated Stray dashboard on a simulated Steam Machine with a 64 by 54 dot matrix and diffused light bar"></td>
+<td align="center"><img src="docs/media/development/weather-dashboard.gif" width="230" alt="Animated weather dashboard with current rain, 12 degrees Celsius, and a next-hour forecast row"></td>
+<td align="center"><img src="docs/media/development/gabe-assistant.gif" width="230" alt="Complete subtitled exchange: Gabe greets, the user asks to launch Stray, Gabe replies; the cyan mouth uses a 40 percent width setting"></td>
+</tr>
+<tr>
+<td>Your games, prepared for the 64 × 54 matrix.</td>
+<td>Time, weather and one useful information row.</td>
+<td>An animated face, expressive light bar and optional local voice controls.</td>
+</tr>
+</table>
+
+*Illustrated software previews, not hardware footage. Displayed readings are
+demonstration values. Gabe's GIF is silent and subtitled.*
+
+<details>
+<summary><strong>Artwork & Pixel Studio</strong> · Choose, prepare, preview and reuse</summary>
+
+Choose an installed game and browse static or animated SteamGridDB artwork
+using your own API key. Crop and adjust the image, prepare it in the background,
+then preview it before applying. Saved artwork is reused when the game starts.
+
+| Stray | The Witcher 3 |
+| :---: | :---: |
+| <img src="docs/media/development/stray-artwork.gif" width="256" alt="Animated Stray artwork without an overlay on the shared dot-matrix model"> | <img src="docs/media/development/witcher3-dashboard.gif" width="256" alt="Animated The Witcher 3 artwork with its dashboard overlay on the same dot-matrix model"> |
+| **Detroit: Become Human · Chloe** | **Resident Evil 2** |
+| <img src="docs/media/development/detroit-artwork.gif" width="256" alt="Real animated portrait of Chloe, cropped to show only the android woman without the cover logo, on the same dot-matrix model"> | <img src="docs/media/development/resident-evil-2-dashboard.gif" width="256" alt="Resident Evil 2 animated artwork dashboard on the same dot-matrix model"> |
+
+- Square, portrait and wide sources, including animated grids and heroes.
+- Crop, saturation, artwork brightness, compression and optional loop cleanup.
+- Wide static artwork can pan out and return without jumping back to the start.
+- A saved visual can be used as in-game Artwork or a Dashboard background.
+
+Pixel Studio is integrated into GabeCubeAura. Preparation is explicit; game
+launches reuse prepared media instead of starting another conversion.
+
+</details>
+
+<details>
+<summary><strong>Dashboards & Realistic Weather</strong> · Your artwork or the weather, with one clear bottom row</summary>
+
+Keep the animated background. Add a discreet clock, a weather icon and
+temperature, then choose one useful bottom row. Home and in-game content can
+be selected independently; Weather and Artwork Dashboard backgrounds remain
+separate choices.
+
+| Weather scene | Weather Dashboard |
+| :---: | :---: |
+| <img src="docs/media/development/weather.gif" width="256" alt="Realistic animated rain scene on the shared dot-matrix model"> | <img src="docs/media/development/weather-dashboard.gif" width="256" alt="The same animated rain scene with a clock, current weather and a next-hour forecast row"> |
+
+The Weather Dashboard example shows **rain · 12°C** now, then
+**+1H · rain · 13°C · 80%** below. These are illustrative values, not a live
+forecast. The background keeps its animation beneath the information overlay.
+
+| Session & P1 | P1 & P2 | Next hour |
+| :---: | :---: | :---: |
+| <img src="docs/media/development/session.gif" width="192" alt="Artwork dashboard with session duration and P1 battery demonstration"> | <img src="docs/media/development/two-pads.gif" width="192" alt="Artwork dashboard with P2 battery at the left and P1 at the right"> | <img src="docs/media/development/next-hour.gif" width="192" alt="Artwork dashboard with plus one hour, weather icon, temperature and precipitation probability"> |
+| **Today** | **Personal timer** | **Last minute** |
+| <img src="docs/media/development/today.gif" width="192" alt="Artwork dashboard with forecast icon, blue morning temperature and orange afternoon temperature separated by a spaced slash"> | <img src="docs/media/development/timer.gif" width="192" alt="Artwork dashboard with the remaining personal timer"> | <img src="docs/media/development/last-minute.gif" width="192" alt="Artwork dashboard in the final minute of a personal timer"> |
+
+- **Controllers:** P1 battery as a percentage or gauge, with optional P2.
+- **Performance:** available CPU/GPU load values in the information row.
+- **Next hour:** `+1H`, forecast icon, temperature and precipitation probability.
+- **Today:** forecast icon, blue morning temperature / orange afternoon temperature.
+- **Playtime:** session duration or an active countdown.
+
+Realistic weather scenes cover day/night skies, clouds, rain, snow and storms.
+A manually selected city supplies current conditions and forecasts through
+Open-Meteo, with **°C or °F** and no weather API key. The light bar provides
+its own one-dimensional interpretation of the conditions.
+
+</details>
+
+<details>
+<summary><strong>Performance, controllers & playtime</strong> · Readable information and immediate light cues</summary>
+
+The Faceplate can show details while the light bar gives a quick visual cue.
+Content can be selected independently for Home, in-game and individual games.
+
+| CPU / GPU | Controller battery | Playtime countdown |
+| :---: | :---: | :---: |
+| <img src="docs/media/development/performance.gif" width="220" alt="Native CPU GPU renderer on the shared dot-matrix model with slowly changing demonstration readings"> | <img src="docs/media/development/two-pads.gif" width="220" alt="P1 and P2 battery values on the shared dot-matrix dashboard model"> | <img src="docs/media/development/timer.gif" width="220" alt="Personal countdown on the shared dot-matrix model and diffused light bar"> |
+
+CPU/GPU readings and controller charge depend on available device data;
+unknown values are not invented. Playtime supports personal countdowns,
+session information and supported Steam Families limits.
+
+Brightness remains separate from content selection. Faceplate power can be
+controlled from Decky, with an optional automatic sleep/shutdown policy.
+
+</details>
+
+<details>
+<summary><strong>Gabe Assistant</strong> · An animated companion with optional local voice controls</summary>
+
+Gabe has animated eyes, glasses and eyebrows, with a light-bar mouth.
+Appearance controls include colours, mouth width, Single colour / Slow Prism
+and Subtle / Natural / Expressive reactions.
+
+<p align="center"><img src="docs/media/development/gabe-assistant.gif" width="360" alt="Complete illustrated exchange with Gabe's greeting, the user's request and Gabe's reply; the mouth uses a 40 percent width setting and stays off while the user speaks"></p>
+
+**Gabe:** “Ready to play?” → **You:** “Hey Gabe, launch Stray.” →
+**Gabe:** “Launching Stray. Have fun!”
+
+The full exchange plays before the loop restarts. The **40% mouth width**
+follows the plugin's setting: only Gabe's speaking beats drive the cyan LEDs;
+the user's turn and quiet pauses leave them off. The animation illustrates
+the interaction, not recognised speech or a verified game launch.
+
+Activation can use a controller shortcut or optional **Ok Gabe / Hey Gabe**
+voice controls, with a French/English command glossary. Voice activation is
+off by default and uses separately installed local speech modules. When
+enabled, the selected microphone stays open locally while waiting; waiting
+audio is not saved or uploaded. Disable it to close the microphone.
+
+Voice components are still being prepared for public distribution.
+
+</details>
+
+<details>
+<summary><strong>Preview credits & limitations</strong></summary>
+
+Game artwork: [Stray by LudaX](https://www.steamgriddb.com/grid/231089),
+[The Witcher 3 by TUFKAC](https://www.steamgriddb.com/grid/523708),
+[Detroit: Become Human by TUFKAC](https://www.steamgriddb.com/grid/243447),
+[Resident Evil 2 by Jnill](https://www.steamgriddb.com/grid/785014).
+
+All previews use one shared Steam Machine model. Native **64 × 54** frames
+drive **3,456 individual dots**; enclosure proportions, light-bar diffusion
+and glow are software illustrations, not measured hardware optics. The GIFs
+do not establish physical compatibility, voice accuracy or transfer timing.
+
+See [preview sources](docs/media/development/CREDITS.md) for individual credits.
+Experimental features may change; no public release date is announced here.
+
+</details>
+
 ## Your everyday display
 
 ### Artwork

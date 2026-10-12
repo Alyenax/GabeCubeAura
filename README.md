@@ -1,9 +1,5 @@
 # GabeCubeAura
 
-**GabeCubeAura 1.4.0 adds guided first-time setup, one global Day/Night
-brightness control and real thermal protection for the official Steam
-Machine's 17-pixel light bar.**
-
 Make your Steam Machine's 17-pixel light bar useful and a little more
 expressive. Choose a complete lighting experience, preview it on the physical
 bar, then set one brightness level for every display. Optional sunset dimming

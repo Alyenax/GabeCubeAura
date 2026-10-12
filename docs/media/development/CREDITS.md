@@ -29,6 +29,6 @@ illustrative. Weather Dashboard retains its background animation beneath
 the runtime compositing layer. The bar's optical blending is simulated.
 
 Game names, characters and artwork belong to their respective owners.
-Attribution is not a redistribution licence. The supplied artwork records
-do not establish permission to redistribute these derivatives: this local
-README draft and its game previews require clearance before public publication.
+Credits identify the original contributors; they do not imply endorsement
+or grant a redistribution licence. Consult the linked sources and their
+respective owners before reusing the artwork in another project.

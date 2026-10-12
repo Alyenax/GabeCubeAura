@@ -22,7 +22,7 @@ releases remain available to everyone.
 ## In development
 
 A look at what's being developed: animated game artwork, useful dashboards
-for the **JSAUX PIXEL Faceplate**, and Gabe Assistant. These experimental
+for the **JSAUX Pixel Matrix Faceplate**, and Gabe Assistant. These experimental
 features are **not included in the current public release** and may change.
 
 <table>

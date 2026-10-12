@@ -14,6 +14,10 @@ complete control to Valve immediately.
 · [Release notes](https://github.com/Alyenax/GabeCubeAura/releases/tag/v1.4.0)
 · [TW3 SteamRGB companion](https://github.com/Alyenax/TW3-SteamRGB)
 
+[![Support GabeCubeAura on Ko-fi](docs/media/support-kofi.svg)](https://ko-fi.com/alyenax)
+
+Free and open source. A coffee is always optional, always appreciated.
+
 [Try the interactive GabeCubeAura preview before installing](https://alyenax.github.io/gabecubeaura-concept/)
 
 ## Your everyday display
@@ -265,6 +269,15 @@ GabeCubeAura previews, alerts, Game launches and playtime countdowns remain
 above the game HUD. The former experimental Witcher Lab is not bundled with
 GabeCubeAura 1.4.0.
 
+## Support GabeCubeAura
+
+I develop GabeCubeAura independently. If these little lights make your Steam
+Machine a little more fun, you can [buy me a coffee on Ko-fi](https://ko-fi.com/alyenax).
+Donations help fund development time, experiments and hardware tests.
+
+GabeCubeAura stays free and open source, including future public releases and
+public betas. No donation is needed to use any feature.
+
 ## How priorities work
 
 GabeCubeAura follows a strict order:
@@ -491,12 +504,6 @@ user colour; colour alone is never treated as a thermal warning.
   controller and connection type yet.
 - No Internet artwork fallback, FPS, network, storage, Moonlight, or Sunshine
   provider yet
-
-## Support GabeCubeAura
-
-If GabeCubeAura makes your Steam Machine a little better, you can support its
-development on [Ko-fi](https://ko-fi.com/alyenax). The plugin and its public
-releases remain available to everyone.
 
 ## Build and test
 

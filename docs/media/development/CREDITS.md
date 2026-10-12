@@ -14,6 +14,11 @@ the same front-on Steam Machine model and 64 × 54 source grid.
 The Detroit portrait uses the source's real animation, cropped to Chloe's face
 without the cover logo. There is no artificial pan or reversed facial motion.
 
+The weather previews also replay the project's actual 17-LED **Bluewater**
+rain renderer, rather than an invented light-bar effect. Its eight-second
+period and the matrix's 2.4-second period are retained in a 24-second combined
+preview loop. A shared illustration timeline is not physical timing proof.
+
 Weather scenes, matrix composition, forecast icons, typography and Gabe's
 facial animation come from the project's development renderers. The silent
 Gabe preview is a scripted, subtitled three-turn exchange with a 40% mouth

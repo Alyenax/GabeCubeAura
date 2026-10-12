@@ -83,8 +83,10 @@ separate choices.
 | <img src="docs/media/development/weather.gif" width="256" alt="Realistic animated rain scene on the shared dot-matrix model"> | <img src="docs/media/development/weather-dashboard.gif" width="256" alt="The same animated rain scene with a clock, current weather and a next-hour forecast row"> |
 
 The Weather Dashboard example shows **rain · 12°C** now, then
-**+1H · rain · 13°C · 80%** below. These are illustrative values, not a live
-forecast. The background keeps its animation beneath the information overlay.
+**+1H · rain · 13°C · 80%** below. Its light bar plays **Bluewater**: a
+continuous blue band with brief droplet pulses and spreading echoes.
+These are illustrative values, not a live forecast. The background keeps
+its animation beneath the information overlay.
 
 | Session & P1 | P1 & P2 | Next hour |
 | :---: | :---: | :---: |

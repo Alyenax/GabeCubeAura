@@ -43,8 +43,9 @@ features are **not included in the current public release** and may change.
 </tr>
 </table>
 
-*Illustrated software previews, not hardware footage. Displayed readings are
-demonstration values. Gabe's GIF is silent and subtitled.*
+**Automatic power-off:** with Auto power mode enabled, putting your Steam
+Machine to sleep or shutting it down also turns off the Faceplate screen,
+even if its USB connection remains powered.
 
 <details>
 <summary><strong>Artwork & Pixel Studio</strong> · Choose, prepare, preview and reuse</summary>
@@ -162,6 +163,7 @@ All previews use one shared Steam Machine model. Native **64 × 54** frames
 drive **3,456 individual dots**; enclosure proportions, light-bar diffusion
 and glow are software illustrations, not measured hardware optics. The GIFs
 do not establish physical compatibility, voice accuracy or transfer timing.
+Displayed readings are demonstration values. Gabe's GIF is silent and subtitled.
 
 See [preview sources](docs/media/development/CREDITS.md) for individual credits.
 Experimental features may change; no public release date is announced here.

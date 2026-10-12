@@ -12,7 +12,6 @@ complete control to Valve immediately.
 
 [Download GabeCubeAura 1.4.0](https://github.com/Alyenax/GabeCubeAura/releases/download/v1.4.0/GabeCubeAura-v1.4.0.zip)
 · [Release notes](https://github.com/Alyenax/GabeCubeAura/releases/tag/v1.4.0)
-· [TW3 SteamRGB companion](https://github.com/Alyenax/TW3-SteamRGB)
 
 [Try the interactive GabeCubeAura preview before installing](https://alyenax.github.io/gabecubeaura-concept/)
 

@@ -21,6 +21,8 @@ If GabeCubeAura makes your Steam Machine a little better, you can support its
 development on [Ko-fi](https://ko-fi.com/alyenax). The plugin and its public
 releases remain available to everyone.
 
+[![Support GabeCubeAura on Ko-fi](docs/media/support-kofi.svg)](https://ko-fi.com/alyenax)
+
 ## Your everyday display
 
 ### Artwork

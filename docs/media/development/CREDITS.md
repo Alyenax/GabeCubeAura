@@ -2,7 +2,18 @@
 
 The animations in this folder are illustrated documentation previews, not
 Faceplate firmware files or footage of physical hardware. Every scene uses
-the same front-on Steam Machine model and 64 × 54 source grid.
+front-on Steam Machine enclosure studies and the same 64 × 54 source grid.
+
+GabeCube Companion is original procedural fan art interpreting Valve's Weighted
+Companion Cube. It uses the approved six-face native renderer: smooth full turns,
+a six-pixel jump and two-pixel rebound. The 50-fps native animation slots are
+illustrated at 25 fps here without adding source pixels or interpolated artwork.
+The silent light bar visualization uses the envelope of user-supplied original
+synthetic musical motifs, not sampled Portal sounds. No audio is embedded in the
+public GIF, and the source sound pack has not been cleared for public distribution.
+This longer demonstration intentionally shows full gestures; a real completed
+command returns to normal routing without an extra decorative delay. Neither
+this illustration nor the older model measures enclosure optics or USB timing.
 
 | Example | Source | Artwork author |
 | --- | --- | --- |

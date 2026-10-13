@@ -22,20 +22,21 @@ releases remain available to everyone.
 ## In development
 
 A look at what's being developed: animated game artwork, useful dashboards
-for the **JSAUX Pixel Matrix Faceplate**, and Gabe Assistant. These experimental
+for the **JSAUX Pixel Matrix Faceplate**, and a local voice assistant with a
+choice of **GabeCube Companion** or **Gabe Assistant**. These experimental
 features are **not included in the current public release** and may change.
 
 <table>
-<tr><th>Game artwork</th><th>Weather & dashboards</th><th>Gabe Assistant</th></tr>
+<tr><th>Game artwork</th><th>Weather & dashboards</th><th>GabeCube Companion</th></tr>
 <tr>
 <td align="center"><img src="docs/media/development/session.gif" width="230" alt="Animated Stray dashboard on a simulated Steam Machine with a 64 by 54 dot matrix and diffused light bar"></td>
 <td align="center"><img src="docs/media/development/weather-dashboard.gif" width="230" alt="Animated weather dashboard with current rain, 12 degrees Celsius, and a next-hour forecast row"></td>
-<td align="center"><img src="docs/media/development/gabe-assistant-timer-champagne.gif" width="230" alt="User says Hey Gabe, Gabe replies I'm listening, then confirms a 30-minute timer before returning to the TW3 Dashboard; Steam-blue eyes, warm salt-and-pepper hair, champagne bronze glasses and 40 percent mouth width"></td>
+<td align="center"><img src="docs/media/development/gabecube-companion.gif" width="230" alt="GabeCube Companion on a native 64 by 54 dot matrix: a complete accelerated rotation, attentive tilt, question, happy jump with a small rebound and another complete turn; separate light bar responds to its musical motif"></td>
 </tr>
 <tr>
 <td>Your games, prepared for the 64 × 54 matrix.</td>
 <td>Time, weather and one useful information row.</td>
-<td>An animated face, expressive light bar and optional local voice controls.</td>
+<td>A musical cube or Gabe's expressive face, with the same optional local voice commands.</td>
 </tr>
 </table>
 
@@ -123,7 +124,34 @@ controlled from Decky, with an optional automatic sleep/shutdown policy.
 </details>
 
 <details>
-<summary><strong>Gabe Assistant</strong> · An animated companion with optional local voice controls</summary>
+<summary><strong>Voice assistant · GabeCube Companion</strong> · A musical cube, or Gabe's expressive face</summary>
+
+Choose **GabeCube Companion** or **Gabe Assistant** in
+**Settings → Signals and automation → Voice assistant**. Both share the same
+local commands, microphone, French/English language and activation options.
+Existing users keep their chosen settings and Gabe's face. Switching character
+does not enable hands-free listening or change your display routes or brightness.
+
+<p align="center"><img src="docs/media/development/gabecube-companion.gif" width="360" alt="Prepared GabeCube Companion animations: full continuous 360-degree turn, attentive and questioning tilts, a six-pixel happy jump, a two-pixel rebound and a full success rotation on the exact 64 by 54 matrix"></p>
+
+The Companion's six rigid faces turn with progressive acceleration and a soft
+stop. Success includes a little jump and a smaller rebound. Its warm musical
+replies drive the light bar from the audio being played, not from a game or
+microphone loop. Questions, safety confirmations and time readouts keep the
+installed French or English spoken voice so the commands remain understandable.
+
+The animations are prepared native GIFs, not live 3D rendering. Short musical
+motifs do not cut the visual gestures short. Real actions still return promptly
+to the current Dashboard or artwork, without waiting for decorative animation
+to finish. This silent preview shows the entire choreography, not hardware USB
+latency, microphone recognition or measured panel playback cadence.
+
+The simplified page shows essential controls first. **Appearance and sound**
+and **Voice commands** expand on demand; **Advanced mode** contains wake
+sensitivity, detailed lighting/face controls, microphone tests and diagnostics.
+
+<details>
+<summary>Gabe Assistant · the alternative spoken character</summary>
 
 Gabe has animated eyes, glasses and eyebrows, with a light-bar mouth.
 Appearance controls include colours, mouth width, Single colour / Slow Prism
@@ -157,13 +185,17 @@ Only the glasses colour changes. Both previews use the same prepared
 
 </details>
 
-Activation can use a controller shortcut or optional **Ok Gabe / Hey Gabe**
-voice controls, with a French/English command glossary. Voice activation is
+Activation can use a controller shortcut or optional voice controls, with a
+French/English command glossary. **Gabe, Gaby, Gaben, Cube and GabeCube** work
+with either character. Choose **Ok**, **Hey**, or both as the allowed prefix:
+“Hey Cube” and “Ok GabeCube” are examples. Voice activation is
 off by default and uses separately installed local speech modules. When
 enabled, the selected microphone stays open locally while waiting; waiting
 audio is not saved or uploaded. Disable it to close the microphone.
 
 Voice components are still being prepared for public distribution.
+
+</details>
 
 </details>
 
@@ -175,11 +207,12 @@ Game artwork: [Stray by LudaX](https://www.steamgriddb.com/grid/231089),
 [Detroit: Become Human by TUFKAC](https://www.steamgriddb.com/grid/243447),
 [Resident Evil 2 by Jnill](https://www.steamgriddb.com/grid/785014).
 
-All previews use one shared Steam Machine model. Native **64 × 54** frames
+Previews use front-on Steam Machine enclosure studies. Native **64 × 54** frames
 drive **3,456 individual dots**; enclosure proportions, light-bar diffusion
 and glow are software illustrations, not measured hardware optics. The GIFs
 do not establish physical compatibility, voice accuracy or transfer timing.
-Displayed readings are demonstration values. Gabe's GIF is silent and subtitled.
+Displayed readings are demonstration values. The assistant GIFs are silent
+software illustrations; the older Gabe dialogue preview is subtitled.
 
 See [preview sources](docs/media/development/CREDITS.md) for individual credits.
 Experimental features may change; no public release date is announced here.

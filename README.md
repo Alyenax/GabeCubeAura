@@ -139,13 +139,21 @@ The preview follows one complete use: **TW3 Dashboard → “Hey Cube” →
 TW3 Dashboard with LEFT 30 MIN**. The timer keeps running after the return;
 its thirty minutes are not compressed into the demonstration.
 
-The Companion's six rigid faces turn with progressive acceleration and a soft
-stop. Success includes a little jump and a smaller rebound. Its warm musical
+The Companion's six beveled, raised faces follow the Portal 2 cube: a small
+matte heart, an ivory centre disc and a pale-pink luminous ring. The complete
+entry turn is accelerated, while success keeps its little jump and smaller
+rebound. Its warm musical
 replies drive the light bar from the audio being played, not from a game or
-microphone loop. Questions, safety confirmations and time readouts keep the
-installed French or English spoken voice so the commands remain understandable.
+microphone loop. Every Companion response is musical, including errors.
+Questions, safety confirmations and time readouts appear as Steam notifications,
+never as an unexpected reply in Gabe's voice. Its Slow Prism is light/dark pink,
+with independent colours and a separate, headroom-safe melody volume.
 
-The animations are prepared native GIFs, not live 3D rendering. Short musical
+The animations are prepared native GIFs, not live 3D rendering. The call GIF
+is 56.6 KB, about 69% lighter than Lab 93, with its full turn in three seconds.
+Unused colours are removed losslessly, without reducing resolution or shading.
+Real appearance latency still depends on the faceplate's USB acknowledgement.
+Short musical
 motifs do not cut the visual gestures short. Real actions still return promptly
 to the current Dashboard or artwork, without waiting for decorative animation
 to finish. This silent, captioned preview shows the workflow and full choreography,

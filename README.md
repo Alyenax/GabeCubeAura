@@ -129,6 +129,10 @@ Gabe has animated eyes, glasses and eyebrows, with a light-bar mouth.
 Appearance controls include colours, mouth width, Single colour / Slow Prism
 and Subtle / Natural / Expressive reactions.
 
+The refined face uses Steam-blue eyes and warm salt-and-pepper hair and beard,
+with **bronze champagne** or **muted plum** glasses. A soft taupe beard shadow
+replaces the black cutout; the light bar remains Gabe's only animated mouth.
+
 <p align="center"><img src="docs/media/development/gabe-assistant-timer-champagne.gif" width="360" alt="Complete illustrated voice workflow: Hey Gabe, I'm listening, a 30-minute timer request, confirmation, countdown lighting and return to the animated TW3 Dashboard with LEFT 30 MIN"></p>
 
 **You:** “Hey Gabe!” → **Gabe:** “I'm listening.” →
@@ -141,6 +145,16 @@ the user's turn and quiet pauses leave it off. The countdown then takes over
 the light bar and the animated TW3 Dashboard returns with **LEFT 30 MIN**.
 This silent, subtitled preview illustrates the workflow; it does not record
 speech recognition or start a real timer. The thirty minutes are not accelerated.
+
+<details>
+<summary>Compare the muted plum glasses · same face, dialogue and 40% mouth</summary>
+
+<p align="center"><img src="docs/media/development/gabe-assistant-timer-plum.gif" width="360" alt="The same complete Hey Gabe and 30-minute timer workflow, with muted plum glasses, Steam-blue eyes, warm hair and beard, and a soft taupe shadow without a black cutout"></p>
+
+Only the glasses colour changes. Both previews use the same prepared
+64 × 54 face and the same simulated Steam Machine proportions.
+
+</details>
 
 Activation can use a controller shortcut or optional **Ok Gabe / Hey Gabe**
 voice controls, with a French/English command glossary. Voice activation is

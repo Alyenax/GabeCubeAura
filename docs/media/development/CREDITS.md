@@ -25,7 +25,10 @@ Gabe preview is a scripted, subtitled 24-second timer workflow: the user's
 "Hey Gabe" call, the runtime's "I'm listening" greeting, a 30-minute request,
 confirmation, countdown lighting and return to the animated TW3 Dashboard.
 It uses a 40% mouth width, Steam-blue eyes, warm salt-and-pepper hair/beard
-and champagne bronze glasses. It is not speech recognition or a real timer
+and champagne bronze or muted plum glasses. The 2026-10-13 approved V4 export
+also supplies the hair framing and taupe beard shadow without a black cutout.
+Both versions use the same native prepared face as the development plugin;
+only the glasses colour changes. It is not speech recognition or a real timer
 activation; the thirty minutes are not compressed into the illustration.
 
 Weather, forecast, clock, battery, performance and playtime values are

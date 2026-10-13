@@ -30,7 +30,7 @@ features are **not included in the current public release** and may change.
 <tr>
 <td align="center"><img src="docs/media/development/session.gif" width="230" alt="Animated Stray dashboard on a simulated Steam Machine with a 64 by 54 dot matrix and diffused light bar"></td>
 <td align="center"><img src="docs/media/development/weather-dashboard.gif" width="230" alt="Animated weather dashboard with current rain, 12 degrees Celsius, and a next-hour forecast row"></td>
-<td align="center"><img src="docs/media/development/gabe-assistant.gif" width="230" alt="Complete subtitled exchange: Gabe greets, the user asks to launch Stray, Gabe replies; the cyan mouth uses a 40 percent width setting"></td>
+<td align="center"><img src="docs/media/development/gabe-assistant-timer-champagne.gif" width="230" alt="User says Hey Gabe, Gabe replies I'm listening, then confirms a 30-minute timer before returning to the TW3 Dashboard; Steam-blue eyes, warm salt-and-pepper hair, champagne bronze glasses and 40 percent mouth width"></td>
 </tr>
 <tr>
 <td>Your games, prepared for the 64 × 54 matrix.</td>
@@ -129,15 +129,18 @@ Gabe has animated eyes, glasses and eyebrows, with a light-bar mouth.
 Appearance controls include colours, mouth width, Single colour / Slow Prism
 and Subtle / Natural / Expressive reactions.
 
-<p align="center"><img src="docs/media/development/gabe-assistant.gif" width="360" alt="Complete illustrated exchange with Gabe's greeting, the user's request and Gabe's reply; the mouth uses a 40 percent width setting and stays off while the user speaks"></p>
+<p align="center"><img src="docs/media/development/gabe-assistant-timer-champagne.gif" width="360" alt="Complete illustrated voice workflow: Hey Gabe, I'm listening, a 30-minute timer request, confirmation, countdown lighting and return to the animated TW3 Dashboard with LEFT 30 MIN"></p>
 
-**Gabe:** “Ready to play?” → **You:** “Hey Gabe, launch Stray.” →
-**Gabe:** “Launching Stray. Have fun!”
+**You:** “Hey Gabe!” → **Gabe:** “I'm listening.” →
+**You:** “Set a timer for thirty minutes.” →
+**Gabe:** “Your 30-minute timer is set.”
 
 The full exchange plays before the loop restarts. The **40% mouth width**
-follows the plugin's setting: only Gabe's speaking beats drive the cyan LEDs;
-the user's turn and quiet pauses leave them off. The animation illustrates
-the interaction, not recognised speech or a verified game launch.
+follows the plugin's setting: only Gabe's speaking beats drive the cyan mouth;
+the user's turn and quiet pauses leave it off. The countdown then takes over
+the light bar and the animated TW3 Dashboard returns with **LEFT 30 MIN**.
+This silent, subtitled preview illustrates the workflow; it does not record
+speech recognition or start a real timer. The thirty minutes are not accelerated.
 
 Activation can use a controller shortcut or optional **Ok Gabe / Hey Gabe**
 voice controls, with a French/English command glossary. Voice activation is

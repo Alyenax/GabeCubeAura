@@ -21,8 +21,12 @@ preview loop. A shared illustration timeline is not physical timing proof.
 
 Weather scenes, matrix composition, forecast icons, typography and Gabe's
 facial animation come from the project's development renderers. The silent
-Gabe preview is a scripted, subtitled three-turn exchange with a 40% mouth
-width setting, not speech recognition or a successful command recording.
+Gabe preview is a scripted, subtitled 24-second timer workflow: the user's
+"Hey Gabe" call, the runtime's "I'm listening" greeting, a 30-minute request,
+confirmation, countdown lighting and return to the animated TW3 Dashboard.
+It uses a 40% mouth width, Steam-blue eyes, warm salt-and-pepper hair/beard
+and champagne bronze glasses. It is not speech recognition or a real timer
+activation; the thirty minutes are not compressed into the illustration.
 
 Weather, forecast, clock, battery, performance and playtime values are
 illustrative. Weather Dashboard retains its background animation beneath

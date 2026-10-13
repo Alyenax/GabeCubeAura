@@ -8,8 +8,12 @@ GabeCube Companion is original procedural fan art interpreting Valve's Weighted
 Companion Cube. It uses the approved six-face native renderer: smooth full turns,
 a six-pixel jump and two-pixel rebound. The 50-fps native animation slots are
 illustrated at 25 fps here without adding source pixels or interpolated artwork.
-The silent light bar visualization uses the envelope of user-supplied original
-synthetic musical motifs, not sampled Portal sounds. No audio is embedded in the
+The silent light bar visualization uses the actual runtime Slow Prism renderer
+with the supplied synthesized activation motif and prepared spoken timer-confirmation
+envelope. It then uses the runtime Playtime countdown renderer, not an invented
+LED effect. The story starts on the approved native TW3 Dashboard, receives
+“Hey Cube” and a 30-minute timer request, then returns to TW3 with LEFT 30 MIN.
+The artwork uses the TUFKAC source credited above. No audio is embedded in the
 public GIF, and the source sound pack has not been cleared for public distribution.
 This longer demonstration intentionally shows full gestures; a real completed
 command returns to normal routing without an extra decorative delay. Neither

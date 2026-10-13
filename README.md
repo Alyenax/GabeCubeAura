@@ -31,7 +31,7 @@ features are **not included in the current public release** and may change.
 <tr>
 <td align="center"><img src="docs/media/development/session.gif" width="230" alt="Animated Stray dashboard on a simulated Steam Machine with a 64 by 54 dot matrix and diffused light bar"></td>
 <td align="center"><img src="docs/media/development/weather-dashboard.gif" width="230" alt="Animated weather dashboard with current rain, 12 degrees Celsius, and a next-hour forecast row"></td>
-<td align="center"><img src="docs/media/development/gabecube-companion.gif" width="230" alt="GabeCube Companion on a native 64 by 54 dot matrix: a complete accelerated rotation, attentive tilt, question, happy jump with a small rebound and another complete turn; separate light bar responds to its musical motif"></td>
+<td align="center"><img src="docs/media/development/gabecube-companion.gif" width="230" alt="TW3 Dashboard, Hey Cube call, a 30-minute timer request, Companion reply with a jump and rebound, Playtime lighting and return to TW3 with LEFT 30 MIN"></td>
 </tr>
 <tr>
 <td>Your games, prepared for the 64 × 54 matrix.</td>
@@ -132,7 +132,12 @@ local commands, microphone, French/English language and activation options.
 Existing users keep their chosen settings and Gabe's face. Switching character
 does not enable hands-free listening or change your display routes or brightness.
 
-<p align="center"><img src="docs/media/development/gabecube-companion.gif" width="360" alt="Prepared GabeCube Companion animations: full continuous 360-degree turn, attentive and questioning tilts, a six-pixel happy jump, a two-pixel rebound and a full success rotation on the exact 64 by 54 matrix"></p>
+<p align="center"><img src="docs/media/development/gabecube-companion.gif" width="360" alt="Complete illustrated timer workflow: TW3 Dashboard, Hey Cube, start a timer for thirty minutes, Companion confirmation and return to TW3 with LEFT 30 MIN and the runtime Playtime light-bar animation"></p>
+
+The preview follows one complete use: **TW3 Dashboard → “Hey Cube” →
+“Start a timer for thirty minutes” → confirmation → Playtime lighting →
+TW3 Dashboard with LEFT 30 MIN**. The timer keeps running after the return;
+its thirty minutes are not compressed into the demonstration.
 
 The Companion's six rigid faces turn with progressive acceleration and a soft
 stop. Success includes a little jump and a smaller rebound. Its warm musical
@@ -143,8 +148,8 @@ installed French or English spoken voice so the commands remain understandable.
 The animations are prepared native GIFs, not live 3D rendering. Short musical
 motifs do not cut the visual gestures short. Real actions still return promptly
 to the current Dashboard or artwork, without waiting for decorative animation
-to finish. This silent preview shows the entire choreography, not hardware USB
-latency, microphone recognition or measured panel playback cadence.
+to finish. This silent, captioned preview shows the workflow and full choreography,
+not hardware USB latency, live microphone recognition or measured panel cadence.
 
 The simplified page shows essential controls first. **Appearance and sound**
 and **Voice commands** expand on demand; **Advanced mode** contains wake

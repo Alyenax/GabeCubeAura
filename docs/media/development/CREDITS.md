@@ -27,6 +27,8 @@ confirmation, countdown lighting and return to the animated TW3 Dashboard.
 It uses a 40% mouth width, Steam-blue eyes, warm salt-and-pepper hair/beard
 and champagne bronze or muted plum glasses. The 2026-10-13 approved V4 export
 also supplies the hair framing and taupe beard shadow without a black cutout.
+The eyebrows follow the light-brown hair strand, with the Lab 92 colour
+correction applied without changing the approved geometry or animation.
 Both versions use the same native prepared face as the development plugin;
 only the glasses colour changes. It is not speech recognition or a real timer
 activation; the thirty minutes are not compressed into the illustration.

@@ -130,7 +130,8 @@ Appearance controls include colours, mouth width, Single colour / Slow Prism
 and Subtle / Natural / Expressive reactions.
 
 The refined face uses Steam-blue eyes and warm salt-and-pepper hair and beard,
-with **bronze champagne** or **muted plum** glasses. A soft taupe beard shadow
+with **bronze champagne** or **muted plum** glasses and light-brown eyebrows
+matched to the hair strands. A soft taupe beard shadow
 replaces the black cutout; the light bar remains Gabe's only animated mouth.
 
 <p align="center"><img src="docs/media/development/gabe-assistant-timer-champagne.gif" width="360" alt="Complete illustrated voice workflow: Hey Gabe, I'm listening, a 30-minute timer request, confirmation, countdown lighting and return to the animated TW3 Dashboard with LEFT 30 MIN"></p>

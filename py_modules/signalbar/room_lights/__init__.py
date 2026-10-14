@@ -1,4 +1,4 @@
-"""Room lights: Screen Sync and game artwork on the lights around the room."""
+"""Smart lighting (code name room lights): Screen Sync and game artwork on the lights around the room."""
 
 from signalbar.room_lights.room import ROLES, RoomLights
 

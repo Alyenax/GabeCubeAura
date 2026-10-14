@@ -1,4 +1,4 @@
-# Room lights (prototype)
+# Smart lighting (prototype)
 
 This puts the game on the lights around your room, not just the bar on the
 Steam Machine. It's a proof of concept: it works on my Govee lights, but it
@@ -15,7 +15,7 @@ Every light you add gets one role:
 - **Screen.** Real time, like an HDMI sync box. Each screen light gets a
   little picture of the screen with cells around the edges (4 across the top
   and bottom, 3 down each side) and the whole picture in the middle. Tap the
-  cells that light should show. A light with several cells, like a strip under
+  cells that light should show, corners included. A light with several cells, like a strip under
   the TV, gets one colour per cell in order and stretches them along its
   length, starting from the lowest end (where Govee puts segment one). If the
   colours run the wrong way, flip "Reverse direction". It uses
@@ -35,18 +35,25 @@ is showing something else (the same way Audio Sync borrows the picture). When
 frames stop for 1.5 seconds (game closed, Steam Machine asleep), the lights are
 handed back.
 
+Settings > Smart lighting: turn it on, tick the brands you have, set up the
+lights, then pick how bright they run and what they do when no game is running.
+In the code it's `room_lights`.
+
 Settings live in `room-lights.json` next to GabeCubeAura's other settings,
 kept separate on purpose so the feature is easy to pull out or rework.
 
 ## Govee
 
 Zero setup beyond one toggle: turn on **LAN Control** for each light in the
-Govee app. Then Settings > Room lights > Scan. GabeCubeAura asks on the
+Govee app. Then tick Govee under "Which smart lights do you have?" and scan. Saved
+lights are always listed; opening the page also rescans quietly for new ones.
+Each light has an Identify button that blinks it (and puts it back how it
+was), since nobody knows which IP is which lamp. GabeCubeAura asks on the
 standard Govee multicast address (239.255.255.250:4001) and lights answer on
 port 4002. No account, no cloud, no API key.
 
 Lights are saved by their Govee device ID, not their IP. GabeCubeAura rescans
-quietly at startup, when Room lights is switched on, and every time a game
+quietly at startup, when Smart lighting is switched on, and every time a game
 starts, and follows any light the router has moved. Lights typed in by IP can't
 be tracked that way.
 
@@ -67,6 +74,15 @@ my H6022 floor lamps and H61F2 strip at home through a different app.
 Only one app can capture the screen at a time. If another plugin is already
 capturing Gamescope, Screen Sync (and so the screen lights) waits until it
 stops.
+
+Lamps and strips with several colour zones don't need setting up per model:
+each picked cell is one colour, and the light's own firmware spreads them
+across however many zones it has. A plain bulb looks best with one cell.
+
+## Matter
+
+Not covered. Govee lights that only do Matter (no LAN Control) would need a
+Matter controller and commissioning, which is a bigger job than this prototype.
 
 ## Hue
 

@@ -1,4 +1,4 @@
-"""Room lights: drive lights around the room from what's on screen.
+"""Smart lighting: drive lights around the room from what's on screen.
 
 Each light gets one role:
 
@@ -36,6 +36,9 @@ from signalbar.room_lights import govee
 
 ROLES = ("off", "key-art", "screen")
 IDLE_MODES = ("leave", "warm", "off")
+# Brands the user says they have. Only Govee does anything yet; Hue is listed
+# so people can see it's planned (see hue.py).
+BRANDS = ("govee", "hue")
 ACROSS, DOWN = 4, 3  # screen cells along the top/bottom and down each side
 # The cells around the edge of the screen, clockwise from the top-left corner.
 RING = (["top-left"] + [f"top-{i}" for i in range(1, ACROSS + 1)] + ["top-right"]
@@ -101,6 +104,7 @@ DEFAULTS = {
     "idle": "leave",
     "idle_kelvin": 3000,
     "idle_brightness": 40,
+    "brands": ["govee"],
     "lights": {},
 }
 
@@ -241,6 +245,8 @@ class RoomLights:
                 self.config["idle"] = changes["idle"]
             if "idle_kelvin" in changes:
                 self.config["idle_kelvin"] = max(2000, min(9000, int(changes["idle_kelvin"])))
+            if "brands" in changes:
+                self.config["brands"] = [b for b in changes["brands"] if b in BRANDS]
             if "idle_brightness" in changes:
                 self.config["idle_brightness"] = max(1, min(100, int(changes["idle_brightness"])))
             self._idle_sent_at = None  # apply the new idle look straight away
@@ -278,6 +284,7 @@ class RoomLights:
                 "found": list(self._found),
                 "roles": list(ROLES),
                 "idle_modes": list(IDLE_MODES),
+                "all_brands": list(BRANDS),
                 "across": ACROSS,
                 "down": DOWN,
             }

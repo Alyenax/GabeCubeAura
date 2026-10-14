@@ -96,37 +96,32 @@ export function RoomLightsPanel() {
     setState(await roomLightsSetLight(light.id, light.ip, light.model, "screen", next.length ? next : ["whole"], null));
   };
 
+  const brands = state.brands ?? [];
+  const toggleBrand = (brand: string, on: boolean) =>
+    options({ brands: on ? [...brands.filter((b) => b !== brand), brand] : brands.filter((b) => b !== brand) });
+
   return <>
-    <PanelSection title="Room lights">
+    <PanelSection title="Smart lighting">
       <PanelSectionRow><div style={note}>
-        Puts the game on the lights around your room. Key art lights share a slow ring of the
+        Puts the game on the smart lights around your room. Key art lights share a slow ring of the
         game's artwork colours. Screen lights follow the parts of the picture you pick for them,
         in real time. Mix them however you like.
       </div></PanelSectionRow>
       <PanelSectionRow>
-        <ToggleField label="Room lights" checked={state.enabled} onChange={(enabled) => options({ enabled })} />
+        <ToggleField label="Smart lighting" checked={state.enabled} onChange={(enabled) => options({ enabled })} />
       </PanelSectionRow>
-      <PanelSectionRow>
-        <SliderField label="Brightness while playing" value={state.brightness} min={5} max={100} step={5}
-          showValue onChange={(brightness) => options({ brightness })} />
-      </PanelSectionRow>
-      <PanelSectionRow>
-        <DropdownItem label="When no game is running"
-          rgOptions={state.idle_modes.map((mode) => ({ data: mode, label: IDLE_LABELS[mode] ?? mode }))}
-          selectedOption={state.idle} onChange={(option) => options({ idle: option.data as string })} />
-      </PanelSectionRow>
-      {state.idle === "warm" ? <>
-        <PanelSectionRow>
-          <SliderField label="Warm white colour (K)" value={state.idle_kelvin} min={2000} max={6500} step={100}
-            showValue onChange={(idle_kelvin) => options({ idle_kelvin })} />
-        </PanelSectionRow>
-        <PanelSectionRow>
-          <SliderField label="Warm white brightness" value={state.idle_brightness} min={5} max={100} step={5}
-            showValue onChange={(idle_brightness) => options({ idle_brightness })} />
-        </PanelSectionRow>
-      </> : null}
     </PanelSection>
-    <PanelSection title="Govee lights">
+    <PanelSection title="Which smart lights do you have?">
+      <PanelSectionRow>
+        <ToggleField label="Govee" description="Wi-Fi lights with LAN Control. Found on your network, no account needed."
+          checked={brands.includes("govee")} onChange={(on) => toggleBrand("govee", on)} />
+      </PanelSectionRow>
+      <PanelSectionRow>
+        <ToggleField label="Philips Hue" disabled checked={false} onChange={() => undefined}
+          description="Not available yet. Hue streams through its bridge over an encrypted connection this plugin can't make yet." />
+      </PanelSectionRow>
+    </PanelSection>
+    {brands.includes("govee") ? <PanelSection title="Govee lights">
       <PanelSectionRow><div style={note}>
         Turn on LAN Control for each light in the Govee app, then scan. No account or key needed.
         Lights are remembered by their device, so it's fine if your router hands them a new IP.
@@ -179,6 +174,27 @@ export function RoomLightsPanel() {
           </> : null}
         </div>;
       })}
+    </PanelSection> : null}
+    <PanelSection title="Behaviour">
+      <PanelSectionRow>
+        <SliderField label="Brightness while playing" value={state.brightness} min={5} max={100} step={5}
+          showValue onChange={(brightness) => options({ brightness })} />
+      </PanelSectionRow>
+      <PanelSectionRow>
+        <DropdownItem label="When no game is running"
+          rgOptions={state.idle_modes.map((mode) => ({ data: mode, label: IDLE_LABELS[mode] ?? mode }))}
+          selectedOption={state.idle} onChange={(option) => options({ idle: option.data as string })} />
+      </PanelSectionRow>
+      {state.idle === "warm" ? <>
+        <PanelSectionRow>
+          <SliderField label="Warm white colour (K)" value={state.idle_kelvin} min={2000} max={6500} step={100}
+            showValue onChange={(idle_kelvin) => options({ idle_kelvin })} />
+        </PanelSectionRow>
+        <PanelSectionRow>
+          <SliderField label="Warm white brightness" value={state.idle_brightness} min={5} max={100} step={5}
+            showValue onChange={(idle_brightness) => options({ idle_brightness })} />
+        </PanelSectionRow>
+      </> : null}
     </PanelSection>
   </>;
 }

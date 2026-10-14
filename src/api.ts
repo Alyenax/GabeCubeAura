@@ -102,6 +102,8 @@ export interface RoomLightsStatus {
   found: RoomLight[];
   roles: string[];
   idle_modes: string[];
+  brands: string[];
+  all_brands: string[];
   across: number;
   down: number;
 }

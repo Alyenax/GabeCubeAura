@@ -1126,7 +1126,7 @@ class Engine:
                     values, audio_sync_requested,
                 )
                 recording = self.events.recording
-                # Room lights can keep capture running while the bar shows
+                # Smart lighting can keep capture running while the bar shows
                 # something else. Same deal as Audio Sync borrowing the picture.
                 room_lights_capture = self.room_lights.wants_screen() and game.running
                 screen_sync_active = self._screen_sync_should_run(

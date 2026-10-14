@@ -45,18 +45,17 @@ function ZonePicker({ across, down, picked, taken, onToggle }: {
   };
   const row = (key: string, height: number, cells: ReactNode[]) =>
     <Focusable key={key} flow-children="row" style={{ display: "flex", gap: 3, height }}>{cells}</Focusable>;
-  const edge = (side: string) => Array.from({ length: across }, (_, i) => cell(`${side}-${i + 1}`, 2));
-  const middle = Math.ceil(down / 2);
+  const side = (name: string) => <Focusable key={name} flow-children="column"
+    style={{ flex: 1, display: "flex", flexDirection: "column", gap: 3 }}>
+    {Array.from({ length: down }, (_, i) => cell(`${name}-${i + 1}`))}
+  </Focusable>;
+  const edge = (name: string) => Array.from({ length: across }, (_, i) => cell(`${name}-${i + 1}`, 2));
   return <Focusable flow-children="column" style={{
-    display: "flex", flexDirection: "column", gap: 3, width: 256, margin: "4px auto 8px",
+    display: "flex", flexDirection: "column", gap: 3, width: 320, margin: "4px auto 8px",
   }}>
-    {row("top", 22, [cell("top-left"), ...edge("top"), cell("top-right")])}
-    {Array.from({ length: down }, (_, i) => row(`side-${i}`, 26, [
-      cell(`left-${i + 1}`),
-      i + 1 === middle ? cell("whole", across * 2, "Whole picture") : <div key="gap" style={{ flex: across * 2 }} />,
-      cell(`right-${i + 1}`),
-    ]))}
-    {row("bottom", 22, [cell("bottom-left"), ...edge("bottom"), cell("bottom-right")])}
+    {row("top", 24, [cell("top-left"), ...edge("top"), cell("top-right")])}
+    {row("middle", 120, [side("left"), cell("whole", across * 2, "Whole picture"), side("right")])}
+    {row("bottom", 24, [cell("bottom-left"), ...edge("bottom"), cell("bottom-right")])}
   </Focusable>;
 }
 
@@ -66,7 +65,11 @@ export function RoomLightsPanel() {
   const [extraIp, setExtraIp] = useState("");
   const [blinking, setBlinking] = useState("");
 
-  useEffect(() => { roomLightsStatus().then(setState); }, []);
+  useEffect(() => {
+    // Saved lights show at once; a quiet scan then adds anything new.
+    roomLightsStatus().then(setState);
+    roomLightsScan([]).then(setState).catch(() => undefined);
+  }, []);
 
   const scan = async () => {
     setScanning(true);
@@ -159,8 +162,9 @@ export function RoomLightsPanel() {
           </PanelSectionRow>
           {role === "screen" && config ? <>
             <PanelSectionRow><div style={note}>
-              Pick the parts of the screen this light shows. Several cells next to each other
-              spread along the light, lowest end first.
+              Pick the parts of the screen this light shows. Each cell is one colour; the light
+              spreads them across its own colour zones, lowest end first. A lamp or strip with
+              several zones looks best with a few cells in a row; a plain bulb with one.
             </div></PanelSectionRow>
             <PanelSectionRow>
               <ZonePicker across={state.across} down={state.down} picked={config.zones}

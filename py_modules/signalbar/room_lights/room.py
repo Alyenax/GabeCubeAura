@@ -154,6 +154,9 @@ class RoomLights:
             pass
         for light in self.config["lights"].values():
             _upgrade(light)
+        # Saved lights show up straight away; a scan only adds to the list.
+        self._found = [{"id": i, "ip": l["ip"], "model": l.get("model", "?")}
+                       for i, l in self.config["lights"].items()]
 
     # -- settings ---------------------------------------------------------
 
@@ -189,6 +192,12 @@ class RoomLights:
     def scan(self, extra_ips=()):
         found = self.scanner()
         known = {light["id"] for light in found}
+        # Keep anything an earlier scan found too, so a light that misses one
+        # multicast round doesn't drop out of the list.
+        for light in self._found:
+            if light["id"] not in known and light["id"] not in self.config["lights"]:
+                found.append(light)
+                known.add(light["id"])
         # Lights on another VLAN never hear the multicast scan, so anything
         # added by IP stays in the list even when the scan can't see it.
         for light_id, light in self.config["lights"].items():

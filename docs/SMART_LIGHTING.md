@@ -86,10 +86,21 @@ Matter controller and commissioning, which is a bigger job than this prototype.
 
 ## Hue
 
-`py_modules/signalbar/room_lights/hue.py` is a sketch written from Philips'
-docs. **It is untested** (I don't have a Hue bridge anymore) and nothing calls
-it yet. The short version: pairing is a link-button press on the bridge, the
-Entertainment areas people already set up in the Hue app can be read over the
-local API with each light's position, and streaming is DTLS to the bridge. That
-last part needs a DTLS library Python doesn't ship with, which is where the
-sketch stops. Details are in the file.
+`py_modules/signalbar/room_lights/hue.py` is a stub written from Philips'
+docs. **It is untested** (I don't have a Hue bridge anymore), nothing calls it,
+and the Hue toggle in the UI is greyed out. It has the same methods as the
+Govee light class, so it should slot into the same room logic.
+
+The short version of what I learned: pairing is a link-button press on the
+bridge, and the Entertainment areas people already set up in the Hue app can
+be read over the local API with every light's position. So Hue users wouldn't
+even need the zone picker. Streaming is DTLS to the bridge, which Python can't
+do out of the box, so that's where the stub stops. Every spot I'd expect to
+need fixing on a real bridge is marked CHECK or TRY in the file.
+
+## Home Assistant
+
+Not in this prototype on purpose. HA service calls are too slow for the
+real-time screen zones, but they'd be fine for the slow key-art ring, and the
+Home Assistant over MQTT work (#6) already gives GabeCubeAura a connection to
+build on. That would let any light HA knows about join in.

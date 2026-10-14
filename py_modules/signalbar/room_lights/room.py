@@ -39,6 +39,12 @@ IDLE_MODES = ("leave", "warm", "off")
 # Brands the user says they have. Only Govee does anything yet; Hue is listed
 # so people can see it's planned (see hue.py).
 BRANDS = ("govee", "hue")
+# A driver is a module with scan(), identify(ip) and a Light(ip) class with
+# power, brightness, colour, white, start_stream, frame, stop_stream and a
+# `streaming` flag (govee.py is the reference). WiZ, LIFX and Yeelight all
+# have open LAN APIs and would fit this shape. Hue doesn't fit Light(ip)
+# as is: it needs a bridge, keys and an area id (see hue.py).
+DRIVERS = {"govee": govee}
 ACROSS, DOWN = 4, 3  # screen cells along the top/bottom and down each side
 # The cells around the edge of the screen, clockwise from the top-left corner.
 RING = (["top-left"] + [f"top-{i}" for i in range(1, ACROSS + 1)] + ["top-right"]
@@ -91,7 +97,8 @@ RING_LAP_SECONDS = 180.0
 # channel), and never more than once a second. Bulbs don't need more.
 RING_MIN_CHANGE = 6
 RING_MIN_INTERVAL = 1.0
-# Screen lights: 20 updates a second is plenty and keeps the network quiet.
+# Screen lights: never more than 20 updates a second. The engine ticks at about
+# 10 a second anyway, so this only matters when it speeds up for animations.
 SCREEN_MIN_INTERVAL = 0.05
 SCREEN_KEEPALIVE = 0.5
 # Idle state is sent once, then again now and then in case a light missed it
@@ -121,26 +128,26 @@ def ring_colour(palette, position):
     return _mix(palette[i % n], palette[(i + 1) % n], spot - i)
 
 
-def _upgrade(light):
-    """Configs from the first test build used screen-left etc. as roles."""
-    role = light.get("role", "off")
-    if role.startswith("screen-"):
-        edge = role[len("screen-"):]
-        light["role"] = "screen"
-        light["zones"] = ["whole"] if edge == "whole" else [
-            z for z in ZONES if z.startswith(edge + "-") and z.count("-") == 1 and z[-1].isdigit()]
-    light.setdefault("zones", ["whole"])
-    light.setdefault("reverse", False)
+def _clean(light):
+    """A saved light, with defaults filled in, or None if it's unusable."""
+    if not isinstance(light, dict) or not isinstance(light.get("ip"), str):
+        return None
+    if light.get("role") not in ROLES:
+        return None
+    light.setdefault("brand", "govee")
+    light.setdefault("model", "?")
+    zones = light.get("zones")
+    light["zones"] = [z for z in zones if z in ZONES] if isinstance(zones, list) else []
+    light["zones"] = light["zones"] or ["whole"]
+    light["reverse"] = bool(light.get("reverse", False))
     return light
 
 
 class RoomLights:
-    def __init__(self, path, clock=time.monotonic, light_factory=govee.GoveeLight,
-                 scanner=govee.scan):
+    def __init__(self, path, clock=time.monotonic, drivers=None):
         self.path = path
         self.clock = clock
-        self.light_factory = light_factory
-        self.scanner = scanner
+        self.drivers = drivers or DRIVERS
         self._lock = threading.Lock()
         self._lights = {}        # id -> GoveeLight, made on first use
         self._sent = {}          # id -> (colours, at)
@@ -148,19 +155,28 @@ class RoomLights:
         self._was_running = False
         self._idle_sent_at = None
         self._found = []
-        self._quiet_until = {}   # ip -> time; leave a light alone while it blinks
+        self._quiet_until = {}
+        self.last_error = ""   # ip -> time; leave a light alone while it blinks
         self.config = json.loads(json.dumps(DEFAULTS))
+        # A broken settings file must never stop the plugin loading: anything
+        # that doesn't look right falls back to the defaults.
         try:
             with open(path) as handle:
                 saved = json.load(handle)
-            self.config.update({k: saved[k] for k in DEFAULTS if k in saved})
-        except (OSError, ValueError):
+            for key, default in DEFAULTS.items():
+                if isinstance(saved.get(key), type(default)):
+                    self.config[key] = saved[key]
+        except (OSError, ValueError, AttributeError):
             pass
-        for light in self.config["lights"].values():
-            _upgrade(light)
+        lights = {}
+        for light_id, light in self.config["lights"].items():
+            light = _clean(light)
+            if light:
+                lights[str(light_id)] = light
+        self.config["lights"] = lights
         # Saved lights show up straight away; a scan only adds to the list.
-        self._found = [{"id": i, "ip": l["ip"], "model": l.get("model", "?")}
-                       for i, l in self.config["lights"].items()]
+        self._found = [{"id": i, "ip": l["ip"], "model": l["model"], "brand": l["brand"]}
+                       for i, l in lights.items()]
 
     # -- settings ---------------------------------------------------------
 
@@ -174,6 +190,15 @@ class RoomLights:
         """Point saved lights at the IP the scan just saw them on."""
         changed = False
         for light in found:
+            # A light first added by IP is saved under its IP. Once a scan
+            # hears it, move it to its device ID so it shows up once and can
+            # be followed when the IP changes.
+            by_ip = self.config["lights"].get(light["ip"])
+            if by_ip and light["id"] != light["ip"] and light["id"] not in self.config["lights"]:
+                self.config["lights"][light["id"]] = self.config["lights"].pop(light["ip"])
+                self._lights.pop(light["ip"], None)
+                self._sent.pop(light["ip"], None)
+                changed = True
             saved = self.config["lights"].get(light["id"])
             if saved and saved["ip"] != light["ip"]:
                 saved["ip"] = light["ip"]
@@ -188,31 +213,42 @@ class RoomLights:
             return
 
         def run():
-            found = self.scanner()
+            found = self._scan_all()
             with self._lock:
                 self._learn_addresses(found)
         threading.Thread(target=run, name="room-lights-scan", daemon=True).start()
 
+    def _scan_all(self):
+        found = []
+        for brand in self.config["brands"]:
+            driver = self.drivers.get(brand)
+            if driver:
+                found += [dict(light, brand=brand) for light in driver.scan()]
+        return found
+
     def scan(self, extra_ips=()):
-        found = self.scanner()
-        known = {light["id"] for light in found}
-        # Keep anything an earlier scan found too, so a light that misses one
-        # multicast round doesn't drop out of the list.
-        for light in self._found:
-            if light["id"] not in known and light["id"] not in self.config["lights"]:
-                found.append(light)
-                known.add(light["id"])
-        # Lights on another VLAN never hear the multicast scan, so anything
-        # added by IP stays in the list even when the scan can't see it.
-        for light_id, light in self.config["lights"].items():
-            if light_id not in known:
-                found.append({"id": light_id, "ip": light["ip"], "model": light.get("model", "?")})
-        for ip in extra_ips:
-            if ip and ip not in {light["ip"] for light in found}:
-                found.append({"id": ip, "ip": ip, "model": "added by IP"})
+        found = self._scan_all()  # slow part, done without holding the lock
         with self._lock:
+            known = {light["id"] for light in found}
+            # Keep anything an earlier scan found too, so a light that misses one
+            # multicast round doesn't drop out of the list. Saved lights always
+            # stay: lights on another VLAN never hear the scan at all.
+            for light in self._found:
+                if light["id"] not in known:
+                    found.append(light)
+                    known.add(light["id"])
+            for light_id, light in self.config["lights"].items():
+                if light_id not in known:
+                    found.append({"id": light_id, "ip": light["ip"], "model": light["model"],
+                                  "brand": light["brand"]})
+                    known.add(light_id)
+            for ip in extra_ips:
+                if ip and ip not in {light["ip"] for light in found}:
+                    found.append({"id": ip, "ip": ip, "model": "added by IP", "brand": "govee"})
             self._learn_addresses(found)
-            self._found = found
+            # Drop entries that just got rekeyed from IP to device ID.
+            self._found = [l for l in found
+                           if not (l["id"] == l["ip"] and any(o["ip"] == l["ip"] and o["id"] != l["id"] for o in found))]
         return self.status()
 
     def identify(self, ip):
@@ -223,11 +259,13 @@ class RoomLights:
             for light_id, light in list(self.config["lights"].items()):
                 if light["ip"] == ip:
                     self._release(light_id)
+        brand = next((l["brand"] for l in self.config["lights"].values() if l["ip"] == ip), "govee")
         try:
-            govee.identify(ip)
+            self.drivers[brand].identify(ip)
         finally:
             with self._lock:
                 self._quiet_until.pop(ip, None)
+                self._idle_sent_at = None  # put the idle look back if that's what's showing
         return self.status()
 
     def set_options(self, changes):
@@ -240,7 +278,8 @@ class RoomLights:
             if "brightness" in changes:
                 self.config["brightness"] = max(1, min(100, int(changes["brightness"])))
                 for light in self._lights.values():
-                    light.streaming = False  # re-sends brightness on the next frame
+                    light.streaming = False  # screen lights re-send brightness next frame
+                self._sent.clear()           # key-art lights do too
             if changes.get("idle") in IDLE_MODES:
                 self.config["idle"] = changes["idle"]
             if "idle_kelvin" in changes:
@@ -263,7 +302,8 @@ class RoomLights:
                 self._release(light_id)
                 self.config["lights"].pop(light_id, None)
             else:
-                light = self.config["lights"].get(light_id) or _upgrade({"role": role})
+                brand = next((l.get("brand", "govee") for l in self._found if l["id"] == light_id), "govee")
+                light = self.config["lights"].get(light_id) or _clean({"ip": ip, "role": role, "brand": brand})
                 if light["role"] != role:
                     self._release(light_id)
                 light.update({"ip": ip, "model": model, "role": role})
@@ -284,6 +324,7 @@ class RoomLights:
                 "found": list(self._found),
                 "roles": list(ROLES),
                 "idle_modes": list(IDLE_MODES),
+                "last_error": self.last_error,
                 "all_brands": list(BRANDS),
                 "across": ACROSS,
                 "down": DOWN,
@@ -301,7 +342,8 @@ class RoomLights:
         light = self._lights.get(light_id)
         ip = self.config["lights"][light_id]["ip"]
         if light is None or light.ip != ip:
-            light = self._lights[light_id] = self.light_factory(ip)
+            driver = self.drivers[self.config["lights"][light_id]["brand"]]
+            light = self._lights[light_id] = driver.Light(ip)
         return light
 
     def _release(self, light_id):
@@ -315,7 +357,16 @@ class RoomLights:
             self._release(light_id)
 
     def update(self, zones=None, palette=(), game_running=False):
-        """Called from the engine loop, about ten times a second.
+        """Called from the engine loop, about ten times a second. Never raises:
+        a problem with a light must not take the LED bar down with it."""
+        try:
+            self._update(zones, palette, game_running)
+            self.last_error = ""
+        except Exception as error:  # noqa: BLE001 - see docstring
+            self.last_error = f"{type(error).__name__}: {error}"
+
+    def _update(self, zones=None, palette=(), game_running=False):
+        """The real work behind update().
 
         zones: {"top-1": rgb, ..., "whole": rgb} from the latest screen frame,
                or None when there's no fresh frame.
@@ -345,7 +396,7 @@ class RoomLights:
                 if light["role"] == "screen":
                     if screen_live and zones:
                         cells = send_order(light["zones"], light["reverse"])
-                        self._stream(light_id, [zones[z] for z in cells], now)
+                        self._stream(light_id, [zones.get(z, (0, 0, 0)) for z in cells], now)
                     elif not screen_live and light_id in self._sent:
                         self._release(light_id)
                 elif light["role"] == "key-art" and palette:
@@ -396,5 +447,10 @@ class RoomLights:
         self._sent[light_id] = (colour, now)
 
     def stop(self):
+        """Plugin unloading: hand the lights back and leave them in the idle look."""
         with self._lock:
-            self._release_all()
+            if self.config["enabled"]:
+                self._idle_sent_at = None
+                self._idle(self.clock())
+            else:
+                self._release_all()

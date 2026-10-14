@@ -1,8 +1,15 @@
 # Smart lighting (prototype)
 
 This puts the game on the lights around your room, not just the bar on the
-Steam Machine. It's a proof of concept: it works on my Govee lights, but it
-hasn't been tried on many setups yet.
+Steam Machine. It's a proof of concept, and two halves of it are in very
+different states:
+
+- **Govee: works.** This is the flow I built for my own setup and have been
+  running on my lights for weeks, moved into GabeCubeAura and tested on my
+  hardware from the plugin.
+- **Everything else is a skeleton.** The driver interface, the Hue stub and
+  the notes on other brands are me taking that code and building out what
+  should work for other lights. I just don't have the hardware to test them.
 
 ## How it works
 
@@ -21,6 +28,17 @@ Every light you add gets one role:
   colours run the wrong way, flip "Reverse direction". It uses
   the frames Screen Sync already captures, so nothing new is recorded and
   nothing leaves your network.
+
+Brands mix too. The "Which smart lights do you have?" toggles aren't a pick
+one: every light lands in the same list with its own role, whatever made it.
+Once Hue is finished, Govee lamps on key art and a Hue Entertainment area on
+the screen zones can run side by side.
+
+One caveat for the fast stuff: try to keep the screen lights on one brand.
+Govee gets a UDP packet straight from the Steam Machine, while Hue goes
+through its bridge with its own pacing, so the two will land at slightly
+different times. On key art nobody will notice; on lights flanking the TV
+reacting to an explosion, you might.
 
 Roles mix. What I run at home: two lamps behind the TV on the left and right
 edges, a strip under it on the bottom cells, and everything else in the room on
@@ -78,6 +96,25 @@ stops.
 Lamps and strips with several colour zones don't need setting up per model:
 each picked cell is one colour, and the light's own firmware spreads them
 across however many zones it has. A plain bulb looks best with one cell.
+
+## Other Wi-Fi bulbs
+
+There's no common protocol for "Wi-Fi RGB bulb". Each family has its own, so
+the code is split into drivers: a driver is a module with `scan()`,
+`identify(ip)` and a `Light(ip)` class (power, brightness, colour, white,
+start_stream, frame, stop_stream). `govee.py` is the reference, and
+`DRIVERS` in `room.py` lists what's available. Brands that would fit easily
+because they have open, local LAN APIs and no account:
+
+- **WiZ** (Philips' cheaper line, sold at a lot of big box stores): JSON over
+  UDP port 38899, found with a broadcast.
+- **LIFX**: a documented binary LAN protocol on UDP 56700.
+- **Yeelight**: a "LAN Control" toggle like Govee's, SSDP discovery, JSON over
+  TCP 55443.
+
+Most no-name "Smart Life" bulbs are Tuya inside. They can be run locally, but
+only with a per-device key you have to pull from Tuya's cloud first, so they
+don't fit the zero-setup idea.
 
 ## Matter
 

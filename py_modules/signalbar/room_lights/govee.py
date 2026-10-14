@@ -1,4 +1,7 @@
-"""Govee LAN API: find lights on the network and stream colour to them.
+"""Govee driver for Smart lighting: find lights on the LAN and stream colour to them.
+
+A driver is a module with scan(), identify(ip) and a Light class (see
+room.py's DRIVERS). This is the only one that's done.
 
 No account, no cloud, no keys. The only thing the user has to do is flip
 "LAN Control" on for each light in the Govee app, which is a one-time toggle.
@@ -9,6 +12,7 @@ from __future__ import annotations
 import base64
 import json
 import socket
+import threading
 import time
 
 SCAN_GROUP = "239.255.255.250"
@@ -23,11 +27,29 @@ CONTROL_PORT = 4003   # everything else goes to the light's IP on this port
 # Every razer payload ends with an XOR of all its bytes.
 RAZER_ON = bytes((0xBB, 0x00, 0x01, 0xB1, 0x01))
 RAZER_OFF = bytes((0xBB, 0x00, 0x01, 0xB1, 0x00))
+# Power and brightness need a beat before real-time mode goes on, or the enable
+# can land before the light is awake.
+RAZER_SETTLE = 0.05
+
+# Lights answer scans and status queries on port 4002. Two listeners at once
+# (Linux spreads datagrams across SO_REUSEPORT sockets) would each miss half
+# the replies, so only one ever listens.
+_listen_lock = threading.Lock()
 
 
 def scan(timeout=2.0):
     """Ask every Govee light on the LAN to say hi. Returns a list of dicts."""
+    with _listen_lock:
+        try:
+            return _scan(timeout)
+        except OSError:
+            return []  # something else owns 4002 or the network is down
+
+
+def _scan(timeout):
     listener = _reply_socket(0.2)
+    # Goes out the default-route interface. With both Ethernet and Wi-Fi up,
+    # setting IP_MULTICAST_IF per interface would reach both.
     sender = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sender.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 2)
     ask = json.dumps({"msg": {"cmd": "scan", "data": {"account_topic": "reserve"}}})
@@ -100,10 +122,12 @@ def identify(ip):
 class GoveeLight:
     """One light, addressed by IP. Fire and forget UDP, so nothing here blocks."""
 
-    def __init__(self, ip, sock=None):
+    def __init__(self, ip, sock=None, clock=time.monotonic):
         self.ip = ip
         self.sock = sock or socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.clock = clock
         self.streaming = False
+        self._enable_at = None  # when to send the razer enable, or None once sent
 
     def _send(self, cmd, data):
         message = json.dumps({"msg": {"cmd": cmd, "data": data}}).encode()
@@ -123,28 +147,32 @@ class GoveeLight:
     def state(self, timeout=1.0):
         """Ask the light what it's doing: onOff, brightness, color,
         colorTemInKelvin. None if it doesn't answer in time."""
-        try:
-            listener = _reply_socket(0.2)
-        except OSError:
-            return None
-        try:
-            self._send("devStatus", {})
-            deadline = time.monotonic() + timeout
-            while time.monotonic() < deadline:
-                try:
-                    data, (sender, _) = listener.recvfrom(4096)
-                except socket.timeout:
-                    continue
-                if sender != self.ip:
-                    continue
-                try:
-                    message = json.loads(data)["msg"]
-                except (ValueError, KeyError, TypeError):
-                    continue
-                if message.get("cmd") == "devStatus":
-                    return message.get("data")
-        finally:
-            listener.close()
+        with _listen_lock:
+            try:
+                listener = _reply_socket(0.2)
+            except OSError:
+                return None
+            try:
+                return self._read_state(listener, timeout)
+            finally:
+                listener.close()
+
+    def _read_state(self, listener, timeout):
+        self._send("devStatus", {})
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            try:
+                data, (sender, _) = listener.recvfrom(4096)
+            except socket.timeout:
+                continue
+            if sender != self.ip:
+                continue
+            try:
+                message = json.loads(data)["msg"]
+            except (ValueError, KeyError, TypeError):
+                continue
+            if message.get("cmd") == "devStatus":
+                return message.get("data")
         return None
 
     def power(self, on):
@@ -164,17 +192,22 @@ class GoveeLight:
                                       "colorTemInKelvin": int(kelvin)})
 
     def start_stream(self, brightness=100):
-        # Power and brightness first, then a beat before real-time mode. Sent
-        # back to back, the enable sometimes lands before the light is awake.
+        """Wake the light up. Real-time mode goes on with the first frame after
+        RAZER_SETTLE, so nothing here waits on the engine's thread."""
         self.power(True)
         self.brightness(brightness)
-        time.sleep(0.05)
-        self._razer(RAZER_ON)
+        self._enable_at = self.clock() + RAZER_SETTLE
         self.streaming = True
 
     def frame(self, colours):
         """Send a list of colours. The light stretches them across its length,
-        so a bulb can take one colour and a lamp or strip can take several."""
+        so a bulb can take one colour and a lamp or strip can take several.
+        Returns False if nothing went out (still settling, or a send failed)."""
+        if self._enable_at is not None:
+            if self.clock() < self._enable_at:
+                return True  # not an error, just early
+            self._razer(RAZER_ON)
+            self._enable_at = None
         colours = list(colours)[:255]
         n = len(colours)
         if not n:
@@ -187,3 +220,8 @@ class GoveeLight:
     def stop_stream(self):
         self._razer(RAZER_OFF)
         self.streaming = False
+        self._enable_at = None
+
+
+# The driver contract room.py expects.
+Light = GoveeLight

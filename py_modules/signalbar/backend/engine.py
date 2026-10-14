@@ -27,6 +27,7 @@ from signalbar.providers.onboarding import immersive_preview_output
 from signalbar.providers.weather import WeatherProvider
 from signalbar.renderer import Renderer
 from signalbar.room_lights import RoomLights
+from signalbar.room_lights.room import ACROSS as ROOM_ACROSS, DOWN as ROOM_DOWN
 from signalbar.settings.store import DISPLAY_PRESET_RECIPES
 from signalbar.thermal import ThermalProtection, THERMAL_SUSPENSION_MESSAGE
 
@@ -1183,8 +1184,9 @@ class Engine:
                     )
                 self.room_lights.update(
                     zones=(
-                        self.screen_sync.processor.zones()
-                        if screen_sync_base.frame is not None else None
+                        self.screen_sync.processor.zones(ROOM_ACROSS, ROOM_DOWN)
+                        if room_lights_capture and screen_sync_base.frame is not None
+                        else None
                     ),
                     palette=artwork_colours if game.running else (),
                     game_running=game.running,

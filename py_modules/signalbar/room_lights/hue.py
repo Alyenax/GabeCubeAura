@@ -1,10 +1,12 @@
 """Philips Hue for Smart lighting. UNTESTED: written from the Hue docs, never run.
 
 I don't own a Hue bridge anymore, so this is a stub for whoever picks it up.
-It has the same shape as govee.GoveeLight (power, brightness, colour, white,
-start_stream, frame, stop_stream) so room.py could drive a Hue Entertainment
-area the same way it drives a Govee light. Nothing calls it yet and the Hue
-toggle in the UI is disabled.
+HueArea has the same method names as govee.GoveeLight (power, brightness,
+colour, white, start_stream, frame, stop_stream). It doesn't drop into room.py
+as is: drivers there are built from an IP alone, and Hue needs the bridge,
+keys and an area id, so wiring it in means a Hue entry in DRIVERS whose Light
+knows where to find those. Nothing calls anything in this file yet, and the
+Hue toggle in the UI is disabled.
 
 How Hue works, per the docs (https://developers.meethue.com, free login):
 

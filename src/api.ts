@@ -90,8 +90,8 @@ export const dismissUpdateError = callable<[], UpdateStatus>("dismiss_update_err
 export const runUpdateLabScenario = callable<[scenario: UpdateLabResult["scenario"]], UpdateLabResult>("run_update_lab_scenario");
 export const exportUpdateTestReport = callable<[], { path: string }>("export_update_test_report");
 
-export interface RoomLight { id: string; ip: string; model: string }
-export interface RoomLightConfig { ip: string; model: string; role: string; zones: string[]; reverse: boolean }
+export interface RoomLight { id: string; ip: string; model: string; brand: string }
+export interface RoomLightConfig { ip: string; model: string; brand: string; role: string; zones: string[]; reverse: boolean }
 export interface RoomLightsStatus {
   enabled: boolean;
   brightness: number;
@@ -102,6 +102,7 @@ export interface RoomLightsStatus {
   found: RoomLight[];
   roles: string[];
   idle_modes: string[];
+  last_error: string;
   brands: string[];
   all_brands: string[];
   across: number;

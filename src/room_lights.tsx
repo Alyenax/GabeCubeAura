@@ -76,6 +76,8 @@ export function RoomLightsPanel() {
     try {
       setState(await roomLightsScan(extraIp.trim() ? [extraIp.trim()] : []));
       setExtraIp("");
+    } catch (error) {
+      console.warn("[GabeCubeAura] smart lighting scan failed", error);
     } finally {
       setScanning(false);
     }
@@ -108,8 +110,11 @@ export function RoomLightsPanel() {
         in real time. Mix them however you like.
       </div></PanelSectionRow>
       <PanelSectionRow>
-        <ToggleField label="Smart lighting" checked={state.enabled} onChange={(enabled) => options({ enabled })} />
+        <ToggleField label="Turn on smart lighting" checked={state.enabled} onChange={(enabled) => options({ enabled })} />
       </PanelSectionRow>
+      {state.last_error ? <PanelSectionRow><div style={{ ...note, color: "#ff8080" }}>
+        Last problem: {state.last_error}
+      </div></PanelSectionRow> : null}
     </PanelSection>
     <PanelSection title="Which smart lights do you have?">
       <PanelSectionRow>

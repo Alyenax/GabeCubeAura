@@ -1,7 +1,7 @@
-import { ButtonItem, DialogButton, DropdownItem, Focusable, PanelSection, PanelSectionRow, SliderField, TextField, ToggleField } from "@decky/ui";
-import { useEffect, useState } from "react";
+import { ButtonItem, DropdownItem, Focusable, PanelSection, PanelSectionRow, SliderField, TextField, ToggleField } from "@decky/ui";
+import { type ReactNode, useEffect, useState } from "react";
 import {
-  roomLightsScan, roomLightsSetLight, roomLightsSetOptions, roomLightsStatus,
+  roomLightsIdentify, roomLightsScan, roomLightsSetLight, roomLightsSetOptions, roomLightsStatus,
   type RoomLight, type RoomLightsStatus,
 } from "./api";
 
@@ -20,8 +20,9 @@ const IDLE_LABELS: Record<string, string> = {
 const note = { fontSize: ".78em", opacity: .78 };
 
 // The screen as a small rectangle: cells around the edge (corners included),
-// the middle is the whole picture. Move with the D-pad, press A to add or
-// remove a cell.
+// the middle is the whole picture. Built from rows of Focusables so the D-pad
+// moves between cells the way it does everywhere else in Steam; A or a tap
+// adds or removes a cell.
 function ZonePicker({ across, down, picked, taken, onToggle }: {
   across: number;
   down: number;
@@ -29,40 +30,41 @@ function ZonePicker({ across, down, picked, taken, onToggle }: {
   taken: string[];
   onToggle: (zone: string) => void;
 }) {
-  const last = { column: across + 2, row: down + 2 };
-  const cell = (zone: string, column: string | number, row: string | number, label = "") => {
+  const [focused, setFocused] = useState("");
+  const cell = (zone: string, grow = 1, label = "") => {
     const on = picked.includes(zone);
-    return <DialogButton key={zone} onClick={() => onToggle(zone)} style={{
-      gridColumn: column, gridRow: row, minWidth: 0, minHeight: 0, height: "100%", width: "100%",
-      padding: 0, fontSize: 11, lineHeight: 1, borderRadius: 3,
-      background: on ? "#1a9fff" : taken.includes(zone) ? "#3d4450" : "#23262e",
-      color: on ? "#fff" : "#8b929a",
-    }}>{label}</DialogButton>;
+    return <Focusable key={zone} onActivate={() => onToggle(zone)} onClick={() => onToggle(zone)}
+      onGamepadFocus={() => setFocused(zone)} onGamepadBlur={() => setFocused((z) => (z === zone ? "" : z))}
+      noFocusRing style={{
+        flex: grow, height: "100%", borderRadius: 3, boxSizing: "border-box",
+        display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11,
+        background: on ? "#1a9fff" : taken.includes(zone) ? "#3d4450" : "#23262e",
+        color: on ? "#fff" : "#8b929a",
+        outline: focused === zone ? "2px solid #fff" : "none", outlineOffset: 1,
+      }}>{label}</Focusable>;
   };
-  const cells = [
-    cell("top-left", 1, 1), cell("top-right", last.column, 1),
-    cell("bottom-left", 1, last.row), cell("bottom-right", last.column, last.row),
-  ];
-  for (let i = 1; i <= across; i++) {
-    cells.push(cell(`top-${i}`, i + 1, 1));
-    cells.push(cell(`bottom-${i}`, i + 1, last.row));
-  }
-  for (let i = 1; i <= down; i++) {
-    cells.push(cell(`left-${i}`, 1, i + 1));
-    cells.push(cell(`right-${i}`, last.column, i + 1));
-  }
-  cells.push(cell("whole", `2 / ${last.column}`, `2 / ${last.row}`, "Whole picture"));
-  return <Focusable flow-children="grid" style={{
-    display: "grid", gap: 3, width: 256, height: 144, margin: "0 auto",
-    gridTemplateColumns: `repeat(${across + 2}, 1fr)`,
-    gridTemplateRows: `repeat(${down + 2}, 1fr)`,
-  }}>{cells}</Focusable>;
+  const row = (key: string, height: number, cells: ReactNode[]) =>
+    <Focusable key={key} flow-children="row" style={{ display: "flex", gap: 3, height }}>{cells}</Focusable>;
+  const edge = (side: string) => Array.from({ length: across }, (_, i) => cell(`${side}-${i + 1}`, 2));
+  const middle = Math.ceil(down / 2);
+  return <Focusable flow-children="column" style={{
+    display: "flex", flexDirection: "column", gap: 3, width: 256, margin: "4px auto 8px",
+  }}>
+    {row("top", 22, [cell("top-left"), ...edge("top"), cell("top-right")])}
+    {Array.from({ length: down }, (_, i) => row(`side-${i}`, 26, [
+      cell(`left-${i + 1}`),
+      i + 1 === middle ? cell("whole", across * 2, "Whole picture") : <div key="gap" style={{ flex: across * 2 }} />,
+      cell(`right-${i + 1}`),
+    ]))}
+    {row("bottom", 22, [cell("bottom-left"), ...edge("bottom"), cell("bottom-right")])}
+  </Focusable>;
 }
 
 export function RoomLightsPanel() {
   const [state, setState] = useState<RoomLightsStatus | null>(null);
   const [scanning, setScanning] = useState(false);
   const [extraIp, setExtraIp] = useState("");
+  const [blinking, setBlinking] = useState("");
 
   useEffect(() => { roomLightsStatus().then(setState); }, []);
 
@@ -148,6 +150,12 @@ export function RoomLightsPanel() {
               selectedOption={role}
               onChange={async (option) => setState(
                 await roomLightsSetLight(light.id, light.ip, light.model, option.data as string, null, null))} />
+          </PanelSectionRow>
+          <PanelSectionRow>
+            <ButtonItem layout="below" disabled={blinking === light.ip} onClick={async () => {
+              setBlinking(light.ip);
+              try { setState(await roomLightsIdentify(light.ip)); } finally { setBlinking(""); }
+            }}>{blinking === light.ip ? "Blinking..." : "Identify (blink this light)"}</ButtonItem>
           </PanelSectionRow>
           {role === "screen" && config ? <>
             <PanelSectionRow><div style={note}>

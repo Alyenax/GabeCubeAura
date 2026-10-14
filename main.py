@@ -207,6 +207,11 @@ class Plugin:
             None, self.engine.room_lights.scan, tuple(extra_ips or ()),
         )
 
+    async def room_lights_identify(self, ip: str):
+        return await asyncio.get_running_loop().run_in_executor(
+            None, self.engine.room_lights.identify, ip,
+        )
+
     async def room_lights_set_options(self, changes: dict):
         return self.engine.room_lights.set_options(changes)
 

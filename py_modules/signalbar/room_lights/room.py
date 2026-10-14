@@ -144,6 +144,7 @@ class RoomLights:
         self._was_running = False
         self._idle_sent_at = None
         self._found = []
+        self._quiet_until = {}   # ip -> time; leave a light alone while it blinks
         self.config = json.loads(json.dumps(DEFAULTS))
         try:
             with open(path) as handle:
@@ -199,6 +200,21 @@ class RoomLights:
         with self._lock:
             self._learn_addresses(found)
             self._found = found
+        return self.status()
+
+    def identify(self, ip):
+        """Blink one light so the user can tell which one it is."""
+        with self._lock:
+            # Don't fight a light we're streaming to: hand it back first.
+            self._quiet_until[ip] = self.clock() + 10.0
+            for light_id, light in list(self.config["lights"].items()):
+                if light["ip"] == ip:
+                    self._release(light_id)
+        try:
+            govee.identify(ip)
+        finally:
+            with self._lock:
+                self._quiet_until.pop(ip, None)
         return self.status()
 
     def set_options(self, changes):
@@ -308,6 +324,8 @@ class RoomLights:
             lights = self.config["lights"]
             ring = sorted(i for i, light in lights.items() if light["role"] == "key-art")
             for light_id, light in lights.items():
+                if self._quiet_until.get(light["ip"], 0) > now:
+                    continue
                 if light["role"] == "screen":
                     if screen_live and zones:
                         cells = send_order(light["zones"], light["reverse"])
@@ -323,7 +341,9 @@ class RoomLights:
             return
         self._release_all()
         mode = self.config["idle"]
-        for light_id in self.config["lights"]:
+        for light_id, light_cfg in self.config["lights"].items():
+            if self._quiet_until.get(light_cfg["ip"], 0) > now:
+                continue
             if mode == "warm":
                 light = self._light(light_id)
                 light.power(True)

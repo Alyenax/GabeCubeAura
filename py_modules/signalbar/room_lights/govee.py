@@ -27,13 +27,7 @@ RAZER_OFF = bytes((0xBB, 0x00, 0x01, 0xB1, 0x00))
 
 def scan(timeout=2.0):
     """Ask every Govee light on the LAN to say hi. Returns a list of dicts."""
-    listener = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    if hasattr(socket, "SO_REUSEPORT"):
-        listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
-    listener.bind(("", REPLY_PORT))
-    listener.settimeout(0.2)
-
+    listener = _reply_socket(0.2)
     sender = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sender.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 2)
     ask = json.dumps({"msg": {"cmd": "scan", "data": {"account_topic": "reserve"}}})
@@ -67,6 +61,42 @@ def scan(timeout=2.0):
     return sorted(found.values(), key=lambda light: (light["model"], light["ip"]))
 
 
+def _reply_socket(timeout):
+    listener = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    if hasattr(socket, "SO_REUSEPORT"):
+        listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+    listener.bind(("", REPLY_PORT))
+    listener.settimeout(timeout)
+    return listener
+
+
+def identify(ip):
+    """Blink a light three times so you can tell which one it is, then put it
+    back how it was. If the light doesn't say how it was, it's left on."""
+    light = GoveeLight(ip)
+    before = light.state()
+    for _ in range(3):
+        light.power(True)
+        light.brightness(100)
+        light.white(6500)
+        time.sleep(0.4)
+        light.brightness(1)
+        time.sleep(0.4)
+    if not before:
+        light.brightness(100)
+        return
+    if not before.get("onOff"):
+        light.power(False)
+        return
+    light.brightness(before.get("brightness", 100))
+    if before.get("colorTemInKelvin"):
+        light.white(before["colorTemInKelvin"])
+    elif before.get("color"):
+        c = before["color"]
+        light.colour((c.get("r", 0), c.get("g", 0), c.get("b", 0)))
+
+
 class GoveeLight:
     """One light, addressed by IP. Fire and forget UDP, so nothing here blocks."""
 
@@ -89,6 +119,33 @@ class GoveeLight:
             checksum ^= byte
         payload = base64.b64encode(bytes(raw) + bytes((checksum,))).decode("ascii")
         return self._send("razer", {"pt": payload})
+
+    def state(self, timeout=1.0):
+        """Ask the light what it's doing: onOff, brightness, color,
+        colorTemInKelvin. None if it doesn't answer in time."""
+        try:
+            listener = _reply_socket(0.2)
+        except OSError:
+            return None
+        try:
+            self._send("devStatus", {})
+            deadline = time.monotonic() + timeout
+            while time.monotonic() < deadline:
+                try:
+                    data, (sender, _) = listener.recvfrom(4096)
+                except socket.timeout:
+                    continue
+                if sender != self.ip:
+                    continue
+                try:
+                    message = json.loads(data)["msg"]
+                except (ValueError, KeyError, TypeError):
+                    continue
+                if message.get("cmd") == "devStatus":
+                    return message.get("data")
+        finally:
+            listener.close()
+        return None
 
     def power(self, on):
         return self._send("turn", {"value": 1 if on else 0})

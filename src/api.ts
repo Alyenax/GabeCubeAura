@@ -107,6 +107,7 @@ export interface RoomLightsStatus {
 }
 export const roomLightsStatus = callable<[], RoomLightsStatus>("room_lights_status");
 export const roomLightsScan = callable<[extraIps: string[]], RoomLightsStatus>("room_lights_scan");
+export const roomLightsIdentify = callable<[ip: string], RoomLightsStatus>("room_lights_identify");
 export const roomLightsSetOptions = callable<[changes: Partial<RoomLightsStatus>], RoomLightsStatus>("room_lights_set_options");
 export const roomLightsSetLight = callable<[
   id: string, ip: string, model: string, role: string, zones: string[] | null, reverse: boolean | null,

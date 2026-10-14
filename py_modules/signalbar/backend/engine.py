@@ -26,6 +26,7 @@ from signalbar.providers.audio_sync import ADAPTIVE_STYLES
 from signalbar.providers.onboarding import immersive_preview_output
 from signalbar.providers.weather import WeatherProvider
 from signalbar.renderer import Renderer
+from signalbar.room_lights import RoomLights
 from signalbar.settings.store import DISPLAY_PRESET_RECIPES
 from signalbar.thermal import ThermalProtection, THERMAL_SUSPENSION_MESSAGE
 
@@ -91,6 +92,9 @@ class Engine:
         self.screen_sync = ScreenSyncProvider()
         self.audio_sync = AudioSyncProvider()
         self.screen_sync_activation = ScreenSyncActivation()
+        self.room_lights = RoomLights(
+            os.path.join(os.path.dirname(cache_path), "room-lights.json")
+        )
         self.events = EventProvider()
         self.events.set_variants(settings.all())
         self.controllers = ControllerProvider()
@@ -181,6 +185,7 @@ class Engine:
             thread.join(timeout=2.0)
         self.screen_sync.stop()
         self.audio_sync.stop()
+        self.room_lights.stop()
         self.screen_sync_activation.stop_preview()
         with self._lock:
             self.events.clear_transients()
@@ -1120,8 +1125,12 @@ class Engine:
                     values, audio_sync_requested,
                 )
                 recording = self.events.recording
+                # Room lights can keep capture running while the bar shows
+                # something else. Same deal as Audio Sync borrowing the picture.
+                room_lights_capture = self.room_lights.wants_screen() and game.running
                 screen_sync_active = self._screen_sync_should_run(
-                    values, screen_sync_requested or audio_screen_capture,
+                    values,
+                    screen_sync_requested or audio_screen_capture or room_lights_capture,
                     signal_critical, ownership_allowed,
                     stripmine_active, recording, steam_priority,
                 )
@@ -1171,6 +1180,13 @@ class Engine:
                         ),
                         artwork_colours=artwork_colours,
                     )
+                self.room_lights.update(
+                    edges=(
+                        self.screen_sync.processor.edges()
+                        if screen_sync_base.frame is not None else None
+                    ),
+                    palette=artwork_colours if game.running else (),
+                )
                 if immersive_preview is not None:
                     if immersive_preview.provider.startswith("audio-sync"):
                         audio_sync_base = immersive_preview

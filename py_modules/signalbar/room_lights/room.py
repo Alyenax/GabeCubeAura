@@ -2,15 +2,24 @@
 
 Each light gets one role:
 
-  off         left alone
-  key-art     slow ambient. The game's artwork palette is laid around all the
-              key-art lights like a ring and turns slowly, so the room has
-              some movement without pulling your eye off the TV.
-  screen-*    real time. The light follows one edge of the picture (left,
-              right, top, bottom) or the whole thing.
+  off      left alone
+  key-art  slow ambient. The game's artwork palette is laid around all the
+           key-art lights like a ring and turns slowly, so the room has some
+           movement without pulling your eye off the TV.
+  screen   real time. The light shows the screen zones picked for it: cells
+           along the top, bottom, left and right edges, or the whole picture.
+           A light with several cells (a strip under the TV) gets them in
+           order, one colour per cell, and stretches them along its length.
 
-Roles mix freely: a couple of lamps behind the TV on screen edges and the rest
+Roles mix freely: a couple of lamps behind the TV on screen zones and the rest
 of the room on key art is the setup I run at home.
+
+When no game is running the lights do whatever "idle" says: nothing, warm
+white, or off.
+
+Lights are remembered by their Govee device ID, not their IP, and the IPs get
+refreshed with a quick scan at startup and whenever a game starts, so DHCP
+moving a light around doesn't break anything.
 
 Settings live in their own small JSON file so this whole feature can be
 pulled out by deleting this folder and a handful of lines in the engine.
@@ -25,8 +34,21 @@ import time
 
 from signalbar.room_lights import govee
 
-ROLES = ("off", "key-art", "screen-left", "screen-right", "screen-top",
-         "screen-bottom", "screen-whole")
+ROLES = ("off", "key-art", "screen")
+IDLE_MODES = ("leave", "warm", "off")
+ACROSS, DOWN = 4, 3  # screen cells along the top/bottom and down each side
+ZONES = (["whole"] + [f"top-{i}" for i in range(1, ACROSS + 1)]
+         + [f"right-{i}" for i in range(1, DOWN + 1)]
+         + [f"bottom-{i}" for i in range(1, ACROSS + 1)]
+         + [f"left-{i}" for i in range(1, DOWN + 1)])
+# The order a light's cells are sent in. Govee lamps put the first colour at
+# the bottom and strips at the left end, so sides go bottom to top and the top
+# and bottom edges go left to right. "Reverse" on a light flips it.
+SEND_ORDER = ([f"left-{i}" for i in range(DOWN, 0, -1)]
+              + [f"top-{i}" for i in range(1, ACROSS + 1)]
+              + [f"right-{i}" for i in range(DOWN, 0, -1)]
+              + [f"bottom-{i}" for i in range(1, ACROSS + 1)]
+              + ["whole"])
 
 # A light is told the stream ended after this long without a fresh frame, so a
 # closed game or a sleeping Steam Machine hands the light back.
@@ -40,6 +62,18 @@ RING_MIN_INTERVAL = 1.0
 # Screen lights: 20 updates a second is plenty and keeps the network quiet.
 SCREEN_MIN_INTERVAL = 0.05
 SCREEN_KEEPALIVE = 0.5
+# Idle state is sent once, then again now and then in case a light missed it
+# (UDP has no delivery receipt) or was switched back on at the wall.
+IDLE_RESEND = 120.0
+
+DEFAULTS = {
+    "enabled": False,
+    "brightness": 80,
+    "idle": "leave",
+    "idle_kelvin": 3000,
+    "idle_brightness": 40,
+    "lights": {},
+}
 
 
 def _mix(a, b, t):
@@ -54,23 +88,41 @@ def ring_colour(palette, position):
     return _mix(palette[i % n], palette[(i + 1) % n], spot - i)
 
 
+def _upgrade(light):
+    """Configs from the first test build used screen-left etc. as roles."""
+    role = light.get("role", "off")
+    if role.startswith("screen-"):
+        edge = role[len("screen-"):]
+        light["role"] = "screen"
+        light["zones"] = ["whole"] if edge == "whole" else [z for z in ZONES if z.startswith(edge)]
+    light.setdefault("zones", ["whole"])
+    light.setdefault("reverse", False)
+    return light
+
+
 class RoomLights:
-    def __init__(self, path, clock=time.monotonic, light_factory=govee.GoveeLight):
+    def __init__(self, path, clock=time.monotonic, light_factory=govee.GoveeLight,
+                 scanner=govee.scan):
         self.path = path
         self.clock = clock
         self.light_factory = light_factory
+        self.scanner = scanner
         self._lock = threading.Lock()
         self._lights = {}        # id -> GoveeLight, made on first use
         self._sent = {}          # id -> (colours, at)
         self._last_frame_at = 0.0
+        self._was_running = False
+        self._idle_sent_at = None
         self._found = []
-        self.config = {"enabled": False, "brightness": 80, "lights": {}}
+        self.config = json.loads(json.dumps(DEFAULTS))
         try:
             with open(path) as handle:
                 saved = json.load(handle)
-            self.config.update({k: saved[k] for k in self.config if k in saved})
+            self.config.update({k: saved[k] for k in DEFAULTS if k in saved})
         except (OSError, ValueError):
             pass
+        for light in self.config["lights"].values():
+            _upgrade(light)
 
     # -- settings ---------------------------------------------------------
 
@@ -80,8 +132,31 @@ class RoomLights:
             json.dump(self.config, handle, indent=2)
         os.replace(tmp, self.path)
 
+    def _learn_addresses(self, found):
+        """Point saved lights at the IP the scan just saw them on."""
+        changed = False
+        for light in found:
+            saved = self.config["lights"].get(light["id"])
+            if saved and saved["ip"] != light["ip"]:
+                saved["ip"] = light["ip"]
+                self._lights.pop(light["id"], None)
+                changed = True
+        if changed:
+            self._save()
+
+    def refresh_addresses(self):
+        """Rescan in the background and fix up any IPs DHCP has moved."""
+        if not self.config["enabled"] or not self.config["lights"]:
+            return
+
+        def run():
+            found = self.scanner()
+            with self._lock:
+                self._learn_addresses(found)
+        threading.Thread(target=run, name="room-lights-scan", daemon=True).start()
+
     def scan(self, extra_ips=()):
-        found = govee.scan()
+        found = self.scanner()
         known = {light["id"] for light in found}
         # Lights on another VLAN never hear the multicast scan, so anything
         # added by IP stays in the list even when the scan can't see it.
@@ -92,26 +167,34 @@ class RoomLights:
             if ip and ip not in {light["ip"] for light in found}:
                 found.append({"id": ip, "ip": ip, "model": "added by IP"})
         with self._lock:
+            self._learn_addresses(found)
             self._found = found
         return self.status()
 
-    def set_enabled(self, enabled):
+    def set_options(self, changes):
+        """enabled, brightness, idle, idle_kelvin, idle_brightness."""
         with self._lock:
-            self.config["enabled"] = bool(enabled)
-            if not enabled:
-                self._release_all()
+            if "enabled" in changes:
+                self.config["enabled"] = bool(changes["enabled"])
+                if not self.config["enabled"]:
+                    self._release_all()
+            if "brightness" in changes:
+                self.config["brightness"] = max(1, min(100, int(changes["brightness"])))
+                for light in self._lights.values():
+                    light.streaming = False  # re-sends brightness on the next frame
+            if changes.get("idle") in IDLE_MODES:
+                self.config["idle"] = changes["idle"]
+            if "idle_kelvin" in changes:
+                self.config["idle_kelvin"] = max(2000, min(9000, int(changes["idle_kelvin"])))
+            if "idle_brightness" in changes:
+                self.config["idle_brightness"] = max(1, min(100, int(changes["idle_brightness"])))
+            self._idle_sent_at = None  # apply the new idle look straight away
             self._save()
+        if changes.get("enabled"):
+            self.refresh_addresses()
         return self.status()
 
-    def set_brightness(self, percent):
-        with self._lock:
-            self.config["brightness"] = max(1, min(100, int(percent)))
-            for light in self._lights.values():
-                light.streaming = False  # re-sends brightness on the next frame
-            self._save()
-        return self.status()
-
-    def set_role(self, light_id, ip, model, role):
+    def set_light(self, light_id, ip, model, role, zones=None, reverse=None):
         if role not in ROLES:
             raise ValueError(f"unknown role {role!r}")
         with self._lock:
@@ -119,27 +202,35 @@ class RoomLights:
                 self._release(light_id)
                 self.config["lights"].pop(light_id, None)
             else:
-                old = self.config["lights"].get(light_id, {}).get("role")
-                if old != role:
+                light = self.config["lights"].get(light_id) or _upgrade({"role": role})
+                if light["role"] != role:
                     self._release(light_id)
-                self.config["lights"][light_id] = {"ip": ip, "model": model, "role": role}
+                light.update({"ip": ip, "model": model, "role": role})
+                if zones is not None:
+                    light["zones"] = [z for z in zones if z in ZONES] or ["whole"]
+                if reverse is not None:
+                    light["reverse"] = bool(reverse)
+                self.config["lights"][light_id] = light
+            self._idle_sent_at = None
             self._save()
         return self.status()
 
     def status(self):
         with self._lock:
             return {
-                "enabled": self.config["enabled"],
-                "brightness": self.config["brightness"],
-                "lights": dict(self.config["lights"]),
+                **{k: self.config[k] for k in DEFAULTS if k != "lights"},
+                "lights": json.loads(json.dumps(self.config["lights"])),
                 "found": list(self._found),
                 "roles": list(ROLES),
+                "idle_modes": list(IDLE_MODES),
+                "across": ACROSS,
+                "down": DOWN,
             }
 
     def wants_screen(self):
         """True when some light needs the live picture, so capture should run."""
         return self.config["enabled"] and any(
-            light["role"].startswith("screen-") for light in self.config["lights"].values()
+            light["role"] == "screen" for light in self.config["lights"].values()
         )
 
     # -- output -----------------------------------------------------------
@@ -161,33 +252,58 @@ class RoomLights:
         for light_id in list(self._lights):
             self._release(light_id)
 
-    def update(self, edges=None, palette=()):
+    def update(self, zones=None, palette=(), game_running=False):
         """Called from the engine loop, about ten times a second.
 
-        edges: {"left": [rgb...], "right": [...], "top": [...], "bottom": [...],
-                "whole": [rgb]} from the latest screen frame, or None.
+        zones: {"top-1": rgb, ..., "whole": rgb} from the latest screen frame,
+               or None when there's no fresh frame.
         palette: the current game's artwork colours, or empty.
         """
+        if game_running and not self._was_running:
+            self.refresh_addresses()  # a game just started: catch DHCP moves
+        self._was_running = game_running
         with self._lock:
             if not self.config["enabled"]:
                 return
             now = self.clock()
-            if edges:
+            if zones:
                 self._last_frame_at = now
             screen_live = now - self._last_frame_at < SCREEN_TIMEOUT
 
+            if not game_running and not screen_live:
+                self._idle(now)
+                return
+            self._idle_sent_at = None
+
             lights = self.config["lights"]
             ring = sorted(i for i, light in lights.items() if light["role"] == "key-art")
-            for light_id, light_cfg in lights.items():
-                role = light_cfg["role"]
-                if role.startswith("screen-"):
-                    if screen_live and edges:
-                        self._stream(light_id, edges[role[len("screen-"):]], now)
+            for light_id, light in lights.items():
+                if light["role"] == "screen":
+                    if screen_live and zones:
+                        cells = [z for z in SEND_ORDER if z in light["zones"]]
+                        if light["reverse"]:
+                            cells.reverse()
+                        self._stream(light_id, [zones[z] for z in cells], now)
                     elif not screen_live and light_id in self._sent:
                         self._release(light_id)
-                elif role == "key-art" and palette:
+                elif light["role"] == "key-art" and palette:
                     spot = ring.index(light_id) / len(ring) + now / RING_LAP_SECONDS
                     self._paint(light_id, ring_colour(list(palette), spot), now)
+
+    def _idle(self, now):
+        if self._idle_sent_at is not None and now - self._idle_sent_at < IDLE_RESEND:
+            return
+        self._release_all()
+        mode = self.config["idle"]
+        for light_id in self.config["lights"]:
+            if mode == "warm":
+                light = self._light(light_id)
+                light.power(True)
+                light.brightness(self.config["idle_brightness"])
+                light.white(self.config["idle_kelvin"])
+            elif mode == "off":
+                self._light(light_id).power(False)
+        self._idle_sent_at = now
 
     def _stream(self, light_id, colours, now):
         light = self._light(light_id)

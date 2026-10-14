@@ -218,38 +218,36 @@ class ScreenSyncProcessor:
         self._previous = normalize_frame(result)
         return self._previous
 
-    def edges(self, samples=4, depth=4):
-        """Colours along each edge of the last frame, for Room lights.
+    def zones(self, across=4, down=3, depth=4):
+        """Colours for the cells around the edge of the last frame, for Room lights.
 
-        Left and right run top to bottom, top and bottom run left to right,
-        each split into `samples` blocks `depth` pixels deep. Black bars are
-        already cropped off. Returns None before the first frame.
+        top-1..top-N and bottom-1..bottom-N run left to right, left-1..left-M
+        and right-1..right-M run top to bottom, each cell `depth` pixels deep,
+        plus "whole". Black bars are already cropped off. None before the
+        first frame.
         """
         if self._pixels is None:
             return None
         pixels, top, bottom = self._pixels
         first, last = top, max(top + 1, self.height - bottom)
+        depth_rows = min(depth, last - first)
 
         def block(rows, columns):
             return self._mean_colour([pixels[r * self.width + c] for r in rows for c in columns])
 
-        def split(start, stop):
-            return [(start + (stop - start) * i // samples,
-                     max(start + (stop - start) * i // samples + 1,
-                         start + (stop - start) * (i + 1) // samples))
-                    for i in range(samples)]
+        def split(start, stop, count):
+            for i in range(count):
+                a = start + (stop - start) * i // count
+                yield i + 1, range(a, max(a + 1, start + (stop - start) * (i + 1) // count))
 
-        depth_rows = min(depth, last - first)
-        return {
-            "left": [block(range(a, b), range(depth)) for a, b in split(first, last)],
-            "right": [block(range(a, b), range(self.width - depth, self.width))
-                      for a, b in split(first, last)],
-            "top": [block(range(first, first + depth_rows), range(a, b))
-                    for a, b in split(0, self.width)],
-            "bottom": [block(range(last - depth_rows, last), range(a, b))
-                       for a, b in split(0, self.width)],
-            "whole": [block(range(first, last), range(self.width))],
-        }
+        out = {"whole": block(range(first, last), range(self.width))}
+        for i, columns in split(0, self.width, across):
+            out[f"top-{i}"] = block(range(first, first + depth_rows), columns)
+            out[f"bottom-{i}"] = block(range(last - depth_rows, last), columns)
+        for i, rows in split(first, last, down):
+            out[f"left-{i}"] = block(rows, range(depth))
+            out[f"right-{i}"] = block(rows, range(self.width - depth, self.width))
+        return out
 
     @property
     def crop(self):

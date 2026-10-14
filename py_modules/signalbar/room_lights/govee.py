@@ -101,6 +101,11 @@ class GoveeLight:
         r, g, b = (max(0, min(255, int(round(c)))) for c in rgb)
         return self._send("colorwc", {"color": {"r": r, "g": g, "b": b}, "colorTemInKelvin": 0})
 
+    def white(self, kelvin):
+        """Plain white at a colour temperature, e.g. 3000 for warm."""
+        return self._send("colorwc", {"color": {"r": 0, "g": 0, "b": 0},
+                                      "colorTemInKelvin": int(kelvin)})
+
     def start_stream(self, brightness=100):
         # Power and brightness first, then a beat before real-time mode. Sent
         # back to back, the enable sometimes lands before the light is awake.

@@ -207,14 +207,12 @@ class Plugin:
             None, self.engine.room_lights.scan, tuple(extra_ips or ()),
         )
 
-    async def room_lights_set_enabled(self, enabled: bool):
-        return self.engine.room_lights.set_enabled(enabled)
+    async def room_lights_set_options(self, changes: dict):
+        return self.engine.room_lights.set_options(changes)
 
-    async def room_lights_set_brightness(self, percent: int):
-        return self.engine.room_lights.set_brightness(percent)
-
-    async def room_lights_set_role(self, light_id: str, ip: str, model: str, role: str):
-        return self.engine.room_lights.set_role(light_id, ip, model, role)
+    async def room_lights_set_light(self, light_id: str, ip: str, model: str, role: str,
+                                    zones=None, reverse=None):
+        return self.engine.room_lights.set_light(light_id, ip, model, role, zones, reverse)
 
     async def report_runtime_diagnostic(self, event: str, appid: int = 0,
                                         source: str = "", duration_ms: float = -1):

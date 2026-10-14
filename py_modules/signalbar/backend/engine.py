@@ -176,6 +176,7 @@ class Engine:
             self.weather.start()
             self._thread = threading.Thread(target=self._run, name="signalbar-engine", daemon=True)
             self._thread.start()
+            self.room_lights.refresh_addresses()
 
     def stop(self):
         self._stop.set()
@@ -1181,11 +1182,12 @@ class Engine:
                         artwork_colours=artwork_colours,
                     )
                 self.room_lights.update(
-                    edges=(
-                        self.screen_sync.processor.edges()
+                    zones=(
+                        self.screen_sync.processor.zones()
                         if screen_sync_base.frame is not None else None
                     ),
                     palette=artwork_colours if game.running else (),
+                    game_running=game.running,
                 )
                 if immersive_preview is not None:
                     if immersive_preview.provider.startswith("audio-sync"):

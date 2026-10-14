@@ -17,7 +17,8 @@ Every light you add gets one role:
   and bottom, 3 down each side) and the whole picture in the middle. Tap the
   cells that light should show. A light with several cells, like a strip under
   the TV, gets one colour per cell in order and stretches them along its
-  length. If the colours run the wrong way, flip "Reverse direction". It uses
+  length, starting from the lowest end (where Govee puts segment one). If the
+  colours run the wrong way, flip "Reverse direction". It uses
   the frames Screen Sync already captures, so nothing new is recorded and
   nothing leaves your network.
 

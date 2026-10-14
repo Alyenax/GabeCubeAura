@@ -223,7 +223,7 @@ class ScreenSyncProcessor:
 
         top-1..top-N and bottom-1..bottom-N run left to right, left-1..left-M
         and right-1..right-M run top to bottom, each cell `depth` pixels deep,
-        plus "whole". Black bars are already cropped off. None before the
+        plus the four corners (top-left etc.) and "whole". Black bars are already cropped off. None before the
         first frame.
         """
         if self._pixels is None:
@@ -244,6 +244,13 @@ class ScreenSyncProcessor:
         for i, columns in split(0, self.width, across):
             out[f"top-{i}"] = block(range(first, first + depth_rows), columns)
             out[f"bottom-{i}"] = block(range(last - depth_rows, last), columns)
+        top_rows = range(first, first + depth_rows)
+        bottom_rows = range(last - depth_rows, last)
+        left_columns, right_columns = range(depth), range(self.width - depth, self.width)
+        out["top-left"] = block(top_rows, left_columns)
+        out["top-right"] = block(top_rows, right_columns)
+        out["bottom-left"] = block(bottom_rows, left_columns)
+        out["bottom-right"] = block(bottom_rows, right_columns)
         for i, rows in split(first, last, down):
             out[f"left-{i}"] = block(rows, range(depth))
             out[f"right-{i}"] = block(rows, range(self.width - depth, self.width))

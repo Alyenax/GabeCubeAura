@@ -37,18 +37,47 @@ from signalbar.room_lights import govee
 ROLES = ("off", "key-art", "screen")
 IDLE_MODES = ("leave", "warm", "off")
 ACROSS, DOWN = 4, 3  # screen cells along the top/bottom and down each side
-ZONES = (["whole"] + [f"top-{i}" for i in range(1, ACROSS + 1)]
-         + [f"right-{i}" for i in range(1, DOWN + 1)]
-         + [f"bottom-{i}" for i in range(1, ACROSS + 1)]
-         + [f"left-{i}" for i in range(1, DOWN + 1)])
-# The order a light's cells are sent in. Govee lamps put the first colour at
-# the bottom and strips at the left end, so sides go bottom to top and the top
-# and bottom edges go left to right. "Reverse" on a light flips it.
-SEND_ORDER = ([f"left-{i}" for i in range(DOWN, 0, -1)]
-              + [f"top-{i}" for i in range(1, ACROSS + 1)]
-              + [f"right-{i}" for i in range(DOWN, 0, -1)]
-              + [f"bottom-{i}" for i in range(1, ACROSS + 1)]
-              + ["whole"])
+# The cells around the edge of the screen, clockwise from the top-left corner.
+RING = (["top-left"] + [f"top-{i}" for i in range(1, ACROSS + 1)] + ["top-right"]
+        + [f"right-{i}" for i in range(1, DOWN + 1)] + ["bottom-right"]
+        + [f"bottom-{i}" for i in range(ACROSS, 0, -1)] + ["bottom-left"]
+        + [f"left-{i}" for i in range(DOWN, 0, -1)])
+ZONES = ("whole",) + tuple(RING)
+
+
+def _spot(zone):
+    """(row, column) of a cell on the screen grid, for working out which end is lowest."""
+    edge, _, n = zone.partition("-")
+    if n in ("left", "right"):
+        return (0 if edge == "top" else DOWN + 1, 0 if n == "left" else ACROSS + 1)
+    n = int(n)
+    return {"top": (0, n), "bottom": (DOWN + 1, n), "left": (n, 0), "right": (n, ACROSS + 1)}[edge]
+
+
+def send_order(zones, reverse=False):
+    """The order a light's cells are sent in.
+
+    Picked cells are walked around the edge of the screen, starting from the
+    lowest end (left-most if both ends are level). That matches Govee, where
+    the first colour lands at the bottom of a lamp and the left end of a strip,
+    so a lamp on either side or a strip under the TV comes out right without
+    touching anything. "Reverse" flips it for lights mounted the other way.
+    """
+    picked = [z for z in RING if z in zones]
+    if not picked:
+        return ["whole"]
+    if len(picked) < len(RING):
+        # Rotate the ring so the run of picked cells doesn't wrap around.
+        start = next(i for i, z in enumerate(RING)
+                     if z in zones and RING[i - 1] not in zones)
+        picked = [z for z in RING[start:] + RING[:start] if z in zones]
+    first, last = _spot(picked[0]), _spot(picked[-1])
+    if (last[0], -last[1]) > (first[0], -first[1]):
+        picked.reverse()
+    if reverse:
+        picked.reverse()
+    return picked
+
 
 # A light is told the stream ended after this long without a fresh frame, so a
 # closed game or a sleeping Steam Machine hands the light back.
@@ -94,7 +123,8 @@ def _upgrade(light):
     if role.startswith("screen-"):
         edge = role[len("screen-"):]
         light["role"] = "screen"
-        light["zones"] = ["whole"] if edge == "whole" else [z for z in ZONES if z.startswith(edge)]
+        light["zones"] = ["whole"] if edge == "whole" else [
+            z for z in ZONES if z.startswith(edge + "-") and z.count("-") == 1 and z[-1].isdigit()]
     light.setdefault("zones", ["whole"])
     light.setdefault("reverse", False)
     return light
@@ -280,9 +310,7 @@ class RoomLights:
             for light_id, light in lights.items():
                 if light["role"] == "screen":
                     if screen_live and zones:
-                        cells = [z for z in SEND_ORDER if z in light["zones"]]
-                        if light["reverse"]:
-                            cells.reverse()
+                        cells = send_order(light["zones"], light["reverse"])
                         self._stream(light_id, [zones[z] for z in cells], now)
                     elif not screen_live and light_id in self._sent:
                         self._release(light_id)

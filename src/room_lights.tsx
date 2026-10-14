@@ -19,8 +19,9 @@ const IDLE_LABELS: Record<string, string> = {
 
 const note = { fontSize: ".78em", opacity: .78 };
 
-// The screen as a rectangle: cells along each edge, the middle is the whole
-// picture. Tap the cells a light should show.
+// The screen as a small rectangle: cells around the edge (corners included),
+// the middle is the whole picture. Move with the D-pad, press A to add or
+// remove a cell.
 function ZonePicker({ across, down, picked, taken, onToggle }: {
   across: number;
   down: number;
@@ -28,29 +29,33 @@ function ZonePicker({ across, down, picked, taken, onToggle }: {
   taken: string[];
   onToggle: (zone: string) => void;
 }) {
-  const cell = (zone: string, column: string, row: string, label = "") => {
+  const last = { column: across + 2, row: down + 2 };
+  const cell = (zone: string, column: string | number, row: string | number, label = "") => {
     const on = picked.includes(zone);
     return <DialogButton key={zone} onClick={() => onToggle(zone)} style={{
-      gridColumn: column, gridRow: row, minWidth: 0, padding: 0, height: "100%",
-      fontSize: ".7em", borderRadius: 3,
+      gridColumn: column, gridRow: row, minWidth: 0, minHeight: 0, height: "100%", width: "100%",
+      padding: 0, fontSize: 11, lineHeight: 1, borderRadius: 3,
       background: on ? "#1a9fff" : taken.includes(zone) ? "#3d4450" : "#23262e",
       color: on ? "#fff" : "#8b929a",
     }}>{label}</DialogButton>;
   };
-  const cells = [];
+  const cells = [
+    cell("top-left", 1, 1), cell("top-right", last.column, 1),
+    cell("bottom-left", 1, last.row), cell("bottom-right", last.column, last.row),
+  ];
   for (let i = 1; i <= across; i++) {
-    cells.push(cell(`top-${i}`, `${i + 1}`, "1"));
-    cells.push(cell(`bottom-${i}`, `${i + 1}`, `${down + 2}`));
+    cells.push(cell(`top-${i}`, i + 1, 1));
+    cells.push(cell(`bottom-${i}`, i + 1, last.row));
   }
   for (let i = 1; i <= down; i++) {
-    cells.push(cell(`left-${i}`, "1", `${i + 1}`));
-    cells.push(cell(`right-${i}`, `${across + 2}`, `${i + 1}`));
+    cells.push(cell(`left-${i}`, 1, i + 1));
+    cells.push(cell(`right-${i}`, last.column, i + 1));
   }
-  cells.push(cell("whole", `2 / ${across + 2}`, `2 / ${down + 2}`, "Whole picture"));
-  return <Focusable style={{
-    display: "grid", gap: 3, width: "100%", aspectRatio: "16 / 9",
-    gridTemplateColumns: `1fr repeat(${across}, 2fr) 1fr`,
-    gridTemplateRows: `1fr repeat(${down}, 1.4fr) 1fr`,
+  cells.push(cell("whole", `2 / ${last.column}`, `2 / ${last.row}`, "Whole picture"));
+  return <Focusable flow-children="grid" style={{
+    display: "grid", gap: 3, width: 256, height: 144, margin: "0 auto",
+    gridTemplateColumns: `repeat(${across + 2}, 1fr)`,
+    gridTemplateRows: `repeat(${down + 2}, 1fr)`,
   }}>{cells}</Focusable>;
 }
 
@@ -145,6 +150,10 @@ export function RoomLightsPanel() {
                 await roomLightsSetLight(light.id, light.ip, light.model, option.data as string, null, null))} />
           </PanelSectionRow>
           {role === "screen" && config ? <>
+            <PanelSectionRow><div style={note}>
+              Pick the parts of the screen this light shows. Several cells next to each other
+              spread along the light, lowest end first.
+            </div></PanelSectionRow>
             <PanelSectionRow>
               <ZonePicker across={state.across} down={state.down} picked={config.zones}
                 taken={zonesTakenBy(light.id)} onToggle={(zone) => toggleZone(light, zone)} />

@@ -31,12 +31,12 @@ features are **not included in the current public release** and may change.
 <tr>
 <td align="center"><img src="docs/media/development/session.gif" width="230" alt="Animated Stray dashboard on a simulated Steam Machine with a 64 by 54 dot matrix and diffused light bar"></td>
 <td align="center"><img src="docs/media/development/weather-dashboard.gif" width="230" alt="Animated weather dashboard with current rain, 12 degrees Celsius, and a next-hour forecast row"></td>
-<td align="center"><img src="docs/media/development/gabecube-companion.gif" width="230" alt="TW3 Dashboard, Hey Cube call, a 30-minute timer request, Companion reply with a jump and rebound, Playtime lighting and return to TW3 with LEFT 30 MIN"></td>
+<td align="center"><img src="docs/media/development/gabecube-companion-voice.gif" width="230" alt="Hey Cube, launch The Witcher 3, a complete Companion turn and spoken confirmation: Everything is ready. Except, perhaps, you. Large readable captions remain after the dashboard returns."></td>
 </tr>
 <tr>
 <td>Your games, prepared for the 64 × 54 matrix.</td>
 <td>Time, weather and one useful information row.</td>
-<td>A musical cube or Gabe's expressive face, with the same optional local voice commands.</td>
+<td>A speaking Companion with a dry sense of humour, or Gabe's expressive face. Both use the same local voice commands.</td>
 </tr>
 </table>
 
@@ -124,7 +124,7 @@ controlled from Decky, with an optional automatic sleep/shutdown policy.
 </details>
 
 <details>
-<summary><strong>Voice assistant · GabeCube Companion</strong> · A musical cube, or Gabe's expressive face</summary>
+<summary><strong>Voice assistant · GabeCube Companion</strong> · Useful commands. A little attitude.</summary>
 
 Choose **GabeCube Companion** or **Gabe Assistant** in
 **Settings → Signals and automation → Voice assistant**. Both share the same
@@ -132,32 +132,34 @@ local commands, microphone, French/English language and activation options.
 Existing users keep their chosen settings and Gabe's face. Switching character
 does not enable hands-free listening or change your display routes or brightness.
 
-<p align="center"><img src="docs/media/development/gabecube-companion.gif" width="360" alt="Complete illustrated timer workflow: TW3 Dashboard, Hey Cube, start a timer for thirty minutes, Companion confirmation and return to TW3 with LEFT 30 MIN and the runtime Playtime light-bar animation"></p>
+<p align="center"><img src="docs/media/development/gabecube-companion-voice.gif" width="560" alt="Silent illustrated voice exchange: Hey Cube. Launch The Witcher 3. Starting the game. Everything is ready. Except, perhaps, you. The Cube completes its native success rotation, its pink light-bar mouth follows prepared speech, and the game dashboard returns while the final caption stays readable."></p>
 
-The preview follows one complete use: **TW3 Dashboard → “Hey Cube” →
-“Start a timer for thirty minutes” → confirmation → Playtime lighting →
-TW3 Dashboard with LEFT 30 MIN**. The timer keeps running after the return;
-its thirty minutes are not compressed into the demonstration.
+**You:** “Hey Cube. Launch The Witcher 3.”<br>
+**Companion:** “Starting the game.”<br>
+**After launch:** “Everything is ready. Except, perhaps, you.”
+
+The 19-second preview follows the call, request, confirmation and return to
+the game Dashboard. Large captions sit outside the matrix; the dry final line
+stays visible after the Dashboard returns, rather than holding up the display.
+The silent GIF illustrates the exchange, not real recognition or USB latency.
 
 The Companion's six beveled, raised faces follow the Portal 2 cube: a small
 matte heart, an ivory centre disc and a pale-pink luminous ring. The complete
-entry turn is accelerated, while success keeps its little jump and smaller
-rebound. Its warm musical
-replies drive the light bar from the audio being played, not from a game or
-microphone loop. Every Companion response is musical, including errors.
-Questions, safety confirmations and time readouts appear as Steam notifications,
-never as an unexpected reply in Gabe's voice. Its Slow Prism is light/dark pink,
-with independent colours and a separate, headroom-safe melody volume.
+interactive appearance is short, while success makes one complete 3D turn.
+Choose its original electronic or softer spoken voice in French or English,
+with optional musical cues. Its pink Slow Prism mouth follows its own played
+audio, not the game or microphone. It never unexpectedly changes to Gabe's voice.
+Voice, melody volume and light-bar colours have separate controls.
 
-The animations are prepared native GIFs, not live 3D rendering. The call GIF
-is 56.6 KB, about 69% lighter than Lab 93, with its full turn in three seconds.
-Unused colours are removed losslessly, without reducing resolution or shading.
-Real appearance latency still depends on the faceplate's USB acknowledgement.
-Short musical
-motifs do not cut the visual gestures short. Real actions still return promptly
-to the current Dashboard or artwork, without waiting for decorative animation
-to finish. This silent, captioned preview shows the workflow and full choreography,
-not hardware USB latency, live microphone recognition or measured panel cadence.
+The interactive animations are prepared **64 × 54 GIFs under 12,000 bytes each**,
+not live 3D rendering. The larger GIF above is a documentation illustration,
+not a file transferred to the faceplate. Real appearance latency still depends
+on the device's USB acknowledgement. Completed actions return promptly to the
+current Dashboard or artwork, without waiting for extra decorative loops.
+
+Optional dry remarks use a separately downloaded French/English voice pack.
+They follow confirmed, requested actions and never replace an error or safety
+confirmation. Quitting a game manually does not trigger unsolicited speech.
 
 The simplified page shows essential controls first. **Appearance and sound**
 and **Voice commands** expand on demand; **Advanced mode** contains wake

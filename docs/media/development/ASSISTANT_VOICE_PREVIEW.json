@@ -1,0 +1,89 @@
+{
+  "source_matrix": [
+    64,
+    54
+  ],
+  "led_count": 17,
+  "canvas": [
+    640,
+    800
+  ],
+  "fps": 20,
+  "duration_ms": 19000,
+  "source_geometry_revision": "companion-living-turn-v2",
+  "native_success_rotation_degrees": 360,
+  "actual_prepared_pcm_envelopes": true,
+  "silent": true,
+  "hardware_tested": false,
+  "real_action_executed": false,
+  "recognition_illustrated": true,
+  "reading_timeline_not_hardware_latency": true,
+  "native_session_rail_reset_after_launch": true,
+  "controller_battery_is_demonstration": true,
+  "font_px": 40,
+  "main_readme_display_width": 560,
+  "punchline_visible_ms": 10800,
+  "punchline": "Everything is ready. Except, perhaps, you.",
+  "remarks_require_optional_pack": true,
+  "source_sha256": "6c4463488ccdb79c8b6c2b4252d8834001a515d9710c527d32a4defe4588f67f",
+  "gif_size_bytes": 1734382,
+  "gif_sha256": "0fb0fea1418d4cb31c12a4e63d95f85cdd67b55371a0d25eaf6d762b0bdf114a",
+  "timeline": [
+    {
+      "stage": "home",
+      "start_ms": 0,
+      "end_ms": 2000,
+      "speaker": "DASHBOARD",
+      "lines": [
+        "Ready when you are."
+      ]
+    },
+    {
+      "stage": "call",
+      "start_ms": 2000,
+      "end_ms": 3400,
+      "speaker": "YOU",
+      "lines": [
+        "Hey Cube."
+      ]
+    },
+    {
+      "stage": "request",
+      "start_ms": 3400,
+      "end_ms": 6600,
+      "speaker": "YOU",
+      "lines": [
+        "Launch The Witcher 3."
+      ]
+    },
+    {
+      "stage": "launch",
+      "start_ms": 6600,
+      "end_ms": 8200,
+      "speaker": "COMPANION",
+      "lines": [
+        "Starting the game."
+      ]
+    },
+    {
+      "stage": "remark",
+      "start_ms": 8200,
+      "end_ms": 11400,
+      "speaker": "COMPANION",
+      "lines": [
+        "Everything is ready.",
+        "Except, perhaps, you."
+      ]
+    },
+    {
+      "stage": "return",
+      "start_ms": 11400,
+      "end_ms": 19000,
+      "speaker": "COMPANION",
+      "lines": [
+        "Everything is ready.",
+        "Except, perhaps, you."
+      ]
+    }
+  ]
+}

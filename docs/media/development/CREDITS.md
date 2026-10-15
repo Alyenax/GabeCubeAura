@@ -4,6 +4,36 @@ The animations in this folder are illustrated documentation previews, not
 Faceplate firmware files or footage of physical hardware. Every scene uses
 front-on Steam Machine enclosure studies and the same 64 × 54 source grid.
 
+## Current voice assistant preview
+
+`gabecube-companion-voice.gif` is a silent 19-second documentation illustration,
+640 × 800 pixels, sampled at 20 fps. Its machine uses the approved front-on
+enclosure proportions, one authored RGB sample per native 64 × 54 dot and the
+17-LED diffuser. Native `companion-living-turn-v2` prepared frames provide the
+short appearance, attentive movement and one complete 360-degree success turn.
+There is no live 3D rendering or invented rotation interpolation.
+
+The source is the credited TUFKAC Witcher 3 Dashboard below. The pink Slow Prism
+bar uses the runtime mouth renderer and envelopes from original prepared EN
+speech; the final line is an actual optional personality-pack remark:
+“Everything is ready. Except, perhaps, you.” These are original prepared voices,
+not official Valve dialogue or a performer clone. No audio or voice model is
+embedded in the public GIF.
+
+The native bottom-row compositor shows one controller at Home and resets the
+illustrated session to `0H00` when the game starts, rather than retaining the
+source example's older session duration. All clock, weather and battery values
+remain demonstration data.
+
+Forty-pixel captions sit outside the native matrix. The final caption remains
+visible for 10.8 seconds, including 7.6 seconds after the Dashboard returns.
+Caption holds are reading time, not a claim about response speed, USB timing,
+hardware optics or actual recognition. No game is launched. The documentation
+GIF is not uploaded to the faceplate and is not subject to its 12,000-byte
+interactive-asset budget. See `ASSISTANT_VOICE_PREVIEW.json` for timing and hash.
+
+## Earlier timer preview
+
 GabeCube Companion is original procedural fan art interpreting Valve's Weighted
 Companion Cube. It uses the approved six-face native renderer: smooth full turns,
 a six-pixel jump and two-pixel rebound. The 50-fps native animation slots are

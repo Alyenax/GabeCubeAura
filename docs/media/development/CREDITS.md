@@ -4,6 +4,23 @@ The animations in this folder are illustrated documentation previews, not
 Faceplate firmware files or footage of physical hardware. Every scene uses
 front-on Steam Machine enclosure studies and the same 64 × 54 source grid.
 
+## Development interface preview
+
+`interface-panel-en.png`, `interface-artwork-en.png` and
+`interface-settings-en.png` are captures of an English browser reconstruction,
+not of SteamOS or Decky running on hardware. Structure, ordering, three quick-zone
+colours and labels follow Lab 121; native Steam controls, type and spacing are
+approximated. Device states and sensor readings are illustrative.
+
+The [interactive preview](https://alyenax.github.io/gabecubeaura-concept/interface-preview/)
+reuses the concept site's existing Steam-store header samples for
+[The Witcher 3](https://store.steampowered.com/app/292030/),
+[Deep Rock Galactic](https://store.steampowered.com/app/548430/) and
+[Balatro](https://store.steampowered.com/app/2379780/). Images belong to their
+respective publishers. It samples a fixed row into seventeen RGB averages in
+the browser; that does not claim equivalence to production auto-row selection.
+No account, artwork API, microphone or hardware is accessed.
+
 ## Current voice assistant preview
 
 `gabecube-companion-voice.gif` is a silent 19-second documentation illustration,

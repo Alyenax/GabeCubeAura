@@ -45,6 +45,58 @@ Machine to sleep or shutting it down also turns off the Faceplate screen,
 even if its USB connection remains powered.
 
 <details>
+<summary><strong>A simpler interface</strong> · Quick controls, organised settings · draft preview</summary>
+
+Open GabeCubeAura in Decky to see what is running and reach the right controls.
+The quick panel keeps everyday actions together; the gear opens full settings.
+
+**[Try the interactive interface preview](https://alyenax.github.io/gabecubeaura-concept/interface-preview/)**
+
+Switch between Home and in-game examples, open the settings groups, then choose
+**The Witcher 3, Deep Rock Galactic or Balatro**. The artwork and its 17-colour
+bar preview change together. Images are bundled and colours are sampled locally;
+no Steam account, artwork API key or hardware connection is needed.
+
+<p align="center"><a href="https://alyenax.github.io/gabecubeaura-concept/interface-preview/"><img src="docs/media/development/interface-artwork-en.png" width="440" alt="Draft reconstruction of the English Decky quick panel during The Witcher 3, with game-specific display selection, CPU/GPU example readings, the game artwork and its sampled 17-colour palette. Click to open the interactive preview."></a></p>
+
+- **Control** shows whether GabeCubeAura or Steam is in charge. The main switch
+  turns the displays off without deleting saved choices. During a game, its
+  display can be overridden without changing other games.
+- **Light bar** shows the active display, its colours and available CPU/GPU
+  readings. **Displays and brightness** opens the bar's settings.
+- **JSAUX matrix** provides display status, artwork and faceplate settings.
+  This block hides after ten minutes without a Faceplate detection. Pending
+  transfers are not presented as confirmed.
+
+<details>
+<summary>See Faceplate controls and the settings organisation</summary>
+
+<p align="center"><img src="docs/media/development/interface-panel-en.png" width="440" alt="Draft English Decky quick panel at Home, showing separate Control, Light bar and JSAUX matrix sections with Faceplate status and actions."></p>
+
+<p align="center"><img src="docs/media/development/interface-settings-en.png" width="760" alt="Draft English settings navigation: Light bar, Faceplate displays, Faceplate artwork, Signals and automation, Weather, Updates and Advanced. Signals and automation groups the voice assistant, ambience profiles, light events, controllers, game launches and Playtime."></p>
+
+- **Light bar** and **Faceplate displays** keep the two displays independent.
+- **Faceplate artwork** contains the visual library and preparation workflow.
+- **Signals and automation** groups the voice assistant, ambience profiles,
+  light events, controllers, game-launch effects and Playtime.
+- **Weather**, **Updates** and **Advanced** have their own sections.
+
+To set up a character, follow **gear → Signals and automation → Voice assistant**.
+Choose GabeCube Companion or Gabe Assistant, select your language, then install
+the modules you need. Activation, microphone, appearance and voice controls
+expand when needed; detailed troubleshooting stays in Advanced.
+
+</details>
+
+*Draft reconstruction, not a SteamOS screenshot. Readings and device states are
+simulated; colours are sampled from bundled artwork. Native Steam typography,
+controls, focus and spacing still need comparison with a real Steam Machine
+capture. These development features are not all available in the public stable
+release. Preview inputs do not change Steam or plugin settings.*
+
+</details>
+
+<details>
 <summary><strong>Artwork & Pixel Studio</strong> · Choose, prepare, preview and reuse</summary>
 
 Choose an installed game and browse static or animated SteamGridDB artwork

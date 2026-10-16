@@ -1,5 +1,52 @@
 # Changelog
 
+## Unreleased
+
+### NEW FEATURE: Home Assistant
+
+- Publish the running game, key art, light bar state, events, controllers,
+  countdowns, performance and weather to Home Assistant over MQTT with
+  discovery. MQTT is off by default.
+- Throttle updates so Home Assistant's database stays small without any
+  recorder configuration. Turbo mode sends every change, up to once a second.
+- Report only what is true: Current game reads "Not playing", a game stop
+  shows after 30 seconds so a short stop stays one session, values that do
+  not apply are unavailable, codes read as words, and fresh values arrive
+  before the device comes back online.
+- Choose how far the light bar defers to Home Assistant: Watch only, Help out
+  (the default), Take the lead, In control or Full control. From Take the lead
+  up Home Assistant's light and alerts come first, from In control
+  GabeCubeAura's own displays stop, and Full control also hands over the
+  overheating, low-battery and playtime warnings after asking. Steam's own
+  animations, such as downloads, still show at Full control, and Home
+  Assistant's colour comes back when they end. Tiers above Help out fall back
+  to it after 30 seconds without Home Assistant unless you turn that off. At
+  Help out the light turns off after the same 30 seconds.
+  Levels saved by earlier builds become tiers.
+- Let Home Assistant change light bar settings from Help out up. Display
+  settings changed from Home Assistant switch to the Custom preset, as they do
+  on the Steam Machine.
+- Give Home Assistant a light for the light bar, with colour, brightness and
+  17-LED frames, and flash, pulse and sweep alerts in any colour. At Help out
+  the light shows on a new Home Assistant display.
+- Restore the display the light replaced when the light or MQTT is turned off,
+  and at the next start after a restart. Refuse new colours, frames and alerts
+  during thermal protection, a display preset preview or an update install, or
+  while GabeCubeAura is switched off. At Full control only the last two refuse
+  them.
+- Show each MQTT connection step on the Home Assistant page, with a plain
+  reason and a retry countdown after a failure.
+- Ride out a Decky restart, a frontend reload, an outage and a sleep without
+  blips or stale values: the running game's session carries on, the device
+  goes unavailable just before the Steam Machine sleeps and connects afresh
+  when it wakes, and after a reboot nothing from before is shown.
+- Add Header, Cover and Logo images of the running game beside Key art, with
+  Steam's addresses for all four.
+- Send every status field that is not private, capped at 400 values with short
+  lists and text cut at 256 characters, at most once a minute (every second in
+  Turbo mode). Remove file paths from error text and never send Private Lab
+  release notes.
+
 ## 1.4.0 - 2026-10-05
 
 Stable release. Changes since 1.3.2:

@@ -434,6 +434,12 @@ class ControllerProvider:
         with self._lock:
             self._active = None
 
+    def cancel_alerts_except_low(self):
+        """Drop a playing connect, charging or preview alert; a low-battery one stays."""
+        with self._lock:
+            if self._active and self._active[0] != "low":
+                self._active = None
+
     def clear(self):
         with self._lock:
             self._controllers.clear()
@@ -699,6 +705,11 @@ class ControllerProvider:
                 frame = controller_frame("persistent", variant, now, _render_percent(current[0]),
                                          values=values, player=0)
             return ProviderOutput("controller-battery", frame, "controller battery gauge")
+
+    def roster(self):
+        """Copies of the current controllers (id, name, percent, level, charging)."""
+        with self._lock:
+            return [dict(item) for item in self._controllers.values()]
 
     def status(self, values, game_running=False):
         with self._lock:

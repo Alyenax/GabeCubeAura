@@ -788,4 +788,6 @@ hardware-rendering details. Release history is available in
 Use Decky's plugin settings to uninstall GabeCubeAura. Settings remain in Decky's
 normal plugin settings directory and can be removed separately if desired.
 
-GabeCubeAura is released under the [BSD 3-Clause License](LICENSE).
+GabeCubeAura's current code is distributed under the [GNU General Public License, version 3 only](LICENSE) (**GPL-3.0-only**), for contributions its rights holders are entitled to license on those terms. If you redistribute a modified version, follow the GPLv3 source-availability and licensing requirements.
+
+The project previously used the BSD 3-Clause License. Older releases and copies already distributed under BSD terms retain those rights; the change to GPLv3 is **not retroactive**. The original BSD text, copyright notices, and applicable conditions for pre-existing BSD-licensed portions are preserved in [licenses/BSD-3-Clause-previous.txt](licenses/BSD-3-Clause-previous.txt). Other third-party code and assets keep their respective licenses, listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

@@ -198,6 +198,27 @@ class Plugin:
         self.engine.preview_audio_sync(15.0)
         return self.engine.status()
 
+    async def room_lights_status(self):
+        return self.engine.room_lights.status()
+
+    async def room_lights_scan(self, extra_ips=None):
+        # The scan waits a couple of seconds for replies, so keep it off the loop.
+        return await asyncio.get_running_loop().run_in_executor(
+            None, self.engine.room_lights.scan, tuple(extra_ips or ()),
+        )
+
+    async def room_lights_identify(self, ip: str):
+        return await asyncio.get_running_loop().run_in_executor(
+            None, self.engine.room_lights.identify, ip,
+        )
+
+    async def room_lights_set_options(self, changes: dict):
+        return self.engine.room_lights.set_options(changes)
+
+    async def room_lights_set_light(self, light_id: str, ip: str, model: str, role: str,
+                                    zones=None, reverse=None):
+        return self.engine.room_lights.set_light(light_id, ip, model, role, zones, reverse)
+
     async def report_runtime_diagnostic(self, event: str, appid: int = 0,
                                         source: str = "", duration_ms: float = -1):
         self.engine.report_runtime_diagnostic(event, appid, source, duration_ms)

@@ -71,6 +71,7 @@ class ScreenSyncProcessor:
         self._stable_bars = (0, 0)
         self._black_streak = 0
         self._palette_samples = ()
+        self._pixels = None
 
     def reset(self):
         self._previous = None
@@ -79,6 +80,7 @@ class ScreenSyncProcessor:
         self._stable_bars = (0, 0)
         self._black_streak = 0
         self._palette_samples = ()
+        self._pixels = None
 
     def _decode(self, raw):
         expected = self.width * self.height * BYTES_PER_PIXEL
@@ -190,6 +192,7 @@ class ScreenSyncProcessor:
         pixels = self._decode(raw)
         top, bottom = self._detect_bars(pixels, black_threshold) if ignore_black_bars else (0, 0)
         rows = range(top, max(top + 1, self.height - bottom))
+        self._pixels = (pixels, top, bottom)
         self._palette_samples = tuple(
             pixels[row * self.width + column]
             for row in rows for column in range(self.width)
@@ -214,6 +217,44 @@ class ScreenSyncProcessor:
                                     for channel in range(3)))
         self._previous = normalize_frame(result)
         return self._previous
+
+    def zones(self, across=4, down=3, depth=4):
+        """Colours for the cells around the edge of the last frame, for Room lights.
+
+        top-1..top-N and bottom-1..bottom-N run left to right, left-1..left-M
+        and right-1..right-M run top to bottom, each cell `depth` pixels deep,
+        plus the four corners (top-left etc.) and "whole". Black bars are already cropped off. None before the
+        first frame.
+        """
+        if self._pixels is None:
+            return None
+        pixels, top, bottom = self._pixels
+        first, last = top, max(top + 1, self.height - bottom)
+        depth_rows = min(depth, last - first)
+
+        def block(rows, columns):
+            return self._mean_colour([pixels[r * self.width + c] for r in rows for c in columns])
+
+        def split(start, stop, count):
+            for i in range(count):
+                a = start + (stop - start) * i // count
+                yield i + 1, range(a, max(a + 1, start + (stop - start) * (i + 1) // count))
+
+        out = {"whole": block(range(first, last), range(self.width))}
+        for i, columns in split(0, self.width, across):
+            out[f"top-{i}"] = block(range(first, first + depth_rows), columns)
+            out[f"bottom-{i}"] = block(range(last - depth_rows, last), columns)
+        top_rows = range(first, first + depth_rows)
+        bottom_rows = range(last - depth_rows, last)
+        left_columns, right_columns = range(depth), range(self.width - depth, self.width)
+        out["top-left"] = block(top_rows, left_columns)
+        out["top-right"] = block(top_rows, right_columns)
+        out["bottom-left"] = block(bottom_rows, left_columns)
+        out["bottom-right"] = block(bottom_rows, right_columns)
+        for i, rows in split(first, last, down):
+            out[f"left-{i}"] = block(rows, range(depth))
+            out[f"right-{i}"] = block(rows, range(self.width - depth, self.width))
+        return out
 
     @property
     def crop(self):

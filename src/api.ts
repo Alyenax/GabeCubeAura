@@ -90,6 +90,32 @@ export const dismissUpdateError = callable<[], UpdateStatus>("dismiss_update_err
 export const runUpdateLabScenario = callable<[scenario: UpdateLabResult["scenario"]], UpdateLabResult>("run_update_lab_scenario");
 export const exportUpdateTestReport = callable<[], { path: string }>("export_update_test_report");
 
+export interface RoomLight { id: string; ip: string; model: string; brand: string }
+export interface RoomLightConfig { ip: string; model: string; brand: string; role: string; zones: string[]; reverse: boolean }
+export interface RoomLightsStatus {
+  enabled: boolean;
+  brightness: number;
+  idle: string;
+  idle_kelvin: number;
+  idle_brightness: number;
+  lights: Record<string, RoomLightConfig>;
+  found: RoomLight[];
+  roles: string[];
+  idle_modes: string[];
+  last_error: string;
+  brands: string[];
+  all_brands: string[];
+  across: number;
+  down: number;
+}
+export const roomLightsStatus = callable<[], RoomLightsStatus>("room_lights_status");
+export const roomLightsScan = callable<[extraIps: string[]], RoomLightsStatus>("room_lights_scan");
+export const roomLightsIdentify = callable<[ip: string], RoomLightsStatus>("room_lights_identify");
+export const roomLightsSetOptions = callable<[changes: Partial<RoomLightsStatus>], RoomLightsStatus>("room_lights_set_options");
+export const roomLightsSetLight = callable<[
+  id: string, ip: string, model: string, role: string, zones: string[] | null, reverse: boolean | null,
+], RoomLightsStatus>("room_lights_set_light");
+
 export interface ConfigurationExportResult {
   path: string;
   exported_at: string;

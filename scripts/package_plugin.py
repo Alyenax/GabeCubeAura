@@ -18,6 +18,7 @@ FILES = [
     "plugin.json",
     "package.json",
     "LICENSE",
+    "licenses/BSD-3-Clause-previous.txt",
     "THIRD_PARTY_NOTICES.md",
     "licenses/Material-Symbols-Apache-2.0.txt",
     "licenses/Phosphor-Icons-MIT.txt",

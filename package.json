@@ -22,7 +22,7 @@
     "status"
   ],
   "author": "Alyenax",
-  "license": "BSD-3-Clause",
+  "license": "GPL-3.0-only",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Alyenax/GabeCubeAura.git"

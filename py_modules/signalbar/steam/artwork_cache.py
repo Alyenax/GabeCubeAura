@@ -209,3 +209,37 @@ def find_library_hero(appid: int):
 
 def get_library_hero(appid: int):
     return get_library_artwork(appid, "hero")
+
+
+# The transparent title logo. Not in ARTWORK_SOURCES: it is drawn over other
+# artwork (the faceplate does), never sampled as a backdrop, and a game with
+# no logo must find nothing rather than fall back to another image.
+LOGO_STEMS = ("logo", "logo_2x")
+
+
+def find_library_logo(appid: int):
+    try:
+        appid = int(appid)
+    except (TypeError, ValueError):
+        return None
+    if appid <= 0:
+        return None
+    roots = steam_roots()
+    for root in roots:
+        for grid in _grid_directories(root):
+            for extension in IMAGE_EXTENSIONS:
+                candidate = grid / f"{appid & 0xFFFFFFFF}_logo.{extension}"
+                if _valid_image(candidate):
+                    return candidate
+    for root in roots:
+        cache = root / "appcache/librarycache"
+        for extension in IMAGE_EXTENSIONS:
+            for name in LOGO_STEMS:
+                for candidate in (
+                    [cache / str(appid) / f"{name}.{extension}"]
+                    + sorted(Path(value) for value in glob.glob(str(cache / str(appid) / "*" / f"{name}.{extension}")))
+                    + [cache / f"{appid}_{name}.{extension}"]
+                ):
+                    if _valid_image(candidate):
+                        return candidate
+    return None

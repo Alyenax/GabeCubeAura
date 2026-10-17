@@ -209,6 +209,17 @@ becomes constant pure red; circulation remains the sole animation until the
 final eight seconds. Then a three-white-flash pattern repeats until zero before
 the arbiter returns immediately to the unchanged base provider.
 
+## Faceplate handoff
+
+The JSAUX Pixel Matrix Faceplate is driven today by the standalone Pixel
+Faceplate plugin. `faceplate_claim.py` lets GabeCubeAura take the panel over
+cleanly once it has faceplate support of its own: call `claim(settings_dir)`
+when it starts driving the panel and `release(settings_dir)` when it stops,
+with `decky.DECKY_PLUGIN_SETTINGS_DIR`. While the claim names a live
+GabeCubeAura process, Pixel Faceplate 0.2.1 and later closes the serial port,
+sends nothing and asks the user to uninstall it. Nothing calls it yet, so on
+its own it changes no behaviour.
+
 ## Runtime diagnostics
 
 Frontend lifecycle milestones are reported to the backend without influencing

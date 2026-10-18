@@ -18,7 +18,8 @@ development on [Ko-fi](https://ko-fi.com/alyenax). Thanks for your support!
 
 [![Support GabeCubeAura on Ko-fi](docs/media/support-kofi.svg)](https://ko-fi.com/alyenax)
 
-## In development
+<details>
+<summary><strong>In development</strong></summary>
 
 A look at what's being developed: animated game artwork, useful dashboards
 for the **JSAUX Pixel Matrix Faceplate**, and a local voice assistant with a
@@ -284,6 +285,8 @@ software illustrations; the older Gabe dialogue preview is subtitled.
 
 See [preview sources](docs/media/development/CREDITS.md) for individual credits.
 Experimental features may change; no public release date is announced here.
+
+</details>
 
 </details>
 

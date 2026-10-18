@@ -11,10 +11,9 @@ complete control to Valve immediately.
 
 [Try the interactive GabeCubeAura preview before installing](https://alyenax.github.io/gabecubeaura-concept/)
 
-[🩷 Discover GabeCube Companion](#user-content-gabecube-companion)
 
 If GabeCubeAura makes your Steam Machine a little better, you can support its
-development on [Ko-fi](https://ko-fi.com/alyenax). Thanks for your support!
+development on Ko-fi. Thanks for your support!
 
 [![Support GabeCubeAura on Ko-fi](docs/media/support-kofi.svg)](https://ko-fi.com/alyenax)
 

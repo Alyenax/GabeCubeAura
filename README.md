@@ -11,6 +11,8 @@ complete control to Valve immediately.
 
 [Try the interactive GabeCubeAura preview before installing](https://alyenax.github.io/gabecubeaura-concept/)
 
+[🩷 Discover GabeCube Companion](#gabecube-companion)
+
 If GabeCubeAura makes your Steam Machine a little better, you can support its
 development on [Ko-fi](https://ko-fi.com/alyenax). Thanks for your support!
 
@@ -174,6 +176,8 @@ controlled from Decky, with an optional automatic sleep/shutdown policy.
 
 <details>
 <summary><strong>Voice assistant · GabeCube Companion</strong> · Useful commands. A little attitude.</summary>
+
+<a name="gabecube-companion"></a>
 
 Choose **GabeCube Companion** or **Gabe Assistant** in
 **Settings → Signals and automation → Voice assistant**. Both share the same

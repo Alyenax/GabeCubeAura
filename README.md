@@ -13,7 +13,7 @@ complete control to Valve immediately.
 
 
 If GabeCubeAura makes your Steam Machine a little better, you can support its
-development on Ko-fi. Thank you for your support! ❤️
+development on Ko-fi. Thank you! ❤️
 
 [![Support GabeCubeAura on Ko-fi](docs/media/support-kofi.svg)](https://ko-fi.com/alyenax)
 

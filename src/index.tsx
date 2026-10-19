@@ -54,6 +54,7 @@ import {
   submitArtwork,
   triggerEvent,
 } from "./api";
+import { RoomLightsPanel } from "./room_lights";
 import { sampleArtwork } from "./artwork";
 import { PalettePreview } from "./components/PalettePreview";
 import { CUSTOMIZATION_PATTERN_OPTIONS, LAUNCH_ARTWORK_PATTERN_OPTIONS, customizationPatternLabel } from "./customization_catalog";
@@ -1668,7 +1669,7 @@ function CompatibilityPanel({ status, setStatus }: { status: Status; setStatus: 
   </>;
 }
 
-type Page = "quick" | "routing" | "customization" | "artwork" | "performance" | "screen-sync" | "audio-sync" | "launches" | "countdown" | "events" | "controllers" | "weather" | "updates" | "advanced";
+type Page = "quick" | "routing" | "customization" | "artwork" | "performance" | "screen-sync" | "audio-sync" | "launches" | "countdown" | "events" | "controllers" | "weather" | "room-lights" | "updates" | "advanced";
 
 const PAGE_END_LABELS: Record<Exclude<Page, "quick">, string> = {
   routing: "Display routing",
@@ -1677,6 +1678,7 @@ const PAGE_END_LABELS: Record<Exclude<Page, "quick">, string> = {
   performance: "Performance",
   "screen-sync": "Screen Sync",
   "audio-sync": "Audio Sync",
+  "room-lights": "Smart lighting",
   launches: "Game launches",
   countdown: "Playtime",
   events: "Light events",
@@ -2599,6 +2601,7 @@ function Content({ page = "quick" }: { page?: Page }) {
       {showPage("customization") ? <CustomizationPanel status={status} setStatus={setStatus} /> : null}
 
       {showPage("screen-sync") ? <ScreenSyncPanel status={status} setStatus={setStatus} /> : null}
+      {showPage("room-lights") ? <RoomLightsPanel /> : null}
 
       {showPage("audio-sync") ? <AudioSyncPanel status={status} setStatus={setStatus} /> : null}
 
@@ -3225,6 +3228,7 @@ function GabeCubeAuraSettings() {
     { title: "Weather", route: "/gabecubeaura/settings/weather", content: <Content page="weather" /> },
     { title: "Screen Sync", route: "/gabecubeaura/settings/screen-sync", content: <Content page="screen-sync" /> },
     { title: "Audio Sync", route: "/gabecubeaura/settings/audio-sync", content: <Content page="audio-sync" /> },
+    { title: "Smart lighting", route: "/gabecubeaura/settings/room-lights", content: <Content page="room-lights" /> },
     { title: "Updates", route: "/gabecubeaura/settings/updates", content: <Content page="updates" /> },
     "separator",
     { title: "Advanced / debug", route: "/gabecubeaura/settings/advanced", content: <Content page="advanced" /> },

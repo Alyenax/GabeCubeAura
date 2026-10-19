@@ -18,6 +18,9 @@ import { definePlugin, openFilePicker, routerHook } from "@decky/api";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { TbCubeSpark } from "react-icons/tb";
 
+import { HomeAssistantPanel } from "./home_assistant";
+import { HOME_ASSISTANT_DISPLAY, withHomeAssistantDisplay } from "./home_assistant_tiers";
+
 import {
   exportConfiguration,
   exportUpdateTestReport,
@@ -144,7 +147,8 @@ const UPDATE_CHANNEL_OPTIONS = [
 ];
 
 const displayLabel = (display: HomeDisplay | GameDisplay) => (
-  [...HOME_DISPLAY_OPTIONS, ...GAME_DISPLAY_OPTIONS].find((item) => item.data === display)?.label ?? display
+  [...HOME_DISPLAY_OPTIONS, ...GAME_DISPLAY_OPTIONS, HOME_ASSISTANT_DISPLAY]
+    .find((item) => item.data === display)?.label ?? display
 );
 
 const ARTWORK_OPTIONS = [
@@ -1590,6 +1594,7 @@ function CompatibilityPanel({ status, setStatus }: { status: Status; setStatus: 
     ["Customization+", "stripmine_priority_customization", "The persistent user-authored display."],
     ["Screen Sync", "stripmine_priority_screen_sync", "Live colours captured from the running game."],
     ["Audio Sync", "stripmine_priority_audio_sync", "Live colours driven by the mixed system audio output."],
+    ["Home Assistant", "stripmine_priority_home_assistant", "Colours and frames Home Assistant sends over MQTT."],
     ["Light Events", "stripmine_priority_light_events", "Notifications, achievements, screenshots and recording cues."],
   ] as const);
   return <>
@@ -2502,7 +2507,8 @@ function Content({ page = "quick" }: { page?: Page }) {
         {status.game.appid > 0 ? <>
           <PanelSectionRow><DropdownItem label="Display for this game"
             description={`Saved for ${status.game.title || `AppID ${status.game.appid}`}. Does not change other games.`}
-            rgOptions={[{ data: "inherit", label: "Use in-game default" }, ...GAME_DISPLAY_OPTIONS]}
+            rgOptions={[{ data: "inherit", label: "Use in-game default" },
+              ...withHomeAssistantDisplay(GAME_DISPLAY_OPTIONS, status.home_assistant.offered, status.display_override)]}
             selectedOption={status.display_override}
             onChange={async (option) => setStatus(await setGameDisplay(status.game.appid, String(option.data)))} /></PanelSectionRow>
           <PanelSectionRow><div style={{ fontSize: ".78em", opacity: .75 }}>
@@ -2576,11 +2582,13 @@ function Content({ page = "quick" }: { page?: Page }) {
           </div></PanelSectionRow>
           <PanelSectionRow><DropdownItem label="Home display"
             description="The permanent display used when no game is running. Temporary alerts and previews may still replace it."
-            rgOptions={HOME_DISPLAY_OPTIONS} selectedOption={status.home_display}
+            rgOptions={withHomeAssistantDisplay(HOME_DISPLAY_OPTIONS, status.home_assistant.offered, status.home_display)}
+            selectedOption={status.home_display}
             onChange={async (option) => setStatus(await setSetting("home_display", String(option.data)))} /></PanelSectionRow>
           <PanelSectionRow><DropdownItem label="In-game display"
             description="The permanent display used by games without their own override."
-            rgOptions={GAME_DISPLAY_OPTIONS} selectedOption={status.game_display}
+            rgOptions={withHomeAssistantDisplay(GAME_DISPLAY_OPTIONS, status.home_assistant.offered, status.game_display)}
+            selectedOption={status.game_display}
             onChange={async (option) => setStatus(await setSetting("game_display", String(option.data)))} /></PanelSectionRow>
           <PanelSectionRow><div style={{ fontSize: ".78em", opacity: .75 }}>
             <b>GabeCubeAura Off</b> releases the permanent display to Steam. <b>Blackout</b> actively holds all 17 LEDs off while keeping GabeCubeAura ownership. Temporary GabeCubeAura layers still follow the selected preset. The master switch releases everything. Weather requires a city.
@@ -2589,7 +2597,8 @@ function Content({ page = "quick" }: { page?: Page }) {
         {status.game.appid > 0 ? <PanelSection title="Current game override">
           <PanelSectionRow><DropdownItem label={status.game.title || `AppID ${status.game.appid}`}
             description="Saved for this AppID only."
-            rgOptions={[{ data: "inherit", label: "Use in-game default" }, ...GAME_DISPLAY_OPTIONS]}
+            rgOptions={[{ data: "inherit", label: "Use in-game default" },
+              ...withHomeAssistantDisplay(GAME_DISPLAY_OPTIONS, status.home_assistant.offered, status.display_override)]}
             selectedOption={status.display_override}
             onChange={async (option) => setStatus(await setGameDisplay(status.game.appid, String(option.data)))} /></PanelSectionRow>
         </PanelSection> : null}
@@ -3225,6 +3234,7 @@ function GabeCubeAuraSettings() {
     { title: "Weather", route: "/gabecubeaura/settings/weather", content: <Content page="weather" /> },
     { title: "Screen Sync", route: "/gabecubeaura/settings/screen-sync", content: <Content page="screen-sync" /> },
     { title: "Audio Sync", route: "/gabecubeaura/settings/audio-sync", content: <Content page="audio-sync" /> },
+    { title: "Home Assistant", route: "/gabecubeaura/settings/home-assistant", content: <HomeAssistantPanel /> },
     { title: "Updates", route: "/gabecubeaura/settings/updates", content: <Content page="updates" /> },
     "separator",
     { title: "Advanced / debug", route: "/gabecubeaura/settings/advanced", content: <Content page="advanced" /> },

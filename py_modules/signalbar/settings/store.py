@@ -8,6 +8,9 @@ import os
 import threading
 from copy import deepcopy
 
+from signalbar.faceplate.options import (
+    import_pixel_faceplate, normalise_import, stored_defaults, validate_stored,
+)
 from signalbar.providers.customization import CUSTOMIZATION_PATTERNS
 
 DEFAULTS = {
@@ -179,6 +182,8 @@ DEFAULTS = {
     "updates_check_interval_minutes": 1440,
     "updates_channel": "stable",
 }
+# JSAUX faceplate settings, all prefixed faceplate_ (see faceplate/options.py).
+DEFAULTS.update(stored_defaults())
 
 VALID_MODES = {"artwork", "performance", "customization", "screen_sync", "audio_sync", "blackout", "events", "disabled"}
 VALID_HOME_DISPLAYS = {"steam", "blackout", "customization", "performance", "audio_sync", "weather", "controller"}
@@ -538,6 +543,8 @@ class SettingsStore:
 
     def load(self):
         with self._lock:
+            raw = None
+            missing = False
             try:
                 with open(self.path, encoding="utf-8") as handle:
                     raw = json.load(handle)
@@ -665,9 +672,24 @@ class SettingsStore:
                     # migration. Artwork sampling choices remain preserved.
                     if legacy_routing and raw.get("mode") in {"events", "disabled"}:
                         self._data["display_profiles"] = {}
+            except FileNotFoundError:
+                missing = True
             except (OSError, ValueError, TypeError):
                 pass
+            imported = {}
+            # Faceplate support began as the standalone Pixel Faceplate plugin.
+            # Its choices are copied once, into a new configuration or one
+            # without faceplate settings. A configuration that failed to load
+            # is never written here, so it stays on disk to be recovered.
+            if missing or (isinstance(raw, dict) and "faceplate_mode" not in raw):
+                imported = import_pixel_faceplate(os.path.dirname(self.path))
+                self._data.update(imported)
             self._validate()
+            if imported:
+                try:
+                    self.save()
+                except OSError:
+                    pass  # imported again next start; nothing is lost
             return dict(self._data)
 
     def _validate(self):
@@ -1072,6 +1094,7 @@ class SettingsStore:
                     palettes[str(count)] = clean if len(clean) == count else defaults[str(count)]
                 launch_profiles[appid] = {"palette_mode": mode, "custom_palettes": palettes}
         self._data["launch_artwork_profiles"] = launch_profiles
+        validate_stored(self._data)
 
     def all(self):
         with self._lock:
@@ -1256,6 +1279,7 @@ class SettingsStore:
                         DEFAULTS[f"audio_sync_{context}_colour_{role}"],
                     )),
                 )
+        normalise_import(imported)
         imported["display_profiles"] = deepcopy(display_profiles)
         imported["artwork_profiles"] = deepcopy(artwork_profiles)
         imported["launch_artwork_profiles"] = deepcopy(launch_artwork_profiles)

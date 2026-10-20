@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### NEW FEATURE: JSAUX Pixel Matrix Faceplate
+
+- Drive the 64x54 RGB faceplate directly over USB from a new **Faceplate**
+  settings page: game artwork, clock, light bar glow or a custom image.
+- Choose the artwork style and logo position globally or for one game, flip
+  the picture for an upside-down mount, and turn the panel off or dim it at
+  sleep and shutdown.
+- Send a picture only when it changes and cap brightness for bright pictures.
+- Import the standalone Pixel Faceplate plugin's settings once.
+
 ## 1.4.0 - 2026-10-05
 
 Stable release. Changes since 1.3.2:

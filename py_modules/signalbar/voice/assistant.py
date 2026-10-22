@@ -1,0 +1,188 @@
+"""The loop that ties the voice pieces together.
+
+One thread does all of it, in this order:
+
+    idle       mic on, openWakeWord scoring every 80 ms frame
+    curious    wake word heard: curious face, start warming Qwen
+    listening  record until the person stops talking
+    thinking   Parakeet turns that into text, Qwen writes a reply
+    talking    Piper reads the reply out, talking face
+    idle       back to the top
+
+    paused     a game is running: mic closed, models unloaded
+
+A game starting cancels whatever turn is in progress, closes the mic so we're
+not fighting voice chat for it, and unloads Qwen and Parakeet so the game gets
+the memory back. When the game ends we go back to idle and the models reload
+the next time they're needed.
+
+Any step that blows up gets logged and we drop back to idle.
+
+Cloud mode swaps listening and thinking for one call to a cloud model that
+takes the recording and answers (see cloud.py). Everything else is the same,
+the game pause included.
+
+This runs in its own process (see __main__.py), not inside the plugin. The
+face and state changes go out through report() as lines the plugin reads.
+"""
+
+from __future__ import annotations
+
+import threading
+
+from .face import NoFace
+from .mic import to_wav
+
+
+class Assistant:
+    def __init__(self, mic, wake, ears, brain, voice, face=None, warm="on_wake", logger=None,
+                 report=None, cloud=None):
+        self.mic = mic
+        self.wake = wake
+        self.ears = ears
+        self.brain = brain
+        self.voice = voice
+        self.face = face or NoFace()
+        self.warm = warm
+        self.log = logger
+        self.report = report
+        # Cloud mode: a provider from cloud.py and no brain. ears only records.
+        self.cloud = cloud
+        self.state = "idle"
+        self.last_heard = ""
+        self.last_reply = ""
+        self._game_running = False
+        self._cancel = threading.Event()
+        self._stop = threading.Event()
+        self._thread = None
+
+    def _info(self, message):
+        if self.log:
+            self.log.info(f"[GabeCubeAura] voice: {message}")
+
+    def _warn(self, message):
+        if self.log:
+            self.log.warning(f"[GabeCubeAura] voice: {message}")
+
+    def _enter(self, state, mood=None):
+        self.state = state
+        if mood:
+            self.face.show(mood)
+        if self.report:
+            self.report(state, mood)
+
+    # ---- lifecycle -----------------------------------------------------
+    def start(self):
+        if self._thread and self._thread.is_alive():
+            return
+        self._stop.clear()
+        self._thread = threading.Thread(target=self._run, name="gabecubeaura-voice", daemon=True)
+        self._thread.start()
+
+    def stop(self):
+        self._stop.set()
+        self._cancel.set()
+        self.mic.close()
+        if self._thread:
+            self._thread.join(timeout=3)
+        self._unload()
+        self.face.show("idle")
+
+    def set_game(self, appid=0, title=""):
+        """Called from game_changed. A running game pauses everything."""
+        running = int(appid or 0) > 0 or bool(title)
+        if running == self._game_running:
+            return
+        self._game_running = running
+        if running:
+            self._cancel.set()
+            self.mic.close()
+            self._unload()
+            self._enter("paused", "idle")
+            self._info("game started, paused and unloaded")
+        else:
+            # A fresh event, so a turn still winding down from before the
+            # game keeps seeing its own cancel.
+            self._cancel = threading.Event()
+            self._enter("idle", "idle")
+            if self.brain and self.warm == "resident":
+                self.brain.warm_up()
+
+    def _unload(self):
+        for part in (self.brain, self.ears):
+            if part is None:
+                continue
+            try:
+                part.unload()
+            except Exception as error:
+                self._warn(f"unload failed: {type(error).__name__}: {error}")
+
+    def status(self):
+        return {"state": self.state, "heard": self.last_heard, "reply": self.last_reply}
+
+    # ---- the loop ------------------------------------------------------
+    def _run(self):
+        if self.brain and self.warm == "resident" and not self._game_running:
+            self.brain.warm_up()
+        while not self._stop.is_set():
+            if self._game_running:
+                self._stop.wait(0.5)
+                continue
+            try:
+                self.mic.open()
+                frame = self.mic.read_frame()
+                if frame is None:
+                    self._stop.wait(1.0)  # mic unplugged or pw-record died; retry
+                    continue
+                if self.wake.heard(frame):
+                    self.turn()
+            except Exception as error:
+                self._warn(f"{type(error).__name__}: {error}")
+                self._enter("idle", "idle")
+                self._stop.wait(2.0)
+
+    def turn(self):
+        """One wake word to one answer. Each step checks whether a game started."""
+        cancel = self._cancel
+        self._enter("curious", "curious")
+        if self.cloud is not None:
+            return self._cloud_turn(cancel)
+        # Warm on wake: the model loads while the person is still talking.
+        if self.warm == "on_wake":
+            self.brain.warm_up()
+        self._enter("listening")
+        text = self.ears.listen(self.mic, cancel)
+        if cancel.is_set() or not text:
+            return self._finish(cancel)
+        self.last_heard = text
+        self._enter("thinking", "thinking")
+        reply = self.brain.ask(text, cancel)
+        if cancel.is_set() or not reply:
+            return self._finish(cancel)
+        self.last_reply = reply
+        self._enter("talking", "talking")
+        self.voice.say(reply, cancel)
+        return self._finish(cancel)
+
+    def _cloud_turn(self, cancel):
+        """Same shape, minus the local models: record, send, play."""
+        self._enter("listening")
+        audio = self.ears.record(self.mic, cancel)
+        if cancel.is_set() or not audio:
+            return self._finish(cancel)
+        self._enter("thinking", "thinking")
+        reply = self.cloud.answer(to_wav(audio))
+        if cancel.is_set() or not reply:
+            return self._finish(cancel)
+        self._enter("talking", "talking")
+        if isinstance(reply, bytes):
+            self.voice.play(reply, cancel)
+        else:
+            self.last_reply = reply
+            self.voice.say(reply, cancel)
+        return self._finish(cancel)
+
+    def _finish(self, cancel):
+        if not cancel.is_set():
+            self._enter("idle", "idle")
+        return self.state

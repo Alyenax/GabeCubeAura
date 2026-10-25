@@ -45,7 +45,7 @@ For a more personal setup, match the light bar to the picture or audio, choose y
 
 | Screen Sync | Audio Sync | Customization+ | Countdown |
 | :---: | :---: | :---: | :---: |
-| <img src="docs/media/public/strip-screen-sync-pip.gif" width="160" alt="Video source shown in PiP with matching light-bar colours"> | <img src="docs/media/public/strip-audio-sync.gif" width="160" alt="Slow Prism reacting to playback; silent preview"> | <img src="docs/media/public/strip-customization-gallery.gif" width="160" alt="Custom colour and animation examples on the light bar"> | <img src="docs/media/public/strip-countdown.gif" width="160" alt="Remaining time for a personal timer or supported Steam Families limit"> |
+| <img src="docs/media/public/strip-screen-sync-pip.gif" width="160" alt="Video source shown in PiP with matching light-bar colours"> | <img src="docs/media/public/strip-audio-sync-prism.gif" width="160" alt="Slow Prism with a magnified light-bar detail; silent generated playback"> | <img src="docs/media/public/strip-customization-gallery.gif" width="160" alt="Custom colour and animation examples on the light bar"> | <img src="docs/media/public/strip-countdown.gif" width="160" alt="Remaining time for a personal timer or supported Steam Families limit"> |
 | Picture-in-picture<br>colour matching. | Slow Prism<br>reacts to playback. | Your colours<br>and effects. | Personal timer<br>or Steam Families. |
 
 Choose different displays for Home, games and individual titles. One global
@@ -57,11 +57,38 @@ sunset dimming for a city you select.
 The optional Faceplate adds a second display. Its content and brightness can
 be set separately from the light bar.
 
-| Animated artwork | Dashboard · The Witcher 3 | Steam Players City |
-| :---: | :---: | :---: |
-| <img src="docs/media/public/faceplate-artwork.gif" width="240" alt="Simulated JSAUX Faceplate playing animated game artwork with a matching light bar"><br>Prepare an image or animation once and assign it to a game. | <img src="docs/media/public/faceplate-dashboard-witcher-showcase.gif" width="240" alt="Geralt artwork cycling through eight Faceplate layouts: game logo, session, achievements, batteries, weather and timer"><br>Eight layouts in one animation: artwork, logo, game information, weather and timer. | <img src="docs/media/public/faceplate-city-showcase.gif" width="240" alt="Steam Players City growing from a village to a large city, then showing night, rain, snow and a thunderstorm"><br>From village to city, with day, night and changing weather in one animation. |
-| **Weather** | **Personal timer** | **TV + Faceplate · optional DAS** |
-| <img src="docs/media/public/faceplate-weather-pearl-rain-day.gif" width="240" alt="Pearl Rain weather animation on the Faceplate with coordinated light-bar colours"><br>Bring the selected city's weather to the Faceplate and light bar. | <img src="docs/media/public/faceplate-countdown-resident-evil.gif" width="240" alt="Resident Evil 2 artwork with a personal countdown on the Faceplate and light bar"><br>Keep an active countdown visible over game artwork. | <img src="docs/media/public/das-tv-faceplate.gif" width="240" alt="Animated game artwork on a television with different artwork for the same game on the Faceplate"><br>Use different artwork for the same game on TV and Faceplate. Requires the separate Decky Animated Screensaver plugin. |
+<table>
+<tr>
+<th align="center" width="33%">Animated artwork</th>
+<th align="center" width="33%">Dashboard · The Witcher 3</th>
+<th align="center" width="33%">Steam Players City</th>
+</tr>
+<tr>
+<td align="center" valign="top"><img src="docs/media/public/faceplate-artwork.gif" width="240" alt="Animated game artwork on the Faceplate"></td>
+<td align="center" valign="top"><img src="docs/media/public/faceplate-dashboard-witcher-showcase.gif" width="240" alt="Geralt artwork cycling through eight Dashboard layouts"></td>
+<td align="center" valign="top"><img src="docs/media/public/faceplate-city-showcase.gif" width="240" alt="Steam Players City growing through day, night and changing weather"></td>
+</tr>
+<tr>
+<td align="center" valign="top">Static or animated artwork<br>saved for each game.</td>
+<td align="center" valign="top">Eight layouts: artwork, game data,<br>weather and countdown.</td>
+<td align="center" valign="top">From village to city,<br>with day, night and weather.</td>
+</tr>
+<tr>
+<th align="center" width="33%">Weather</th>
+<th align="center" width="33%">Personal timer</th>
+<th align="center" width="33%">TV + Faceplate · DAS</th>
+</tr>
+<tr>
+<td align="center" valign="top"><img src="docs/media/public/faceplate-weather-pearl-rain-day.gif" width="240" alt="Pearl Rain on the Faceplate and coordinated light bar"></td>
+<td align="center" valign="top"><img src="docs/media/public/faceplate-countdown-resident-evil.gif" width="240" alt="Resident Evil 2 artwork and a personal countdown"></td>
+<td align="center" valign="top"><img src="docs/media/public/das-tv-faceplate.gif" width="240" alt="Different game artwork on the television and Faceplate"></td>
+</tr>
+<tr>
+<td align="center" valign="top">Your city’s weather<br>on both displays.</td>
+<td align="center" valign="top">A visible countdown<br>over game artwork.</td>
+<td align="center" valign="top">Different artwork on each display.<br>Requires the separate DAS plugin.</td>
+</tr>
+</table>
 
 Choose a weather scene, Artwork Dashboard or other supported display for
 Home and games. Dashboard rows can show controller batteries,

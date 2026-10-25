@@ -83,7 +83,7 @@ The Light events montage uses the plugin's native renderers for one Steam notifi
 
 The Screen Sync PiP uses excerpts from the existing animated Elden Ring and Cyberpunk 2077 sources credited above. Each decoded picture is shown in the inset and reduced to the exact 34 × 18 BGRx input supplied to GCA's ScreenSyncProcessor in Panorama mode. The bar colours come from that processor, including its normal temporal smoothing. This local demonstration does not record a live Gamescope session. Its moving source pictures are animated game artwork rather than gameplay footage.
 
-The Audio Sync example uses Slow Prism with a generated stereo signal; the GIF is silent. The countdown shows an illustrative 24 minutes out of 30, without accelerating the passage of time. The same remaining-time display can be driven by a personal timer or an available supported Steam Families limit.
+The Audio Sync example uses the current Slow Prism processor with a generated stereo chord, alternating quiet and loud passages, full brightness, Fast reactivity and custom cyan/pink/amber colours. The inset magnifies the same light-bar frame with brighter optical presentation for readability; it is not a Faceplate display or a hardware recording. The GIF is silent. The countdown shows an illustrative 24 minutes out of 30, without accelerating the passage of time. The same remaining-time display can be driven by a personal timer or an available supported Steam Families limit.
 
 ## Reading the examples
 

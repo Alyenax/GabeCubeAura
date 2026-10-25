@@ -76,7 +76,7 @@ be set separately from the light bar.
 <tr>
 <th align="center" width="33%">Weather</th>
 <th align="center" width="33%">Personal timer</th>
-<th align="center" width="33%">TV + Faceplate · DAS</th>
+<th align="center" width="33%">TV + Faceplate · <a href="https://github.com/Alyenax/Decky-Animated-Screensaver">DAS</a></th>
 </tr>
 <tr>
 <td align="center" valign="top"><img src="docs/media/public/faceplate-weather-pearl-rain-day.gif" width="240" alt="Pearl Rain on the Faceplate and coordinated light bar"></td>
@@ -86,7 +86,7 @@ be set separately from the light bar.
 <tr>
 <td align="center" valign="top">Your city’s weather<br>on both displays.</td>
 <td align="center" valign="top">A visible countdown<br>over game artwork.</td>
-<td align="center" valign="top">Different artwork on each display.<br>Requires the separate DAS plugin.</td>
+<td align="center" valign="top">Different artwork on each display.<br>Requires the separate <a href="https://github.com/Alyenax/Decky-Animated-Screensaver">DAS plugin</a>.</td>
 </tr>
 </table>
 
@@ -96,7 +96,7 @@ session time, recorded playtime or achievement progress when data is available.
 Steam Players City turns the running game's player count into an animated city.
 
 **Decky Vocal Assistant (DVA)** can add optional voice-assistant visuals through
-GCA, while **Decky Animated Screensaver (DAS)** can share prepared screensaver
+GCA, while **[Decky Animated Screensaver (DAS)](https://github.com/Alyenax/Decky-Animated-Screensaver)** can share prepared screensaver
 collections with the Faceplate. Both are separate plugins; see the
 [integration guide](https://github.com/Alyenax/GabeCubeAura/wiki/Integrations).
 

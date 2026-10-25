@@ -180,6 +180,7 @@ class LaunchArtworkTests(unittest.TestCase):
     def test_artwork_vibrance_recolours_detected_launch_palette_but_not_custom_palette(self):
         with tempfile.TemporaryDirectory() as directory:
             store = SettingsStore(str(Path(directory) / "settings.json"))
+            store.update({'faceplate_lab_enabled':False})
             engine = Engine(store, str(Path(directory) / "artwork-cache.json"))
             muted = {
                 "2": [[108, 92, 78], [70, 88, 110]],

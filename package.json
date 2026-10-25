@@ -1,7 +1,7 @@
 {
   "name": "gabecubeaura",
-  "version": "1.4.0",
-  "description": "Real-time audio, screen colours, artwork, weather and live status lighting for the official Steam Machine",
+  "version": "1.5.0",
+  "description": "Steam Machine light bar and JSAUX PIXEL Faceplate; generic external integrations",
   "type": "module",
   "packageManager": "pnpm@9.15.9",
   "scripts": {
@@ -11,8 +11,9 @@
     "test:backend": "PYTHONPYCACHEPREFIX=/tmp/gabecubeaura-pycache PYTHONPATH=py_modules python3 -m unittest discover -s tests/backend -v",
     "test:frontend": "tsx --test tests/frontend/*.test.ts",
     "typecheck": "tsc --noEmit",
+    "audit:ui": "tsx scripts/audit_ui_copy.ts",
     "package": "python3 scripts/package_plugin.py",
-    "media:release": "node scripts/capture_release_gifs.mjs"
+    "verify:release": "PYTHONPATH=py_modules python3 scripts/verify_release.py"
   },
   "keywords": [
     "decky",
@@ -22,7 +23,7 @@
     "status"
   ],
   "author": "Alyenax",
-  "license": "GPL-3.0-only",
+  "license": "SEE LICENSE IN LICENSING.md",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Alyenax/GabeCubeAura.git"
@@ -33,14 +34,15 @@
   "homepage": "https://github.com/Alyenax/GabeCubeAura#readme",
   "devDependencies": {
     "@decky/rollup": "^1.0.2",
-    "@decky/ui": "^4.11.0",
+    "@decky/ui": "^4.12.1",
     "@rollup/rollup-linux-x64-musl": "^4.53.3",
     "@types/react": "19.1.1",
     "@types/react-dom": "19.1.1",
     "@types/webpack": "^5.28.5",
     "rollup": "^4.53.3",
     "tsx": "^4.20.5",
-    "typescript": "^5.6.2"
+    "typescript": "^5.6.2",
+    "react": "19.3.0"
   },
   "dependencies": {
     "@decky/api": "^1.1.3",

@@ -4,6 +4,7 @@ import importlib.util
 from pathlib import Path
 import sys
 import tempfile
+import threading
 import types
 import unittest
 from unittest.mock import Mock, patch
@@ -18,6 +19,22 @@ from signalbar.settings.export import (
 
 
 class SettingsExportTests(unittest.TestCase):
+    def test_status_rpc_runs_provider_collection_off_the_decky_event_loop(self):
+        root = Path(__file__).resolve().parents[2]
+        decky = types.ModuleType("decky")
+        with patch.dict(sys.modules, {"decky": decky}):
+            spec = importlib.util.spec_from_file_location(
+                "gabecubeaura_status_executor_test", root / "main.py",
+            )
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            plugin = module.Plugin()
+            plugin.engine = Mock()
+            caller_thread = threading.get_ident()
+            plugin.engine.status.side_effect = threading.get_ident
+            worker_thread = asyncio.run(plugin.get_status())
+        self.assertNotEqual(caller_thread, worker_thread)
+
     def test_rebrand_migrates_signalbar_settings_and_caches_once(self):
         root = Path(__file__).resolve().parents[2]
         with tempfile.TemporaryDirectory() as directory:
@@ -72,6 +89,71 @@ class SettingsExportTests(unittest.TestCase):
                 self.assertEqual(asyncio.run(plugin.reset_configuration()), {"version": "0.6.0"})
                 plugin.engine.reset_configuration.assert_called_once_with()
 
+    def test_game_change_and_runtime_boundaries_are_persisted_without_heartbeats(self):
+        root = Path(__file__).resolve().parents[2]
+        decky = types.ModuleType("decky")
+        with patch.dict(sys.modules, {"decky": decky}):
+            spec = importlib.util.spec_from_file_location("gabecubeaura_diagnostic_test", root / "main.py")
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            plugin = module.Plugin()
+            plugin.engine = Mock()
+            plugin.engine.status.return_value = {"game": {"appid": 42}}
+            plugin.pixel_studio = Mock()
+            plugin.diagnostics = Mock()
+
+            asyncio.run(plugin.game_changed(42, "Private title", True, "Steam lifetime event"))
+            event_names = [call.args[0] for call in plugin.diagnostics.record.call_args_list]
+            self.assertEqual(event_names, ["game_change_requested", "game_change_finished"])
+            self.assertNotIn("Private title", str(plugin.diagnostics.record.call_args_list))
+
+            plugin.diagnostics.reset_mock()
+            asyncio.run(plugin.report_runtime_diagnostic("heartbeat", 42, "background runtime", 0))
+            plugin.diagnostics.record.assert_not_called()
+            asyncio.run(plugin.report_runtime_diagnostic("game_synced", 42, "Steam lifetime event", 37))
+            plugin.diagnostics.record.assert_called_once_with(
+                "runtime_diagnostic", name="game_synced", appid=42,
+                source="Steam lifetime event", duration_ms=37.0,
+            )
+            plugin.diagnostics.reset_mock()
+            asyncio.run(plugin.report_runtime_diagnostic(
+                "frontend_mounted", 0, "definePlugin", 0,
+            ))
+            plugin.diagnostics.record.assert_called_once_with(
+                "runtime_diagnostic", name="frontend_mounted", appid=0,
+                source="definePlugin", duration_ms=0.0,
+            )
+
+    def test_cached_artwork_does_not_cross_decky_rpc_as_base64(self):
+        root = Path(__file__).resolve().parents[2]
+        decky = types.ModuleType("decky")
+        with patch.dict(sys.modules, {"decky": decky}):
+            spec = importlib.util.spec_from_file_location("gabecubeaura_artwork_rpc_test", root / "main.py")
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            plugin = module.Plugin()
+            plugin.engine = Mock()
+            plugin.engine.prepare_artwork.return_value = True
+            payload = {
+                "found": True, "appid": 42, "fingerprint": "abc", "filename": "hero.jpg",
+                "source": "hero", "data_uri": "data:image/jpeg;base64,large",
+            }
+            with patch.object(module, "get_library_artwork", return_value=dict(payload)):
+                result = asyncio.run(plugin.get_artwork(42, "hero", "artwork", False))
+            self.assertTrue(result["cached"])
+            self.assertNotIn("data_uri", result)
+
+            plugin.engine.prepare_artwork.return_value = False
+            with patch.object(module, "get_library_artwork", return_value=dict(payload)) as lookup:
+                uncached = asyncio.run(plugin.get_artwork(42, "hero", "artwork", False))
+            lookup.assert_called_once_with(42, "hero", False)
+            self.assertFalse(uncached["cached"])
+            self.assertNotIn("data_uri", uncached)
+
+            with patch.object(module, "get_library_artwork", return_value=dict(payload)):
+                preview = asyncio.run(plugin.get_artwork(42, "hero", "artwork", True))
+            self.assertEqual(preview["data_uri"], payload["data_uri"])
+
     def test_export_groups_global_profiles_and_current_game(self):
         with tempfile.TemporaryDirectory() as directory:
             store = SettingsStore(str(Path(directory) / "config.json"))
@@ -117,7 +199,7 @@ class SettingsExportTests(unittest.TestCase):
             )
             self.assertEqual(result["path"], str(target))
             self.assertEqual(json.loads(target.read_text(encoding="utf-8"))["gabecubeaura_version"], "0.5.1")
-            self.assertEqual(target.stat().st_mode & 0o777, 0o644)
+            self.assertEqual(target.stat().st_mode & 0o777, 0o600)
 
     def test_path_prefers_documents_and_falls_back_to_settings(self):
         self.assertEqual(

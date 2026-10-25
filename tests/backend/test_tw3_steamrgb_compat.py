@@ -71,6 +71,7 @@ class CompatibilityTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as folder:
             settings = SettingsStore(str(Path(folder) / "settings.json"))
+            settings.update({'faceplate_lab_enabled':False})
             engine = Engine(
                 settings, str(Path(folder) / "artwork.json"),
                 tw3_steamrgb_claim=LiveClaim(),

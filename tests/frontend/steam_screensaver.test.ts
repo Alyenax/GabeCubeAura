@@ -39,3 +39,10 @@ test("screensaver notifications are used when the Steam service exposes them", (
   registration?.unregister?.();
   assert.equal(unregistered, true);
 });
+
+test('Valve protobuf notification name is supported with polling as fallback',()=>{
+  let received=false;
+  const service={GetActiveState(){},RegisterForNotifyActiveStateChanged(callback:(value:unknown)=>void){callback({Body:()=>({active:()=>true})});return {unregister(){}};}};
+  assert(registerForScreensaverState(service,value=>{received=screensaverActiveFromResponse(value)===true;}));
+  assert(received);
+});

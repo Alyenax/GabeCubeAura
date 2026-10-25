@@ -1,0 +1,88 @@
+{
+  "entries": [
+    {
+      "background_pack": "snow-melting-snowfall-day.rgbz",
+      "background_pack_sha256": "81995891321ba217be7a39591cd1a3b25227560acd0b7b8d5a0b595750245ca3",
+      "background_peak_load": 0.469071,
+      "background_raw_sha256": "66e0027690ad679181aea2b662f74b7c58195b485b92e36dfd0e6494ee28178e",
+      "frame_count": 24,
+      "frame_duration_cs": 10,
+      "id": "snow:0",
+      "phase": "day"
+    },
+    {
+      "background_pack": "snow-melting-snowfall.rgbz",
+      "background_pack_sha256": "89948bcde8c1dc3398b4b7e05e99f611660a29fd89bfcfb17ded18d77efd5953",
+      "background_peak_load": 0.339863,
+      "background_raw_sha256": "75388e0b075abe31d570515a1d24cfe940b50cb3000ac271a7c398b0d91c0387",
+      "frame_count": 24,
+      "frame_duration_cs": 10,
+      "id": "snow:0",
+      "phase": "night"
+    },
+    {
+      "background_pack": "snow-snow-takes-hold-day.rgbz",
+      "background_pack_sha256": "0602350f5d57062959cb35a9dafb1d76465fdcd9442cdd44a504a6f0afd0964a",
+      "background_peak_load": 0.469085,
+      "background_raw_sha256": "d80101dc4c27a4598ff735efea91befb1f11aa7636c2f2ee746268df9ea34a95",
+      "frame_count": 24,
+      "frame_duration_cs": 10,
+      "id": "snow:1",
+      "phase": "day"
+    },
+    {
+      "background_pack": "snow-snow-takes-hold.rgbz",
+      "background_pack_sha256": "00defd35483fc384b91c181d13f766279d0b09bb177d5d6c41e1918ae0054b9d",
+      "background_peak_load": 0.352439,
+      "background_raw_sha256": "b39b45315c2ea10d56266f1b02bd9c9e580d8fb571f38f613e26714ebc465676",
+      "frame_count": 24,
+      "frame_duration_cs": 10,
+      "id": "snow:1",
+      "phase": "night"
+    },
+    {
+      "background_pack": "storm-pulse-and-echoes-day.rgbz",
+      "background_pack_sha256": "14c3437af82883cfe712258e09df70bca8142dc4cecd07f492ea58c91f9e479f",
+      "background_peak_load": 0.459111,
+      "background_raw_sha256": "4152ae4a9a1b2d3574d4c21ecf516f942239294e7a3ca24878c010b6fb38cd0b",
+      "frame_count": 24,
+      "frame_duration_cs": 10,
+      "id": "storm:0",
+      "phase": "day"
+    },
+    {
+      "background_pack": "storm-pulse-and-echoes.rgbz",
+      "background_pack_sha256": "65c3541b3e9a1a00c5752e8cbf7623548cd1fa8716aebfb03753299d122854ca",
+      "background_peak_load": 0.41827,
+      "background_raw_sha256": "e4b41a502bd5cee39c0f414c3de60208b03d08408282956023efc64d458ce056",
+      "frame_count": 24,
+      "frame_duration_cs": 10,
+      "id": "storm:0",
+      "phase": "night"
+    },
+    {
+      "background_pack": "storm-storm-break-day.rgbz",
+      "background_pack_sha256": "48c12e08091cc075d11cf546a8c9ff8b43e5c8cb72cce265f65d7e3acb5714b6",
+      "background_peak_load": 0.457106,
+      "background_raw_sha256": "1e055c9550fb904482b744f169973189a9d88047bfdde9d1acb08c881e8a9e7b",
+      "frame_count": 24,
+      "frame_duration_cs": 10,
+      "id": "storm:1",
+      "phase": "day"
+    },
+    {
+      "background_pack": "storm-storm-break.rgbz",
+      "background_pack_sha256": "b38a630821e29943f1ce45a5b8ca7e8858aed4b1faefee1e89175ce8023d19b0",
+      "background_peak_load": 0.41723,
+      "background_raw_sha256": "1a18a0b1d0d51c1a6e525b51dd05f5638aff1eaf2b9d06e45dda25ca489e7680",
+      "frame_count": 24,
+      "frame_duration_cs": 10,
+      "id": "storm:1",
+      "phase": "night"
+    }
+  ],
+  "frame_count": 24,
+  "frame_duration_cs": 10,
+  "revision": "weather-winter-phases-2",
+  "schema": 1
+}

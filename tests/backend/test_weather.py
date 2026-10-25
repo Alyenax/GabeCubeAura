@@ -9,6 +9,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch, sentinel
 from urllib.error import URLError
+from urllib.parse import parse_qs, urlparse
 
 import signalbar.providers.weather as weather_module
 from signalbar.arbiter import Arbiter
@@ -166,7 +167,7 @@ class WeatherTests(unittest.TestCase):
         self.assertEqual(VARIANT_NAMES["snow"], ("Melting snowfall", "Snow takes hold"))
         self.assertEqual(DEFAULTS["weather_snow_variant"], 1)
         self.assertTrue(all(pixel == [0, 0, 0] for pixel in weather_sequence("snow", 1, 0)))
-        self.assertTrue(all(pixel[0] > 150 for pixel in weather_sequence("snow", 1, 7.1)))
+        self.assertTrue(all(max(pixel) > 120 for pixel in weather_sequence("snow", 1, 7.1)))
         self.assertNotEqual(weather_sequence("snow", 0, 3), weather_sequence("snow", 1, 3))
 
     def test_topbar_temperature_unit_retained_but_led_temperature_fields_removed(self):
@@ -216,7 +217,8 @@ class WeatherTests(unittest.TestCase):
                                                   "time": "2026-09-23T10:00"}})[1])
         self.assertEqual(sample["condition"], "storm")
         self.assertIn("temperature_2m", requested[0])
-        self.assertIn("daily=sunrise%2Csunset", requested[0])
+        self.assertIn("daily=sunrise%2Csunset%2Cweather_code", requested[0])
+        self.assertIn("hourly=weather_code%2Ctemperature_2m%2Cprecipitation_probability", requested[0])
         self.assertEqual(sample["temperature_c"], 12.4)
         no_temp = fetch_current(CITY, lambda url: {"current": {"weather_code": 0, "is_day": 1}})
         self.assertIsNone(no_temp["temperature_c"])
@@ -226,6 +228,182 @@ class WeatherTests(unittest.TestCase):
         self.assertEqual(condition_for_code(3, 1), "cloud")
         self.assertEqual(condition_for_code(75, 1), "snow")
         self.assertEqual(search_cities("Paris", lambda url: {"results": [CITY]}), [CITY])
+
+    def test_dashboard_forecast_facts_are_aligned_to_local_hours(self):
+        payload = {
+            "current": {"weather_code": 2, "is_day": 1, "temperature_2m": 11,
+                        "time": "2026-10-10T10:15"},
+            "daily": {
+                "sunrise": ["2026-10-10T07:40"],
+                "sunset": ["2026-10-10T19:12"],
+                "weather_code": [61],
+            },
+            "hourly": {
+                "time": ["2026-10-10T09:00", "2026-10-10T11:00",
+                         "2026-10-10T12:00", "2026-10-10T15:00"],
+                "weather_code": [1, 61, 2, 3],
+                "temperature_2m": [8.6, 12.7, 14.2, 16.4],
+                "precipitation_probability": [5, 78, 35, 12],
+            },
+        }
+        sample = fetch_current(CITY, lambda _url: payload)
+        self.assertEqual(12.7, sample["next_hour_temperature_c"])
+        self.assertEqual("rain", sample["next_hour_condition"])
+        self.assertEqual(78, sample["next_hour_precipitation_probability"])
+        self.assertEqual(8.6, sample["morning_temperature_c"])
+        self.assertEqual(16.4, sample["afternoon_temperature_c"])
+        self.assertEqual("breaks", sample["today_condition"])
+
+    def test_all_countries_use_one_automatic_request_for_current_and_forecast(self):
+        payload = {
+            "current": {"weather_code": 80, "is_day": 1, "temperature_2m": 13.4,
+                        "time": "2026-10-21T13:45"},
+            "hourly": {"time": ["2026-10-21T13:00", "2026-10-21T14:00"],
+                       "weather_code": [3, 80], "temperature_2m": [13.4, 13.2],
+                       "precipitation_probability": [99, 10]},
+        }
+        for country, country_code in (("France", None), ("FR", None), ("FRA", None),
+                                      ("", "FR"), ("Germany", "DE"), ("", None)):
+            with self.subTest(country=country, country_code=country_code):
+                location = dict(CITY, country=country)
+                if country_code is not None:
+                    location["country_code"] = country_code
+                requested = []
+                def read(url):
+                    requested.append(url)
+                    return payload
+                sample = fetch_current(location, read)
+                self.assertEqual(1, len(requested))
+                params = parse_qs(urlparse(requested[0]).query)
+                self.assertNotIn("models", params)
+                self.assertEqual([str(CITY["latitude"])], params["latitude"])
+                self.assertEqual([str(CITY["longitude"])], params["longitude"])
+                self.assertIn("weather_code", params["current"][0])
+                self.assertEqual(["weather_code,temperature_2m,precipitation_probability"], params["hourly"])
+                self.assertEqual(["auto"], params["timezone"])
+                self.assertEqual(["2"], params["forecast_days"])
+                self.assertEqual(13.4, sample["temperature_c"])
+                self.assertEqual("rain", sample["condition"])
+                self.assertEqual(13.2, sample["next_hour_temperature_c"])
+                self.assertEqual("rain", sample["next_hour_condition"])
+                self.assertEqual(10, sample["next_hour_precipitation_probability"])
+
+    def test_invalid_automatic_probability_keeps_weather_across_midnight(self):
+        for probabilities, expected in (([None], None), ([-1], None), ([101], None),
+                                        (["nan"], None), (["bad"], None),
+                                        ([], None), ([0], 0), ([35], 35)):
+            with self.subTest(probabilities=probabilities):
+                payload = {
+                    "current": {"weather_code": 3, "is_day": 1, "temperature_2m": 7,
+                                "time": "2026-10-19T23:45"},
+                    "hourly": {"time": ["2026-10-20T00:00"],
+                               "weather_code": [0], "temperature_2m": [5.0],
+                               "precipitation_probability": probabilities},
+                }
+                sample = fetch_current(CITY, lambda url: payload)
+                self.assertEqual(5.0, sample["next_hour_temperature_c"])
+                self.assertEqual("clear_night", sample["next_hour_condition"])
+                self.assertEqual(expected, sample["next_hour_precipitation_probability"])
+
+    def test_failed_automatic_request_does_not_try_a_forced_model(self):
+        calls = []
+        def read(url):
+            calls.append(url)
+            raise URLError("service unavailable")
+        with self.assertRaises(URLError):
+            fetch_current(CITY, read)
+        self.assertEqual(1, len(calls))
+        self.assertNotIn("models", parse_qs(urlparse(calls[0]).query))
+
+    def test_city_country_code_survives_search_settings_and_restart(self):
+        city = dict(CITY, country_code="fr")
+        selected = search_cities("Paris", lambda _url: {"results": [city]})[0]
+        self.assertEqual("FR", selected["country_code"])
+        with tempfile.TemporaryDirectory() as folder:
+            path = str(Path(folder) / "settings.json")
+            settings = SettingsStore(path)
+            settings.update({"weather_location": selected})
+            reloaded = SettingsStore(path).all()["weather_location"]
+            self.assertEqual(selected, reloaded)
+            # Existing city selections still survive without an ISO code.
+            settings.update({"weather_location": CITY})
+            self.assertEqual(CITY, SettingsStore(path).all()["weather_location"])
+            for invalid in (None, "France", "12", "éé"):
+                settings.update({"weather_location": dict(CITY, country_code=invalid)})
+                self.assertNotIn("country_code", SettingsStore(path).all()["weather_location"])
+
+    def test_missing_probability_does_not_hide_hourly_weather(self):
+        for probability in ([None, None], None, "omitted"):
+            with self.subTest(probability=probability):
+                payload = {
+                    "current": {"weather_code": 3, "is_day": 1, "temperature_2m": 7,
+                                "time": "2026-10-19T11:45", "precipitation_probability": None},
+                    "hourly": {
+                        "time": ["2026-10-19T12:00", "2026-10-19T13:00"],
+                        "weather_code": [3, 2], "temperature_2m": [7.3, 9.0],
+                    },
+                }
+                if probability != "omitted":
+                    payload["hourly"]["precipitation_probability"] = probability
+                sample = fetch_current(CITY, lambda _url: payload)
+                self.assertEqual(7.3, sample["next_hour_temperature_c"])
+                self.assertEqual("cloud", sample["next_hour_condition"])
+                self.assertIsNone(sample["precipitation_probability"])
+                self.assertIsNone(sample["next_hour_precipitation_probability"])
+
+    def test_automatic_cache_rejects_previous_french_source_combinations(self):
+        with tempfile.TemporaryDirectory() as folder:
+            cache = Path(folder) / "weather.json"
+            provider = WeatherProvider(cache_path=cache, clock=lambda: 100, wall_clock=lambda: 1000)
+            key = f"{CITY['latitude']:.5f},{CITY['longitude']:.5f}"
+            other = dict(CITY, country="Belgium", country_code="BE")
+            for suffix in (":meteofrance_seamless", ":meteofrance_seamless:next-hour-auto-v1",
+                           ":meteofrance_seamless:next-hour-chance-auto-v1"):
+                cache.write_text(json.dumps({
+                    "schema": 1, "saved_at": 990,
+                    "location_key": key + suffix, "sample": SAMPLE,
+                }))
+                self.assertEqual((None, 0.0), provider._load_cached(CITY))
+                self.assertEqual((None, 0.0), provider._load_cached(other))
+            # Existing automatic caches remain valid regardless of country.
+            cache.write_text(json.dumps({
+                "schema": 1, "saved_at": 990, "location_key": key, "sample": SAMPLE,
+            }))
+            self.assertEqual(SAMPLE, provider._load_cached(CITY)[0])
+            self.assertEqual(SAMPLE, provider._load_cached(other)[0])
+            provider._persist_cached(CITY, SAMPLE)
+            self.assertEqual(key, json.loads(cache.read_text())["location_key"])
+            self.assertEqual(SAMPLE, provider._load_cached(dict(CITY, country_code="FR"))[0])
+
+    def test_faceplate_weather_cache_survives_restart_then_degrades_after_two_hours(self):
+        monotonic = [10_000.0]
+        wall = [1_000_000.0]
+        sample = {
+            **SAMPLE, "temperature_c": 11.5,
+            "sunrise_at": "2026-10-10T07:40",
+            "sunset_at": "2026-10-10T19:12",
+        }
+        with tempfile.TemporaryDirectory() as folder:
+            cache = Path(folder) / "weather-last-sample.json"
+            writer = WeatherProvider(
+                clock=lambda: monotonic[0], wall_clock=lambda: wall[0],
+                cache_path=cache,
+            )
+            writer._persist_cached(CITY, sample)
+            wall[0] += 90 * 60
+            reader = WeatherProvider(
+                clock=lambda: monotonic[0], wall_clock=lambda: wall[0],
+                cache_path=cache,
+            )
+            reader.configure(CITY, "home", faceplate_enabled=True)
+            cached = reader.status(dict(DEFAULTS, weather_location=CITY))
+            self.assertEqual("cached", cached["faceplate_weather_state"])
+            self.assertTrue(cached["faceplate_fallback_available"])
+            self.assertEqual(11.5, cached["cached_temperature_c"])
+            monotonic[0] += 31 * 60
+            expired = reader.status(dict(DEFAULTS, weather_location=CITY))
+            self.assertEqual("background-only", expired["faceplate_weather_state"])
+            self.assertTrue(expired["faceplate_background_only"])
 
     def test_service_exposes_local_solar_transition_and_night_mode_dims_safely(self):
         payload = {

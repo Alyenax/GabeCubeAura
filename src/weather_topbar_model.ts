@@ -1,4 +1,5 @@
 import type { Status, WeatherCondition, WeatherIconStyle } from "./types";
+import { translate } from "./i18n";
 
 const NAMES: Record<WeatherCondition, string> = {
   clear_day: "Clear sky", clear_night: "Clear night", cloud: "Cloudy", cloud_night: "Cloudy night",
@@ -21,7 +22,7 @@ export function weatherTopBarReading(status: Status): {
   const text = fahrenheit
     ? `${Math.round(temperature * 9 / 5 + 32)}°F`
     : `${Math.round(temperature)}°C`;
-  const title = `${NAMES[weather.condition]} · ${text} · ${status.weather_location.name}`;
+  const title = `${translate(NAMES[weather.condition], status.ui_language ?? "en")} · ${text} · ${status.weather_location.name}`;
   return {
     condition: weather.condition,
     icon_style: status.weather_icon_style ?? "phosphor-duotone",

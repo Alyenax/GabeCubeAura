@@ -1,6 +1,7 @@
 export interface SteamScreensaverService {
   GetActiveState(request?: Record<string, never>): unknown;
   ForceScreensaver?(request: unknown): unknown;
+  RegisterForNotifyActiveStateChanged?(callback: (state: unknown) => void): unknown;
   RegisterForActiveStateChanged?(callback: (state: unknown) => void): unknown;
   RegisterForActiveStateChange?(callback: (state: unknown) => void): unknown;
   RegisterForActiveStateChanges?(callback: (state: unknown) => void): unknown;
@@ -24,6 +25,7 @@ export function registerForScreensaverState(
   callback: (state: unknown) => void,
 ): SteamScreensaverRegistration {
   for (const name of [
+    "RegisterForNotifyActiveStateChanged",
     "RegisterForActiveStateChanged",
     "RegisterForActiveStateChange",
     "RegisterForActiveStateChanges",

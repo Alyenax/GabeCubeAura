@@ -740,6 +740,7 @@ class AudioSyncTests(unittest.TestCase):
     def test_engine_resolves_the_audio_pair_for_the_current_context(self):
         with tempfile.TemporaryDirectory() as directory:
             store = SettingsStore(str(Path(directory) / "settings.json"))
+            store.update({'faceplate_lab_enabled':False})
             store.update({
                 "home_display": "audio_sync",
                 "game_display": "audio_sync",

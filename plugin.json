@@ -1,11 +1,17 @@
 {
   "name": "GabeCubeAura",
   "author": "Alyenax",
-  "flags": ["root"],
+  "flags": [
+    "root"
+  ],
   "api_version": 1,
   "publish": {
-    "tags": ["system", "utility", "root"],
-    "description": "Real-time audio, screen colours, artwork, custom effects, weather and status lighting for the Steam Machine light bar.",
+    "tags": [
+      "system",
+      "utility",
+      "root"
+    ],
+    "description": "Steam Machine light bar, JSAUX PIXEL Faceplate and optional external integrations.",
     "image": "https://raw.githubusercontent.com/Alyenax/GabeCubeAura/main/docs/media/gabecubeaura-product-hero.png"
   }
 }

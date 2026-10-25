@@ -1,0 +1,8 @@
+{
+  "protocol": 1,
+  "legacy_voice": false,
+  "files": {
+    "main.py": "42b3d9e1c85f9a07f21bb88c19fbd29db44cb9b2952b137a5d98f6a80e29b754",
+    "py_modules/signalbar/backend/engine.py": "980eea9b37fa7b1a46d7ef0a8004d022832a1e5dcf3c424847221efe28ec7525"
+  }
+}

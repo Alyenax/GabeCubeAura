@@ -1,0 +1,27 @@
+{
+  "fr": {
+    "fr-volume_up.wav": "6eb7446b374e285c00396083f0ea1191ca050028947da7452c5290d86d4aac2e",
+    "fr-volume_down.wav": "9ab5b09cf6c4c383a0d034302dadba984e210a60a2823ce85b490d56fc8a8bb2",
+    "fr-not_current.wav": "2b5bb9bf516fe4ba10f774824bdd96d90c073d4be77aba75401b957311d1ee38",
+    "fr-confirm_close.wav": "d3686cd1ef9a57f22ee8ba5637e85f964416697c4bffd218454ca4aab14d4d72",
+    "fr-confirm_sleep.wav": "261cd3fd1b3942615324a92715817d7f0b36eaee17842b04e675e8cd10f50bc2",
+    "fr-confirm_shutdown.wav": "3d4a10adbe5500da875c0cbd641246b68ca4c460ea954437dd4f9521d04b4959",
+    "fr-accepted_close.wav": "ffcdbb3a92e76be578843f9f1459ce958aa9a87c810465ac82c663bacf0d1b57",
+    "fr-accepted_sleep.wav": "72a8771e0958bfb9dbc0e5ecb645133d3b06fb6530909bfdcd9c8e431a7a8635",
+    "fr-accepted_shutdown.wav": "f8573803358812b73e2fdd5a0130ddb1692438205fcc8d733f80990224b79e74",
+    "fr-launch_help.wav": "6e488446dd0a054ce07ebc7ee2ff313559b049b9417091a445b36db8ffbb7de7",
+    "fr-greeting.wav": "bfa8cd069c18e7414409df605d340fccd062373cccdd0a8a4c0803fe708f157b",
+    "fr-launch.wav": "c6c4bf0d23958ad8ffa730c8b19d227d314c617c3865c5e494e6f8d4b41d7e69",
+    "fr-enjoy.wav": "0e28953c3a2966a3aeb5783ba5743fdb386463f860cd30d020af12ee3812d36d",
+    "fr-not_found.wav": "ddbc086d9b55d86f25386ced10a4916ecfd3f4f33a39237d00dd72d3fc650860",
+    "fr-choose.wav": "834a2b5a3b422d9155dd9522e4048d331dd42cc9c675e00d140e31562406a501",
+    "fr-no_change.wav": "23cc1864357d74d7f69978875e5b945b4d7083b13db35bb2024c6fb2eecf22c8",
+    "fr-already.wav": "e0e46e8f98f5ba5c2e0d117294ce8f331149ccb6eed99677e56f9075eb991787",
+    "fr-other_game.wav": "7d44dd41c7c216ab60c8d9eccd83825526a4f65033b348ade6110db8ea037d57",
+    "fr-unconfirmed.wav": "28e97f0b541f7cbaf9791e8f81949e370f7760a91905f150f7f9af013f9ad7fe",
+    "fr-retry_title.wav": "8ea9b494f4b2a95d35e7be6344f76570612de6754243b4daad41349f74aa36d9",
+    "fr-error.wav": "6a692cfa8ef3c3a4366c8a26f7889ade590bb2df9b14d464bdcfcd68bdfc8a73",
+    "fr-library_empty.wav": "f8a0f8e9d1296a1fb65df7b155a1ba1813815b09e1160e882bd499864ebb3091"
+  },
+  "approved_en_greeting_sha256": "eb8f7fa9f8cbedb7387298383b059f79c1ed7d7896c90dd39a9d46c29aaf4683"
+}

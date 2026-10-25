@@ -1,75 +1,143 @@
+import {ArtworkLogoScale} from './components/ArtworkLogoScale';
+import {faceplateBrightnessNotice} from './faceplate_power';
 import {
-  ButtonItem,
-  ConfirmModal,
-  DropdownItem,
-  Focusable,
-  PanelSection,
-  PanelSectionRow,
+  DialogBody,
+  DialogHeader,
+  DialogControlsSection,
+  getFocusNavController,
+  getGamepadNavigationTrees,
+  NavEntryPositionPreferences,
   Navigation,
-  SidebarNavigation,
-  ScrollPanel,
-  SliderField,
-  TextField,
   showModal,
-  ToggleField,
   staticClasses,
+  useParams,
+  useQuickAccessVisible,
 } from "@decky/ui";
+import { ButtonItem, ConfirmModal, DialogButton, DropdownItem, Focusable, PanelSection,
+  PanelSectionRow, ScrollPanel, SliderField, TextField, ToggleField, Localized } from "./localized_ui";
+import { setUILanguage, translate } from "./i18n";
+import { ScreensaverLightBarChoice } from './components/ScreensaverLightBarChoice';
+import {FaceplateSetupNotice} from './components/FaceplateSetupNotice';
+import { FirstRunOnboarding } from "./components/FirstRunOnboarding";
+import { trailingSetting } from "./trailingSetting";
+import {FaceplateDiagnostics} from './components/FaceplateDiagnostics';
+import { FlashProtectionPanel } from "./components/FlashProtectionPanel";
+import { Disclosure } from "./components/Disclosure";
+import { QuickAction, QUICK_CONTROL_CSS } from "./components/QuickAction";
+import { CompactQuickPanel } from './components/CompactQuickPanel';
+import {playerCitySummary} from './player_city';
+import {PlayerCityRowSettings} from './components/PlayerCityRowSettings';
+import {CreationBackupSettings} from './components/CreationBackupSettings';
+import {ConfigurationExportSettings} from './components/ConfigurationExportSettings';
+import {gameDisplayOptions} from './game_display_options';
+import {FACEPLATE_HOME_OPTIONS,FACEPLATE_GAME_OPTIONS,homeFaceChoice,isDashboardChoice} from './faceplate_choices';
+import { UpdateAvailableButton } from './components/UpdateAvailableButton';
+import { statusRefreshGate } from './status_refresh_gate';
+import {publishQuickSetupStatus,quickSetupCompleted,subscribeQuickSetup} from './quick_setup_access';
+import {QUICK_AMBIENCES,LEGACY_AMBIENCES,presetSummary} from './lighting_presets';
+import {EFFECTS_HELP,initialSettingsEffect} from './settings_navigation';
+import {SimpleSettings} from './components/SimpleSettings';
+import {FaceplateDashboardSettings} from './components/FaceplateDashboardSettings';
+import {SettingsDetails} from './components/SettingsDetails';
+import {SettingsPart,SettingsHelpText,useSettingsPresentation} from './settings_presentation';
+import {SETTINGS_ALIASES,SETTINGS_ROUTE_PATTERN,settingsSources,type SettingsSelection,type SettingsSourcePage} from './settings_structure';
+import { OpaqueColorPickerModal, ColorChoice, PreciseColorEditor } from "./components/PreciseColorEditor";
+import { AmbienceProfilesPanel } from "./components/AmbienceProfilesPanel";
 import { definePlugin, openFilePicker, routerHook } from "@decky/api";
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { TbCubeSpark } from "react-icons/tb";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { TbCubeSpark, TbSettings } from "react-icons/tb";
 
 import {
-  exportConfiguration,
-  exportUpdateTestReport,
+  exportDiagnosticReport,
+  enableCaptureDiagnostic,
   checkForUpdates,
+  clearSteamGridDBApiKey,
+  cancelFaceplateArtwork,
+  activateFaceplateArtwork,
+  assignFaceplateDashboardArtwork, commitFaceplateDashboardArtwork,
+  deleteFaceplateArtwork,
   dismissUpdateError,
-  disconnectPrivateUpdateAuthorization,
   importConfiguration,
   getArtwork,
+  setSteamControl,
+  getDiagnosticStatus,
+  getFaceplateArtworkJob,
+  getFaceplateArtworkLibrary,
+  getFaceplateDeliveryStatus,
+  getFaceplateArtworkDashboardPreview,
+  getFaceplateArtworkPreview,
+  getPreparedFaceplateArtworkPreview,
+  getFaceplateInstalledGames,
+  getFaceplateDashboardPreview,
+  getFaceplateWeatherPreview,
   getStatus,
   getUpdateStatus,
   installPreparedUpdate,
   previewCountdown,
   previewCustomization,
-  previewDisplayPreset,
   previewLaunchArtwork,
   previewAudioSync,
   previewScreenSync,
   previewController,
   previewWeather,
+  prepareFaceplateArtwork,
   prepareUpdate,
-  pollPrivateUpdateAuthorization,
-  resetConfiguration,
-  runUpdateLabScenario,
+  cancelUpdatePreparation,
+  preparePreviousVersion,
+  reportRuntimeDiagnostic,
+  resetSettingsOnly,
+  factoryResetConfiguration,
   searchWeatherCities,
+  searchFaceplateArtwork,
   setArtworkSetting,
   setLaunchArtworkSetting,
   setLightBarBrightness,
+  setFaceplatePower,
+  setFaceplateRouting,
+  setSteamGridDBApiKey,
+  validateSteamGridDBApiKey,
   setGameDisplay,
   setSetting,
   setUpdatePreferences,
-  startPrivateUpdateAuthorization,
   startFreeTimer,
   stopFreeTimer,
   submitArtwork,
   triggerEvent,
 } from "./api";
 import { sampleArtwork } from "./artwork";
+import {
+  artworkNeedsIdleGame,
+  LIGHT_BAR_ARTWORK_ROUTE,
+  artworkPreviewMedia,
+  artworkResultLabel,
+  takeArtworkNativeFocus,
+  type ArtworkNativeNavigationTree,
+} from "./faceplate_artwork_gallery";
 import { PalettePreview } from "./components/PalettePreview";
-import { CUSTOMIZATION_PATTERN_OPTIONS, LAUNCH_ARTWORK_PATTERN_OPTIONS, customizationPatternLabel } from "./customization_catalog";
+import {LedPreviewActivity} from "./components/LiveLedPreview";
+import { ArtworkCropPreview } from "./components/ArtworkCropPreview";
+import { faceplateUXState, installedGameChoices } from "./faceplate_ux";
+import { CUSTOMIZATION_PATTERN_OPTIONS, LAUNCH_ARTWORK_PATTERN_OPTIONS } from "./customization_catalog";
 import { CONTROLLER_VARIANTS } from "./controller_variants";
 import { EVENT_VARIANTS } from "./event_variants";
-import { hslStringToRgb, performancePreview, rgbToHsl } from "./performance";
+import { performancePreview } from "./performance";
 import { startGabeCubeAuraRuntime } from "./runtime";
+import { startTimerActions } from "./timer_actions";
 import { startUpdateNotifications } from "./update_notifications";
 import { buildSettingsSnapshot } from "./settings_snapshot";
-import { WEATHER_CONDITIONS, WEATHER_VARIANTS } from "./weather_variants";
+import { WEATHER_CONDITIONS, WEATHER_CONFIGURATION_CONDITIONS, WEATHER_CONFIGURATION_VARIANTS, weatherConfigurationCondition, weatherVariantKey } from "./weather_variants";
 import { WEATHER_ICON_STYLE_OPTIONS, weatherIconSvg } from "./weather_icon_sets";
 import { startWeatherTopBar } from "./weather_topbar";
-import type { ArtworkPayload, ArtworkSource, CompanionPriority, DisplayPreset, GameDisplay, HomeDisplay, RGB, Status, UpdateLabResult, UpdateStatus, WeatherCondition, WeatherIconStyle, WeatherLocation } from "./types";
+import { weatherPreviewMeta } from "./faceplate_visual_themes";
+import type { ArtworkPayload, ArtworkSource, DiagnosticStatus, FaceplateDashboardVisualTheme, FaceplateWeatherVisualTheme, GameDisplay, HomeDisplay, RGB, Status, UpdateStatus, WeatherCondition, WeatherConfigurationCondition, WeatherPreviewCondition, WeatherIconStyle, WeatherLocation } from "./types";
+import type { FaceplateArtworkAsset, FaceplateArtworkLibraryEntry, FaceplateArtworkManifest, FaceplateArtworkState, FaceplateInstalledGame, FaceplateWeatherPreview } from "./api";
+
+declare const SteamClient: any;
+// Independent of the historical renderer/layout preference, kept for compatibility.
+const STUDIO_UX = true;
 
 const HOME_DISPLAY_OPTIONS: { data: HomeDisplay; label: string }[] = [
-  { data: "steam", label: "GabeCubeAura Off" },
+  { data: "faceplate_extension", label: "Faceplate image extension" },
   { data: "blackout", label: "Blackout (held off)" },
   { data: "customization", label: "Customization+" },
   { data: "performance", label: "Performance" },
@@ -78,29 +146,23 @@ const HOME_DISPLAY_OPTIONS: { data: HomeDisplay; label: string }[] = [
   { data: "controller", label: "Controller status" },
 ];
 
-const GAME_DISPLAY_OPTIONS: { data: GameDisplay; label: string }[] = [
-  { data: "steam", label: "GabeCubeAura Off" },
-  { data: "blackout", label: "Blackout (held off)" },
-  { data: "customization", label: "Customization+" },
-  { data: "artwork", label: "Artwork" },
-  { data: "performance", label: "Performance" },
-  { data: "screen_sync", label: "Screen Sync" },
-  { data: "audio_sync", label: "Audio Sync" },
-  { data: "weather", label: "Weather" },
-  { data: "controller", label: "Controller status" },
+const FACEPLATE_DASHBOARD_SOURCE_OPTIONS = [
+  { data: "weather", label: "Weather Dashboard · Realistic" },
+  { data: "artwork", label: "Artwork Dashboard · saved game artwork" },
 ];
+
+const GAME_DISPLAY_OPTIONS = gameDisplayOptions(true);
+
+const legacyGameDisplayLabel = (display: string, value: ReactNode) => display === 'steam'
+  ? translate('Steam control') : display === 'blackout' ? translate('Blackout') : value;
 
 const DISPLAY_PRESET_OPTIONS = [
-  { data: "lights-out", label: "Lights out" },
-  { data: "essential", label: "Essential" },
-  { data: "focus", label: "Focus" },
-  { data: "moderate", label: "Moderate" },
-  { data: "atmosphere", label: "Atmosphere" },
-  { data: "signals", label: "Signals" },
-  { data: "immersive", label: "Immersive" },
-  { data: "immersive-plus", label: "Immersive+" },
-  { data: "festive", label: "Festive" },
-  { data: "custom", label: "Custom" },
+  ...QUICK_AMBIENCES,...LEGACY_AMBIENCES,
+];
+
+const FACEPLATE_POWER_OPTIONS = [
+  { data: "auto", label: "Auto · off during sleep and shutdown" },
+  { data: "manual", label: "Manual · use the power button" },
 ];
 
 const DISPLAY_PRESET_DESCRIPTIONS: Record<string, string> = {
@@ -129,7 +191,6 @@ const VALVE_OWNERSHIP_DESCRIPTIONS: Record<string, string> = {
 };
 
 const UPDATE_INTERVAL_OPTIONS = [
-  { data: 15, label: "15 minutes" },
   { data: 60, label: "1 hour" },
   { data: 180, label: "3 hours" },
   { data: 360, label: "6 hours" },
@@ -142,6 +203,38 @@ const UPDATE_CHANNEL_OPTIONS = [
   { data: "beta", label: "Beta" },
   { data: "private", label: "Private Lab" },
 ];
+
+const STEAMGRIDDB_API_KEY_URL = "https://www.steamgriddb.com/profile/preferences/api";
+// SteamGridDB's own Login control opens this Steam OpenID request in a popup.
+// Steam's embedded browser can suppress that popup, so offer the same standard
+// OpenID flow as an ordinary navigation instead.
+const STEAMGRIDDB_DIRECT_LOGIN_URL = "https://steamcommunity.com/openid/login?openid.identity=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&openid.claimed_id=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&openid.ns=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0&openid.mode=checkid_setup&openid.realm=https%3A%2F%2Fwww.steamgriddb.com&openid.return_to=https%3A%2F%2Fwww.steamgriddb.com%2Flogin%2Fsteam&mobileminimal=1";
+
+const steamGridDBValidationLabel = (state: Status["faceplate"]["steamgriddb"]["validation_state"]) => ({
+  absent: "Key missing",
+  detected_unverified: "Key detected locally · not verified",
+  validated: "Key validated by SteamGridDB",
+  rejected: "Key rejected by SteamGridDB",
+  offline: "Validation unavailable · offline",
+}[state]);
+
+const openSystemBrowser = (url: string) => {
+  try {
+    const open = SteamClient?.System?.OpenInSystemBrowser;
+    if (typeof open === "function") {
+      open.call(SteamClient.System, url);
+      return true;
+    }
+  } catch (error) {
+    console.warn("[GabeCubeAura] system browser unavailable", error);
+  }
+  return false;
+};
+
+const openCopyCapableBrowser = (url: string) => {
+  if (openSystemBrowser(url)) return;
+  Navigation.NavigateToExternalWeb(url);
+};
 
 const displayLabel = (display: HomeDisplay | GameDisplay) => (
   [...HOME_DISPLAY_OPTIONS, ...GAME_DISPLAY_OPTIONS].find((item) => item.data === display)?.label ?? display
@@ -304,10 +397,6 @@ const WEATHER_TEMPERATURE_UNITS = [
   { data: "celsius", label: "Celsius (°C)" },
   { data: "fahrenheit", label: "Fahrenheit (°F)" },
 ];
-const COMPANION_PRIORITY_OPTIONS = [
-  { data: "stripmine", label: "StripMine while the game is active" },
-  { data: "signalbar", label: "GabeCubeAura" },
-];
 const CONTROLLER_ALERT_OPTIONS = [
   { data: "off", label: "Off" },
   { data: "home", label: "On Home" },
@@ -368,7 +457,8 @@ function updatePhaseLabel(update: UpdateStatus): string {
     case "available": return `Version ${update.available_version} is available.`;
     case "downloading": return `Downloading ${update.available_version}...`;
     case "verifying": return "Checking the downloaded package...";
-    case "ready": return `Ready to install ${update.available_version}.`;
+    case "ready": return `Ready to ${update.recovery_prepared ? "restore" : "install"} ${update.available_version}.`;
+    case "preparing_install": return "Backing up settings and artwork before installation…";
     case "installing":
     case "restart_pending": return "Restarting Decky to finish the update...";
     case "updated": return `Updated successfully to ${update.installed_version}.`;
@@ -393,7 +483,7 @@ function ArtworkImage({ artwork, title, compact = false, sampleLine }: {
   sampleLine?: number;
 }) {
   if (!artwork.data_uri) return null;
-  return <div style={{ width: "100%", display: "flex", justifyContent: "center" }}>
+  return <Localized><div style={{ width: "100%", display: "flex", justifyContent: "center" }}>
     <div style={{ position: "relative", display: "inline-flex", maxWidth: "100%" }}>
       <img
         src={artwork.data_uri}
@@ -415,11 +505,11 @@ function ArtworkImage({ artwork, title, compact = false, sampleLine }: {
         }}
       />}
     </div>
-  </div>;
+  </div></Localized>;
 }
 
 function PerformanceReadout({ status }: { status: Status }) {
-  return <div style={{ width: "100%", fontSize: ".84em" }}>
+  return <Localized><div style={{ width: "100%", fontSize: ".84em" }}>
     CPU {status.performance.cpu_load == null ? "Unavailable" : `${Math.round(status.performance.cpu_load)}%`}
     {" · "}{status.performance.cpu_temperature == null ? "Unavailable" : `${Math.round(status.performance.cpu_temperature)}°C`}
     <br />
@@ -430,95 +520,18 @@ function PerformanceReadout({ status }: { status: Status }) {
         : status.performance.sample_age_s == null ? "Waiting for a fresh sensor reading…"
         : `Live sensors · updated ${formatAge(status.performance.sample_age_s)}`}
     </div>
-  </div>;
+  </div></Localized>;
 }
 
-function OpaqueColorPickerModal({ title, color, closeModal, onConfirm }: {
-  title: string;
-  color: RGB;
-  closeModal: () => void;
-  onConfirm: (color: RGB) => void;
-}) {
-  const [initialHue, initialSaturation, initialLightness] = rgbToHsl(color);
-  const [hue, setHue] = useState(initialHue);
-  const [saturation, setSaturation] = useState(initialSaturation);
-  const [lightness, setLightness] = useState(initialLightness);
-  const selected = hslStringToRgb(`hsl(${hue}, ${saturation}%, ${lightness}%)`) ?? color;
-  const canonicalHex = `#${selected.map((channel) => channel.toString(16).padStart(2, "0")).join("").toUpperCase()}`;
-  const [hexText, setHexText] = useState(canonicalHex);
-  useEffect(() => setHexText(canonicalHex), [canonicalHex]);
-  return <ConfirmModal strTitle={title} strOKButtonText="Use colour" strCancelButtonText="Cancel"
-    onCancel={closeModal} onOK={() => { onConfirm(selected); closeModal(); }}>
-    <div style={{ width: "100%" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
-        <span style={{ width: 38, height: 38, borderRadius: 5,
-          background: `rgb(${selected.join(", ")})`, boxShadow: "0 0 0 1px rgba(255,255,255,.45)" }} />
-        <span style={{ opacity: .78, fontSize: ".8em" }}>Opaque RGB colour · no alpha channel on the LED hardware.</span>
-      </div>
-      <TextField label="Hex" value={hexText} description="Exact #RRGGBB colour"
-        onChange={(event) => {
-          const next = event.currentTarget.value.toUpperCase();
-          setHexText(next);
-          const match = /^#?([0-9A-F]{6})$/.exec(next);
-          if (!match) return;
-          const rgb: RGB = [
-            parseInt(match[1].slice(0, 2), 16),
-            parseInt(match[1].slice(2, 4), 16),
-            parseInt(match[1].slice(4, 6), 16),
-          ];
-          const [nextHue, nextSaturation, nextLightness] = rgbToHsl(rgb);
-          setHue(nextHue);
-          setSaturation(nextSaturation);
-          setLightness(nextLightness);
-        }} />
-      <SliderField label="Hue" value={hue} min={0} max={360} step={1} showValue
-        onChange={setHue} />
-      <SliderField label="Saturation" value={saturation} min={0} max={100} step={1} showValue valueSuffix="%"
-        onChange={setSaturation} />
-      <SliderField label="Lightness" value={lightness} min={0} max={100} step={1} showValue valueSuffix="%"
-        onChange={setLightness} />
-    </div>
-  </ConfirmModal>;
-}
+
 
 function chooseSettingColor(key: string, label: string, color: [number, number, number], setStatus: (value: Status) => void) {
   let modal: ReturnType<typeof showModal> | undefined;
   modal = showModal(<OpaqueColorPickerModal title={label} color={color}
     closeModal={() => modal?.Close()}
-    onConfirm={(nextColor) => void setSetting(key, nextColor).then(setStatus).catch(console.warn)} />);
+    onConfirm={(nextColor) => void setSetting(key, nextColor).then(setStatus).catch(actionFailed)} />);
 }
 
-function ColorChoice({ label, color, onClick }: {
-  label: string;
-  color: [number, number, number];
-  onClick: () => void;
-}) {
-  const cssColor = `rgb(${color.join(", ")})`;
-  const hexColor = `#${color.map((channel) => channel.toString(16).padStart(2, "0")).join("").toUpperCase()}`;
-  return <ButtonItem label={label} description={hexColor} onClick={onClick}>
-    <span style={{
-      display: "inline-block",
-      width: 28,
-      height: 28,
-      borderRadius: 5,
-      background: cssColor,
-      boxShadow: "0 0 0 1px rgba(255,255,255,.45)",
-    }} />
-  </ButtonItem>;
-}
-
-function PreciseColorEditor({ label, color, onChange }: {
-  label: string;
-  color: RGB;
-  onChange: (color: RGB) => void;
-}) {
-  const choose = () => {
-    let modal: ReturnType<typeof showModal> | undefined;
-    modal = showModal(<OpaqueColorPickerModal title={label} color={color}
-      closeModal={() => modal?.Close()} onConfirm={onChange} />);
-  };
-  return <ColorChoice label={label} color={color} onClick={choose} />;
-}
 
 function addRecordingMarker(status: Status, colors: Status["events"]["colors"] | undefined) {
   if (!status.events.recording || !colors || colors.length !== 17) return colors ?? [];
@@ -535,10 +548,10 @@ function EventPreviewStrip({ status, kinds }: { status: Status; kinds: string[] 
   const visible = status.events.active && kinds.includes(status.events.kind);
   const recordingPreview = kinds.includes("record-start") && status.events.recording;
   const recordingFrame = addRecordingMarker(status, Array.from({ length: 17 }, () => [0, 0, 0]));
-  return <div style={{ width: "100%", fontSize: ".78em", opacity: .84 }}>
+  return <Localized><div style={{ width: "100%", fontSize: ".78em", opacity: .84 }}>
     <div>{visible ? `Playing: ${status.events.variant}` : recordingPreview ? "Recording marker active" : "Preview appears here"}</div>
-    <PalettePreview colors={visible ? status.events.colors : recordingPreview ? recordingFrame : []} />
-  </div>;
+    <PalettePreview source={visible ? "events" : undefined} colors={visible ? status.events.colors : recordingPreview ? recordingFrame : []} />
+  </div></Localized>;
 }
 
 function CountdownPanel({
@@ -548,6 +561,30 @@ function CountdownPanel({
   status: Status;
   setStatus: (next: Status) => void;
 }) {
+  const starting = useRef(false);
+  const [timerError,setTimerError] = useState('');
+  const startTimer = () => {
+    if(starting.current)return;
+    starting.current=true;
+    const action=status.free_timer_end_action??'none',minutes=status.free_timer_minutes;
+    const run=async()=>{
+      try{setTimerError('');setStatus(await startFreeTimer(minutes,action));}
+      catch{setTimerError('The timer could not be started. Try again.');}
+      finally{starting.current=false;}
+    };
+    if(action==='none'){void run();return;}
+    let modal:ReturnType<typeof showModal>|undefined,settled=false;
+    try{modal=showModal(<ConfirmModal
+      strTitle={action==='shutdown'?'Start timer with console shutdown?':'Start timer with console sleep?'}
+      strOKButtonText="Start timer" strCancelButtonText="Cancel"
+      onOK={()=>{if(settled)return;settled=true;modal?.Close();void run();}}
+      onCancel={()=>{if(settled)return;settled=true;starting.current=false;modal?.Close();}}>
+      <div>{minutes} min</div>
+      <div>{action==='shutdown'
+        ?'The console will shut down when this personal timer ends. Save your game before the deadline.'
+        :'The console will sleep when this personal timer ends. Save your game before the deadline.'}</div>
+    </ConfirmModal>);}catch{starting.current=false;setTimerError('The timer could not be started. Try again.');}
+  };
   return (
     <>
       {status.countdown.active ? <PanelSection title="Active countdown">
@@ -558,12 +595,20 @@ function CountdownPanel({
             {status.countdown.alerting ? " · triple white alert" : status.countdown_full_bar_minutes > 0
               ? ` · full bar = ${status.countdown_full_bar_minutes / 60}h`
               : " · starts full"}
-            <PalettePreview colors={status.countdown.colors} />
+            <PalettePreview source="countdown" colors={status.countdown.colors} />
             <div style={{ opacity: .7 }}>Live 17-LED countdown preview</div>
           </div>
         </PanelSectionRow>
       </PanelSection> : null}
       <PanelSection title="Playtime countdown">
+      <PanelSectionRow>
+        <ToggleField
+          label="Remaining time on Faceplate"
+          description="Shows the remaining time on Weather and Dashboard, or beside Players City counts. Red from five minutes; TIME'S UP appears at expiry, then the saved row returns."
+          checked={status.faceplate_playtime_enabled}
+          onChange={async (value) => setStatus(await setSetting("faceplate_playtime_enabled", value))}
+        />
+      </PanelSectionRow>
       <PanelSectionRow>
         <ToggleField
           label="Steam Families limit"
@@ -594,19 +639,37 @@ function CountdownPanel({
           label="Free timer"
           description="Duration used the next time you start the personal countdown."
           value={status.free_timer_minutes}
-          min={5}
+          min={1}
           max={240}
-          step={5}
+          step={1}
           showValue
           valueSuffix=" min"
           onChange={async (value) => setStatus(await setSetting("free_timer_minutes", value))}
         />
       </PanelSectionRow>
+      <PanelSectionRow><DropdownItem label="When the next personal timer ends"
+        description="Applies when you start or restart the personal timer."
+        rgOptions={[{data:'none',label:'Do nothing'},{data:'sleep',label:'Put console to sleep'},{data:'shutdown',label:'Shut down console'}]}
+        selectedOption={status.free_timer_end_action??'none'}
+        onChange={async option=>setStatus(await setSetting('free_timer_end_action',String(option.data)))}/></PanelSectionRow>
+      {['armed','ready','executing'].includes(status.timer_end_action?.phase) ? <PanelSectionRow><Localized><div>
+        At the end of this timer: {status.timer_end_action.action==='shutdown'?'Shut down console':'Put console to sleep'}
+      </div></Localized></PanelSectionRow>:null}
+      {status.timer_end_action?.phase==='failed'?<PanelSectionRow><Localized><div>
+        The timer ended, but Steam did not confirm the power action. No automatic retry.
+      </div></Localized></PanelSectionRow>:null}
+      {status.timer_end_action?.phase==='skipped'?<PanelSectionRow><Localized><div>
+        The timer expired too long ago. No delayed power action.
+      </div></Localized></PanelSectionRow>:null}
+      {status.timer_end_action?.phase==='cancelled'&&['system-suspended','system-resumed','system-unavailable'].includes(status.timer_end_action.reason)?<PanelSectionRow><Localized><div>
+        Automatic power action cancelled after sleep. Restart the timer to enable it again.
+      </div></Localized></PanelSectionRow>:null}
+      {timerError?<PanelSectionRow><Localized><div>{timerError}</div></Localized></PanelSectionRow>:null}
       <PanelSectionRow>
         <ButtonItem
           label="Personal limit"
           description="The timer keeps running when this Decky panel is closed."
-          onClick={() => void startFreeTimer(status.free_timer_minutes).then(setStatus).catch(console.warn)}
+          onClick={startTimer}
         >
           Start / restart
         </ButtonItem>
@@ -614,7 +677,7 @@ function CountdownPanel({
       <PanelSectionRow>
         <ButtonItem
           label="Stop personal limit"
-          onClick={() => void stopFreeTimer().then(setStatus).catch(console.warn)}
+          onClick={() => void stopFreeTimer().then(setStatus).catch(actionFailed)}
         >
           Stop
         </ButtonItem>
@@ -631,7 +694,7 @@ function CountdownPanel({
         <ButtonItem
           label="Test countdown and final alert"
           description="Runs a 15-second countdown whose final 8 seconds demonstrate the white alert without cancelling a real timer."
-          onClick={() => void previewCountdown().then(setStatus).catch(console.warn)}
+          onClick={() => void previewCountdown().then(setStatus).catch(actionFailed)}
         >
           Preview
         </ButtonItem>
@@ -641,7 +704,7 @@ function CountdownPanel({
   );
 }
 
-function EventsPanel({ status, setStatus }: { status: Status; setStatus: (next: Status) => void }) {
+function EventsPanel({ status, setStatus, kind: selectedKind }: { status: Status; setStatus: (next: Status) => void; kind?:string }) {
   const preview = async (kind: string, variant = "") => {
     await triggerEvent(kind, true, variant);
     setStatus(await getStatus());
@@ -670,7 +733,7 @@ function EventsPanel({ status, setStatus }: { status: Status; setStatus: (next: 
           </div>
         </PanelSectionRow>
       </PanelSection>
-      {categories.map(([kind, label, enabledKey, variantKey]) => {
+      {categories.filter(([kind])=>!selectedKind||kind===selectedKind).map(([kind, label, enabledKey, variantKey]) => {
         const options = EVENT_VARIANTS[kind];
         const selected = status[variantKey];
         const detail = options.find((option) => option.data === selected)?.detail ?? "";
@@ -693,12 +756,12 @@ function EventsPanel({ status, setStatus }: { status: Status; setStatus: (next: 
             <PanelSectionRow>
               <ButtonItem label={`Preview ${label.toLowerCase()}`}
                 description="Works with live events off, but not with Display disabled or in the final five countdown minutes."
-                onClick={() => void preview(kind, selected).catch(console.warn)}>Play selected</ButtonItem>
+                onClick={() => void preview(kind, selected).catch(actionFailed)}>Play selected</ButtonItem>
             </PanelSectionRow>
           </PanelSection>
         );
       })}
-      <PanelSection title="Recording">
+      {!selectedKind||selectedKind==='recording'?<PanelSection title="Recording">
         <PanelSectionRow>
           <ToggleField label="Recording · red start/stop" description="The centre LED stays red over Artwork or Performance while recording. Countdowns retain all 17 LEDs."
             checked={status.event_recording_enabled}
@@ -720,15 +783,17 @@ function EventsPanel({ status, setStatus }: { status: Status; setStatus: (next: 
         ["record-start", "Recording starts"], ["record-stop", "Recording ends"],
       ] as const).map(([kind, label]) => (
         <PanelSectionRow key={kind}>
-          <ButtonItem label={`Preview ${label}`} onClick={() => void preview(kind).catch(console.warn)}>Play</ButtonItem>
+          <ButtonItem label={`Preview ${label}`} onClick={() => void preview(kind).catch(actionFailed)}>Play</ButtonItem>
         </PanelSectionRow>
       ))}
-      </PanelSection>
+      </PanelSection>:null}
     </>
   );
 }
 
 function ControllersPanel({ status, setStatus }: { status: Status; setStatus: (next: Status) => void }) {
+  const compact=useSettingsPresentation();
+  const [kindFilter,setKindFilter]=useState('connect');
   const [previewMessage, setPreviewMessage] = useState("");
   const [previewCount, setPreviewCount] = useState(Math.max(1, Math.min(4, status.controllers.controllers.length || 2)));
   const [previewTarget, setPreviewTarget] = useState(0);
@@ -778,9 +843,9 @@ function ControllersPanel({ status, setStatus }: { status: Status; setStatus: (n
         {telemetry?.error ? <div style={{ color: "#ffca86", marginTop: 6 }}>{telemetry.error}</div> : null}
         {previewMessage ? <div style={{ marginTop: 6 }}>{previewMessage}</div> : null}
       </div></PanelSectionRow>
-      <PanelSectionRow><div style={{ fontSize: ".78em", opacity: .75 }}>
+      <SettingsHelpText><PanelSectionRow><div style={{ fontSize: ".78em", opacity: .75 }}>
         Select <b>Controller status</b> for Home or In game on the Display routing page to use the permanent gauge. Brief alerts remain independent.
-      </div></PanelSectionRow>
+      </div></PanelSectionRow></SettingsHelpText>
       <PanelSectionRow><ToggleField label="Brief controller alerts"
         description="Master switch for connection, low-battery and brief charging signals. It does not turn off the permanent gauge or continuous charging."
         checked={status.controller_alerts_enabled}
@@ -809,14 +874,14 @@ function ControllersPanel({ status, setStatus }: { status: Status; setStatus: (n
           : status.controllers.charging_active ? "Charging animation active" : "No controller animation active"}
         <div>Battery and charging readings depend on what Steam exposes for this controller and connection. Unknown is not treated as empty. An already-connected controller does not replay the connection signal at startup. Disabled mode and Steam LED ownership can prevent output.</div>
       </div></PanelSectionRow>
-      <PanelSectionRow><div style={{ fontSize: ".78em", opacity: .75 }}>
+      <SettingsHelpText><PanelSectionRow><div style={{ fontSize: ".78em", opacity: .75 }}>
         Each detected controller keeps a fixed seat. Two and four controllers use mirrored seats. Three controllers use three left-to-right zones. Separators remain dark and fixed white endpoints appear after the introduction.
-      </div></PanelSectionRow>
+      </div></PanelSectionRow></SettingsHelpText>
     </PanelSection>
-    <PanelSection title="Controller colours">
-      <PanelSectionRow><div style={{ fontSize: ".8em", opacity: .8 }}>
+    <SettingsDetails title="Controller colours and brightness"><PanelSection title="Controller colours">
+      <SettingsHelpText><PanelSectionRow><div style={{ fontSize: ".8em", opacity: .8 }}>
         Automatic uses battery status colours with one controller, then fixed P1 to P4 colours from two controllers. Battery level still controls the length of every gauge. Low-battery and charging signals keep their warning colours, and white highlights stay white.
-      </div></PanelSectionRow>
+      </div></PanelSectionRow></SettingsHelpText>
       <PanelSectionRow><DropdownItem label="Colour preset"
         description="Automatic follows the connected controller count. Manual keeps one colour meaning at every count."
         rgOptions={CONTROLLER_COLOUR_PRESET_OPTIONS}
@@ -855,8 +920,8 @@ function ControllersPanel({ status, setStatus }: { status: Status; setStatus: (n
         <ColorChoice label="Connection / charging colour" color={status.controller_colour_charging}
           onClick={() => chooseSettingColor("controller_colour_charging", "Connection / charging colour", status.controller_colour_charging, setStatus)} />
       </PanelSectionRow>
-    </PanelSection>
-    <PanelSection title="Preview setup">
+    </PanelSection></SettingsDetails>
+    <SettingsDetails title="Choose preview controllers"><PanelSection title="Preview setup">
       <PanelSectionRow><DropdownItem label="Controllers in preview"
         description="Uses sample levels only. It does not change the detected controller roster."
         rgOptions={CONTROLLER_PREVIEW_COUNT_OPTIONS} selectedOption={previewCount}
@@ -870,15 +935,17 @@ function ControllersPanel({ status, setStatus }: { status: Status; setStatus: (n
         rgOptions={CONTROLLER_PREVIEW_COUNT_OPTIONS.slice(0, previewCount).map((_, index) => ({ data: index, label: `Controller ${index + 1}` }))}
         selectedOption={previewTarget}
         onChange={(option) => setPreviewTarget(Number(option.data))} /></PanelSectionRow>
-    </PanelSection>
-    {groups.map(([kind, title, enabledKey, variantKey]) => {
+    </PanelSection></SettingsDetails>
+    {compact?<PanelSectionRow><DropdownItem label="Controller signal to configure" selectedOption={kindFilter}
+      rgOptions={groups.map(([data,label])=>({data,label}))} onChange={option=>setKindFilter(String(option.data))}/></PanelSectionRow>:null}
+    {groups.filter(([kind])=>!compact||kind===kindFilter).map(([kind, title, enabledKey, variantKey]) => {
       const selected = status[variantKey];
       const options = CONTROLLER_VARIANTS[kind];
       const detail = options.find((item) => item.data === selected)?.detail ?? "";
       return <PanelSection key={kind} title={title}>
-        {kind === "charging" ? <PanelSectionRow><div style={{ fontSize: ".78em", opacity: .78 }}>
+        {kind === "charging" ? <SettingsHelpText><PanelSectionRow><div style={{ fontSize: ".78em", opacity: .78 }}>
           This style is used for the brief signal or the repeating animation, depending on Charging behavior. Preview shows one cycle only.
-        </div></PanelSectionRow> : null}
+        </div></PanelSectionRow></SettingsHelpText> : null}
         {enabledKey ? <PanelSectionRow><ToggleField label={`Show ${title.toLowerCase()}`}
           checked={status[enabledKey]}
           onChange={async (value) => setStatus(await setSetting(enabledKey, value))} /></PanelSectionRow> : null}
@@ -888,18 +955,18 @@ function ControllersPanel({ status, setStatus }: { status: Status; setStatus: (n
         <PanelSectionRow><div style={{ fontSize: ".8em", opacity: .78 }}>{detail}</div></PanelSectionRow>
         <PanelSectionRow><div style={{ width: "100%", fontSize: ".78em", opacity: .8 }}>
           {status.controllers.active && status.controllers.kind === kind ? `Playing: ${status.controllers.variant}` : "No preview playing"}
-          <PalettePreview colors={status.controllers.active && status.controllers.kind === kind ? status.controllers.colors : []} />
+          <PalettePreview source={status.controllers.active && status.controllers.kind === kind ? "controllers" : undefined} colors={status.controllers.active && status.controllers.kind === kind ? status.controllers.colors : []} />
         </div></PanelSectionRow>
         <PanelSectionRow><ButtonItem label={`Preview ${title.toLowerCase()}`}
           description="Uses sample battery data; it does not verify Steam detection. Disabled mode, countdown priority and Steam ownership can prevent LED output."
-          onClick={() => void preview(kind, selected).catch(console.warn)}>Play selected</ButtonItem></PanelSectionRow>
+          onClick={() => void preview(kind, selected).catch(actionFailed)}>Play selected</ButtonItem></PanelSectionRow>
       </PanelSection>;
     })}
   </>;
 }
 
 function WeatherIconSetPreview({ style }: { style: WeatherIconStyle }) {
-  return <div style={{ width: "100%" }}>
+  return <Localized><div style={{ width: "100%" }}>
     <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
       {WEATHER_CONDITIONS.map((condition) => <span
         key={condition.data}
@@ -913,7 +980,161 @@ function WeatherIconSetPreview({ style }: { style: WeatherIconStyle }) {
     <div style={{ marginTop: 6, fontSize: ".72em", opacity: .7 }}>
       Clear day, clear night, rain, cloud, cloud night, partly cloudy day, partly cloudy night, snow and thunderstorm.
     </div>
+  </div></Localized>;
+}
+
+function FaceplateBrightnessSlider({ status, setStatus }: {
+  status: Status;
+  setStatus: (next: Status) => void;
+}) {
+  const [value, setValue] = useState(status.faceplate_brightness);
+  const latest = useRef(value);
+  const mounted = useRef(true);
+  const writer = useRef<ReturnType<typeof trailingSetting<number, Status>> | null>(null);
+  if (!writer.current) writer.current = trailingSetting(async (next) => {
+    const saved = await setSetting("faceplate_brightness", next);
+    if (mounted.current && latest.current === next) setStatus(saved);
+    return saved;
+  });
+  useEffect(() => {
+    if (!writer.current?.pending()) setValue(status.faceplate_brightness);
+  }, [status.faceplate_brightness]);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      void writer.current?.flush().catch((error) => console.warn("[GabeCubeAura] faceplate brightness save failed", error));
+    };
+  }, []);
+  const change = (next: number) => {
+    latest.current = next;
+    setValue(next);
+    writer.current?.push(next);
+  };
+  return <><SliderField label="Faceplate brightness" min={5} max={100} step={5}
+    description="Global GabeCubeAura matrix brightness. One update is sent after a short pause; moving this slider never starts Pixel Studio."
+    showValue valueSuffix="%" value={value} onChange={change} />
+    {faceplateBrightnessNotice(value)?<Localized><small role="status">{faceplateBrightnessNotice(value)}</small></Localized>:null}</>;
+}
+
+function FaceplateWeatherMatrixPreview({ condition, variant, temperature, unit, visualTheme, scene = "weather" }: {
+  condition: WeatherPreviewCondition;
+  variant: number;
+  temperature: number | null;
+  unit: "celsius" | "fahrenheit";
+  visualTheme: FaceplateWeatherVisualTheme | FaceplateDashboardVisualTheme;
+  scene?: "weather" | "dashboard";
+}) {
+  const [preview, setPreview] = useState<FaceplateWeatherPreview>({
+    data_uri: "", error: "",
+  });
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    let alive = true;
+    setLoading(true);
+    const request = scene === "dashboard"
+      ? getFaceplateDashboardPreview(condition, variant, visualTheme as FaceplateDashboardVisualTheme)
+      : getFaceplateWeatherPreview(condition, variant, visualTheme as FaceplateWeatherVisualTheme);
+    void request
+      .then((next) => { if (alive) setPreview(next); })
+      .catch((error) => { if (alive) setPreview({ data_uri: "", error: String(error) }); })
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, [condition, variant, temperature, unit, visualTheme, scene]);
+  const metadata = weatherPreviewMeta(preview);
+  return <div style={{ width: "100%" }}>
+    <div style={{ fontSize: ".76em", opacity: .78, marginBottom: 7 }}>
+      Faceplate 64 × 54 · {scene === "dashboard" ? "Dashboard Home" : "exact Weather GIF"}
+      {preview.phase ? ` · ${preview.phase}` : ""}
+      {metadata.length ? ` · ${metadata.join(" · ")}` : ""}
+    </div>
+    <div style={{
+      position: "relative", width: "min(100%, 320px)", aspectRatio: "64 / 54",
+      margin: "0 auto", overflow: "hidden", borderRadius: 7,
+      background: "#01030a", border: "1px solid rgba(126,220,255,.38)",
+      boxShadow: "0 10px 28px rgba(0,0,0,.38), inset 0 0 18px rgba(36,151,255,.12)",
+    }}>
+      {preview.data_uri ? <img src={preview.data_uri} alt={`${condition} Faceplate preview`}
+        loading="lazy" decoding="async"
+        style={{ width: "100%", height: "100%", display: "block", imageRendering: "pixelated" }} /> : null}
+      <div aria-hidden style={{
+        position: "absolute", inset: 0, pointerEvents: "none",
+        backgroundImage: "radial-gradient(circle, transparent 42%, rgba(0,0,0,.72) 55%, rgba(0,0,0,.92) 72%)",
+        backgroundSize: "calc(100% / 64) calc(100% / 54)",
+      }} />
+      {loading ? <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(1,3,10,.72)", fontSize: ".78em" }}>Rendering…</div> : null}
+    </div>
+    {preview.error ? <div style={{ marginTop: 7, fontSize: ".74em", color: "#ff9d8d" }}>
+      Faceplate preview unavailable: {preview.error}
+    </div> : null}
+    {preview.selection_status === "fallback" && preview.fallback_reason ? <div style={{
+      marginTop: 7, fontSize: ".74em", color: "#ffd38a",
+    }}>
+      Artwork fallback: {preview.fallback_reason}
+    </div> : null}
   </div>;
+}
+
+function PixelStudioWeatherCatalog({ status, setStatus }: {
+  status: Status;
+  setStatus: (next: Status) => void;
+}) {
+  const liveCondition = status.weather.condition;
+  const initialCondition = weatherConfigurationCondition(liveCondition, status.weather.is_day);
+  const [condition, setCondition] = useState<WeatherConfigurationCondition>(initialCondition);
+  const [message, setMessage] = useState("");
+  const variantKey = weatherVariantKey(condition);
+  const variant = Number(status[variantKey]);
+  const weatherVisualTheme: FaceplateWeatherVisualTheme = "weather-artwork-v2";
+  return <SettingsPart slot="faceplate.catalog"><SettingsDetails title="Faceplate weather animations"><PanelSection title="Weather Artwork catalog">
+    <SettingsHelpText><PanelSectionRow><div style={{ fontSize: ".78em", lineHeight: 1.45, opacity: .82 }}>
+      <b>Realistic · 28 day/night animated scenes.</b>
+      <Localized>Weather and Dashboard automatically share the same atmosphere.</Localized>
+    </div></PanelSectionRow></SettingsHelpText>
+    <PanelSectionRow><div style={{ width: "100%", fontSize: ".78em", lineHeight: 1.45 }}>
+      Active collection: <b>Realistic</b>
+    </div></PanelSectionRow>
+    <PanelSectionRow><DropdownItem label="Weather condition"
+      rgOptions={WEATHER_CONFIGURATION_CONDITIONS} selectedOption={condition}
+      onChange={(option) => setCondition(option.data as WeatherConfigurationCondition)} /></PanelSectionRow>
+    <PanelSectionRow><DropdownItem label="Animated scene"
+      description="This choice is shared with the automatic Weather route."
+      rgOptions={WEATHER_CONFIGURATION_VARIANTS[condition].map((item, index) => ({
+        data: index, label: item.label,
+      }))}
+      selectedOption={variant}
+      onChange={async (option) => setStatus(await setSetting(
+        variantKey, Number(option.data),
+      ))} /></PanelSectionRow>
+    <PanelSectionRow><div style={{ fontSize: ".76em", opacity: .76 }}>
+      {WEATHER_CONFIGURATION_VARIANTS[condition][variant]?.detail}
+    </div></PanelSectionRow>
+    <SettingsHelpText><PanelSectionRow><div style={{ fontSize: ".76em", opacity: .76 }}>
+      A game artwork chosen explicitly as the Dashboard Home background remains
+      available and receives the same compact weather header.
+    </div></PanelSectionRow></SettingsHelpText>
+    {status.faceplate.available ? <PanelSectionRow><FaceplateWeatherMatrixPreview
+      condition={condition} variant={variant}
+      temperature={status.weather.temperature_c}
+      unit={status.weather_temperature_unit}
+      visualTheme={weatherVisualTheme} scene="weather" />
+    </PanelSectionRow> : null}
+    <PanelSectionRow><ButtonItem label="Preview Realistic on Faceplate"
+      description="Renders and sends the exact scene shown above."
+      onClick={async () => {
+        try {
+          const played = await previewWeather(condition, variant, weatherVisualTheme);
+          setMessage(played
+            ? "Realistic sent to the Faceplate."
+            : "Preview unavailable while the weather preview is blocked.");
+        } catch (error) {
+          setMessage(`Faceplate preview failed: ${String(error)}`);
+        }
+      }}>Send to Faceplate</ButtonItem></PanelSectionRow>
+    {message ? <PanelSectionRow><div style={{ fontSize: ".76em", opacity: .82 }}>
+      {message}
+    </div></PanelSectionRow> : null}
+  </PanelSection></SettingsDetails></SettingsPart>;
 }
 
 function WeatherPanel({ status, setStatus }: { status: Status; setStatus: (next: Status) => void }) {
@@ -922,10 +1143,11 @@ function WeatherPanel({ status, setStatus }: { status: Status; setStatus: (next:
   const [cityResults, setCityResults] = useState<WeatherLocation[]>([]);
   const [searching, setSearching] = useState(false);
   const [message, setMessage] = useState("");
-  const [previewCondition, setPreviewCondition] = useState<WeatherCondition>("clear_day");
-  const variantKey = `weather_${previewCondition}_variant` as keyof Status;
+  const [previewCondition, setPreviewCondition] = useState<WeatherConfigurationCondition>("clear_day");
+  const variantKey = weatherVariantKey(previewCondition);
   const selectedVariant = Number(status[variantKey]);
-  const currentLabel = WEATHER_CONDITIONS.find((item) => item.data === status.weather.condition)?.label ?? "Unknown";
+  const weatherVisualTheme: FaceplateWeatherVisualTheme = "weather-artwork-v2";
+  const currentLabel = WEATHER_CONFIGURATION_CONDITIONS.find((item) => item.data === weatherConfigurationCondition(status.weather.condition, status.weather.is_day))?.label ?? "Unknown";
   const findCity = async () => {
     setSearching(true);
     setMessage("");
@@ -950,17 +1172,21 @@ function WeatherPanel({ status, setStatus }: { status: Status; setStatus: (next:
       setMessage("City saved. Select Weather on the Display routing page to show it on the LED bar.");
     } catch (error) { setMessage(`Could not save city: ${String(error)}`); }
   };
-  const playPreview = async (condition: WeatherCondition = previewCondition) => {
+  const playPreview = async (condition: WeatherConfigurationCondition = previewCondition) => {
     try {
-      const variant = Number(status[`weather_${condition}_variant`]);
-      const played = await previewWeather(condition, variant);
-      setMessage(played ? "One cycle requested. Preview still follows countdown and Steam LED ownership."
+      const variant = Number(status[weatherVariantKey(condition)]);
+      const played = await previewWeather(condition, variant, weatherVisualTheme);
+      const next = await getStatus();
+      setStatus(next);
+      setMessage(played
+        ? next.faceplate_lab_enabled
+          ? `${next.faceplate.detail}. Realistic is on the matrix; the light bar starts after its acknowledgement.`
+          : "One cycle requested. Preview still follows countdown and Steam LED ownership."
         : "Preview unavailable in Disabled mode or during the final five minutes of a countdown.");
-      setStatus(await getStatus());
     } catch (error) { setMessage(`Preview failed: ${String(error)}`); }
   };
   return <>
-    <PanelSection title="Local weather">
+    <SettingsPart slot="weather.forecast"><PanelSection title="Local weather">
       <PanelSectionRow><div style={{ fontSize: ".8em", opacity: .82 }}>
         {status.weather_location ? `${status.weather_location.name}, ${status.weather_location.country}` : "Choose a city to begin. Location is never detected automatically."}
         <div style={{ marginTop: 6 }}>
@@ -980,7 +1206,7 @@ function WeatherPanel({ status, setStatus }: { status: Status; setStatus: (next:
       <PanelSectionRow><ButtonItem label="Find city" disabled={searching || cityQuery.trim().length < 2}
         onClick={() => void findCity()}>{searching ? "Searching…" : "Search"}</ButtonItem></PanelSectionRow>
       {cityResults.map((city, index) => <PanelSectionRow key={`${city.latitude}:${city.longitude}:${index}`}>
-        <ButtonItem label={`${city.name}, ${city.country}`} onClick={() => void chooseCity(city)}>Use this city</ButtonItem>
+        <ButtonItem label={`${city.name}, ${city.country}`} untranslatedProps={["label"]} onClick={() => void chooseCity(city)}>Use this city</ButtonItem>
       </PanelSectionRow>)}
       {status.weather_location ? <PanelSectionRow><ButtonItem label="Remove city"
         description="Turns weather off and stops weather requests."
@@ -1003,59 +1229,82 @@ function WeatherPanel({ status, setStatus }: { status: Status; setStatus: (next:
         rgOptions={WEATHER_ICON_STYLE_OPTIONS} selectedOption={status.weather_icon_style}
         onChange={async (option) => setStatus(await setSetting("weather_icon_style", String(option.data)))} /></PanelSectionRow>
       <PanelSectionRow><WeatherIconSetPreview style={status.weather_icon_style} /></PanelSectionRow>
-      <PanelSectionRow><DropdownItem label="Top-bar temperature unit"
-        description="Applies to the number beside the SteamOS clock only, not the LED animations."
+      <PanelSectionRow><DropdownItem label="Weather temperature unit"
+        description="Applies to the SteamOS top bar and the 64 × 54 Faceplate Weather and Dashboard scenes."
         rgOptions={WEATHER_TEMPERATURE_UNITS} selectedOption={status.weather_temperature_unit}
         onChange={async (option) => setStatus(await setSetting("weather_temperature_unit", String(option.data)))} /></PanelSectionRow>
-      <PanelSectionRow><div style={{ fontSize: ".78em", opacity: .75 }}>
+      <SettingsHelpText><PanelSectionRow><div style={{ fontSize: ".78em", opacity: .75 }}>
         Select <b>Weather</b> for Home, In game, or a game override on the Display routing page. Brief alerts and playtime warnings remain independent.
-      </div></PanelSectionRow>
+      </div></PanelSectionRow></SettingsHelpText>
       <PanelSectionRow><div style={{ fontSize: ".76em", opacity: .72 }}>
         Current conditions refresh about every 15 minutes. The last reading can be reused for up to one hour; then weather yields the bar. No city, no network request. Data by <a href="https://open-meteo.com/" target="_blank" rel="noreferrer">Open-Meteo</a>.
       </div></PanelSectionRow>
-    </PanelSection>
-    <PanelSection title="Automatic night brightness">
-      <PanelSectionRow><div style={{ fontSize: ".78em", opacity: .78 }}>
+    </PanelSection></SettingsPart>
+    <SettingsPart slot="weather.night"><PanelSection title="Automatic night brightness">
+      <SettingsHelpText><PanelSectionRow><div style={{ fontSize: ".78em", opacity: .78 }}>
         Sunset dimming now belongs to the single global <b>Light bar brightness</b> section in Display routing. Weather keeps the shared city and solar data.
-      </div></PanelSectionRow>
-    </PanelSection>
-    <PanelSection title="Weather animations">
-      <PanelSectionRow><DropdownItem label="Condition to configure" rgOptions={WEATHER_CONDITIONS}
-        selectedOption={previewCondition} onChange={(option) => setPreviewCondition(option.data as WeatherCondition)} /></PanelSectionRow>
-      <PanelSectionRow><DropdownItem label="Animation" rgOptions={WEATHER_VARIANTS[previewCondition].map((item, index) => ({ data: index, label: item.label }))}
+      </div></PanelSectionRow></SettingsHelpText>
+    </PanelSection></SettingsPart>
+    <SettingsPart slot="weather.animations"><PanelSection title="Weather animations">
+      <SettingsHelpText><PanelSectionRow><div style={{ fontSize: ".8em", lineHeight: 1.45 }}>
+        <b>Realistic</b>
+        <div style={{ opacity: .72 }}>One coherent, systemic Weather language for the faceplate and light bar.</div>
+      </div></PanelSectionRow></SettingsHelpText>
+      <SettingsHelpText><PanelSectionRow><div style={{ fontSize: ".76em", opacity: .72 }}>
+        All 28 day/night scenes are precompiled as native 64 × 54 animations. Rain, Snow and Thunderstorm have independent day and night choices.
+      </div></PanelSectionRow></SettingsHelpText>
+      <PanelSectionRow><DropdownItem label="Condition to configure" rgOptions={WEATHER_CONFIGURATION_CONDITIONS}
+        selectedOption={previewCondition} onChange={(option) => setPreviewCondition(option.data as WeatherConfigurationCondition)} /></PanelSectionRow>
+      <PanelSectionRow><DropdownItem label="Animation" rgOptions={WEATHER_CONFIGURATION_VARIANTS[previewCondition].map((item, index) => ({ data: index, label: item.label }))}
         selectedOption={selectedVariant}
         onChange={async (option) => setStatus(await setSetting(variantKey, Number(option.data)))} /></PanelSectionRow>
       <PanelSectionRow><div style={{ fontSize: ".78em", opacity: .78 }}>
-        {WEATHER_VARIANTS[previewCondition][selectedVariant]?.detail}
+        {WEATHER_CONFIGURATION_VARIANTS[previewCondition][selectedVariant]?.detail}
       </div></PanelSectionRow>
+      {status.faceplate.available ? <PanelSectionRow><FaceplateWeatherMatrixPreview
+        condition={previewCondition} variant={selectedVariant}
+        temperature={status.weather.temperature_c} unit={status.weather_temperature_unit}
+        visualTheme={weatherVisualTheme} />
+      </PanelSectionRow> : null}
       <PanelSectionRow><ButtonItem label="Preview this animation"
-        description="Plays one weather cycle with the selected condition, even before you choose a city. This does not test the weather connection."
+        description={status.faceplate_lab_enabled && (previewCondition === "rain_day" || previewCondition === "rain_night")
+          ? "Prepares the rain animation and starts the Faceplate and light bar together."
+          : "Plays one weather cycle with the selected condition, even before you choose a city. This does not test the weather connection."}
         onClick={() => void playPreview()}>Play preview</ButtonItem></PanelSectionRow>
       <PanelSectionRow><div style={{ width: "100%", fontSize: ".78em", opacity: .8 }}>
         {status.weather.preview_active ? "Preview playing" : status.weather.active_here ? "Live weather signal available here" : "No weather signal playing here"}
-        <PalettePreview colors={status.weather.colors} />
+        <PalettePreview source="weather" colors={status.weather.colors} />
       </div></PanelSectionRow>
-    </PanelSection>
-    <PanelSection title="Weather brightness">
-      <PanelSectionRow><div style={{ fontSize: ".78em", opacity: .78 }}>
+    </PanelSection></SettingsPart>
+    <SettingsPart slot="weather.faceplate"><PanelSection title="JSAUX PIXEL Faceplate">
+      <PanelSectionRow><ToggleField label="Follow GabeCubeAura automatically"
+        description="Automatically shows each launched game's local Steam or SteamGridDB artwork and follows supported durable weather scenes. Stop the JSAUX daemon and disable the separate Pixel Faceplate plugin first."
+        checked={status.faceplate_lab_enabled}
+        onChange={async (enabled) => setStatus(await setSetting("faceplate_lab_enabled", enabled))} /></PanelSectionRow>
+      {status.faceplate_lab_enabled ? <>
+        <PanelSectionRow><FaceplateBrightnessSlider status={status} setStatus={setStatus} /></PanelSectionRow>
+        <PanelSectionRow><Localized>{status.faceplate.busy ? "Faceplate port is busy. Stop the other Faceplate plugin." : status.faceplate.available ? "Faceplate connected" : "Faceplate not detected"}</Localized></PanelSectionRow>
+        {status.faceplate.error ? <PanelSectionRow><Localized>{status.faceplate.error}</Localized></PanelSectionRow> : null}
+        <FaceplateDiagnostics status={status}/>
+        <SettingsHelpText><PanelSectionRow><div style={{ fontSize: ".76em", opacity: .72 }}>
+          Prepared images are reused automatically when a game starts. Until an image is ready, the local Steam artwork is shown. Pixel Studio prepares new images only when you request it.
+        </div></PanelSectionRow></SettingsHelpText>
+      </> : null}
+    </PanelSection></SettingsPart>
+    <SettingsPart slot="weather.brightness"><PanelSection title="Weather brightness">
+      <SettingsHelpText><PanelSectionRow><div style={{ fontSize: ".78em", opacity: .78 }}>
         Brightness scales RGB linearly for all weather animations. Use 100% with cutoff 0 for the unprocessed animation. These controls affect Weather only, not Steam's master LED brightness or other GabeCubeAura modes.
-      </div></PanelSectionRow>
+      </div></PanelSectionRow></SettingsHelpText>
       <PanelSectionRow><SliderField label="Weather LED brightness" min={10} max={100} step={5}
         showValue valueSuffix="%" value={status.weather_brightness}
         onChange={async (value) => setStatus(await setSetting("weather_brightness", value))} /></PanelSectionRow>
       <PanelSectionRow><SliderField label="Turn faint LEDs off" min={0} max={60} step={5}
         showValue value={status.weather_shadow_cutoff}
         onChange={async (value) => setStatus(await setSetting("weather_shadow_cutoff", value))} /></PanelSectionRow>
-      <PanelSectionRow><div style={{ fontSize: ".76em", opacity: .72 }}>
+      <SettingsHelpText><PanelSectionRow><div style={{ fontSize: ".76em", opacity: .72 }}>
         Cutoff turns a pixel fully off when its strongest RGB channel is at or below this value (scale from 0 to 255). It does not dim the remaining pixels further. A high cutoff can make transitions more abrupt. These are brightness controls, not measured hardware colour calibration.
-      </div></PanelSectionRow>
-      <PanelSectionRow><ButtonItem label="Preview night colours"
-        description="Play the selected moon-and-stars loop to check the white glow on the physical bar."
-        onClick={() => void playPreview("clear_night")}>Play night</ButtonItem></PanelSectionRow>
-      <PanelSectionRow><ButtonItem label="Preview warm colours"
-        description="Play the selected clear-day loop to check gold and pale sunlight."
-        onClick={() => void playPreview("clear_day")}>Play daylight</ButtonItem></PanelSectionRow>
-    </PanelSection>
+      </div></PanelSectionRow></SettingsHelpText>
+    </PanelSection></SettingsPart>
   </>;
 }
 
@@ -1081,7 +1330,7 @@ function CustomizationPanel({ status, setStatus }: { status: Status; setStatus: 
         onChange={async (option) => setStatus(await setSetting("customization_colour_count", Number(option.data)))} /></PanelSectionRow>
       {colourKeys.slice(0, status.customization_colour_count).map((key, index) => <PanelSectionRow key={key}>
         <PreciseColorEditor label={`Colour ${index + 1}`} color={status[key]}
-          onChange={(color) => void setSetting(key, color).then(setStatus).catch(console.warn)} />
+          onChange={(color) => void setSetting(key, color).then(setStatus).catch(actionFailed)} />
       </PanelSectionRow>)}
     </>
     <PanelSectionRow><SliderField label="Brightness" description="Raw RGB ceiling: 34 is the minimum retained by GabeCubeAura because lower values switch the physical bar off; 255 is full output."
@@ -1096,10 +1345,10 @@ function CustomizationPanel({ status, setStatus }: { status: Status; setStatus: 
         onChange={async (option) => setStatus(await setSetting("customization_direction", String(option.data)))} />
     </PanelSectionRow> : null}
     <PanelSectionRow><ButtonItem label="Preview Customization+" description="Plays for 8 seconds without changing Display routing."
-      onClick={() => void preview().catch(console.warn)}>Preview</ButtonItem></PanelSectionRow>
+      onClick={() => void preview().catch(actionFailed)}>Preview</ButtonItem></PanelSectionRow>
     <PanelSectionRow><div style={{ width: "100%", fontSize: ".78em", opacity: .82 }}>
       {status.customization.preview_active ? "Preview playing" : "Live 17-LED preview"}
-      <PalettePreview colors={status.customization.colors} />
+      <PalettePreview source="customization" colors={status.customization.colors} />
     </div></PanelSectionRow>
   </PanelSection>;
 }
@@ -1108,6 +1357,7 @@ function LightBarBrightness({ status, setStatus }: {
   status: Status;
   setStatus: (next: Status) => void;
 }) {
+  const compact=useSettingsPresentation();
   const brightness = status.light_bar_brightness;
   const [changingCity, setChangingCity] = useState(false);
   const [cityQuery, setCityQuery] = useState("");
@@ -1151,9 +1401,9 @@ function LightBarBrightness({ status, setStatus }: {
     } catch (error) { setMessage(`Could not save city: ${String(error)}`); }
   };
   return <PanelSection title="Light bar brightness">
-    <PanelSectionRow><div style={{ fontSize: ".78em", opacity: .82 }}>
+    <SettingsHelpText><PanelSectionRow><div style={{ fontSize: ".78em", opacity: .82 }}>
       One global intensity for every Home and in-game display. Changing a preset or route never changes it.
-    </div></PanelSectionRow>
+    </div></PanelSectionRow></SettingsHelpText>
     <PanelSectionRow><SliderField label="Day brightness" description="Direct hardware brightness. Moving the slider previews it immediately on the 17-LED bar."
       min={1} max={255} step={1} showValue valueSuffix=" / 255" value={status.light_bar_day_brightness}
       onChange={(value) => void preview("day", "light_bar_day_brightness", value)} /></PanelSectionRow>
@@ -1167,17 +1417,17 @@ function LightBarBrightness({ status, setStatus }: {
       disabled={!status.weather_location}
       checked={status.night_mode_enabled}
       onChange={async (enabled) => setStatus(await setSetting("night_mode_enabled", enabled))} /></PanelSectionRow>
-    <PanelSectionRow><SliderField label="Night brightness"
+    {!compact||status.night_mode_enabled?<PanelSectionRow><SliderField label="Night brightness"
       description={`${status.night_mode_brightness}% of day brightness · ${nightOutput}/255. Moving the slider previews the night output immediately.`}
       min={10} max={100} step={5} showValue valueSuffix="%" value={status.night_mode_brightness}
-      onChange={(value) => void preview("night", "night_mode_brightness", value)} /></PanelSectionRow>
-    {nightOutput < 8 ? <PanelSectionRow>
+      onChange={(value) => void preview("night", "night_mode_brightness", value)} /></PanelSectionRow>:null}
+    {nightOutput < 8 && (!compact||status.night_mode_enabled) ? <PanelSectionRow>
       <LowBrightnessWarning mode="Night" value={nightOutput} />
     </PanelSectionRow> : null}
-    <PanelSectionRow><div style={{ width: "100%", fontSize: ".79em", lineHeight: 1.5 }}>
+    <SettingsDetails title="Current brightness and hardware"><PanelSectionRow><div style={{ width: "100%", fontSize: ".79em", lineHeight: 1.5 }}>
       <div>Current output: <b>{currentOutput}</b></div>
       <div>Location: <b>{status.weather_location ? `${status.weather_location.name}, ${status.weather_location.country}` : "Not set"}</b></div>
-      <div>Control: <b>{brightness.supported ? "Hardware brightness_scale" : "RGB fallback"}</b></div>
+      <div>Control: <b>{brightness.supported ? "Hardware brightness" : "Colour brightness adjustment"}</b></div>
       {brightness.saved_steam_brightness != null
         ? <div>Steam value saved for handoff: <b>{brightness.saved_steam_brightness}/255</b></div> : null}
       {!brightness.supported && status.available
@@ -1185,9 +1435,9 @@ function LightBarBrightness({ status, setStatus }: {
       {brightness.startup_recovered
         ? <div style={{ color: "#93f7a7" }}>A brightness value left by an interrupted session was restored safely.</div>
         : null}
-    </div></PanelSectionRow>
+    </div></PanelSectionRow></SettingsDetails>
     <PanelSectionRow><ButtonItem label={status.weather_location ? "Change city" : "Choose city"}
-      onClick={() => { setChangingCity(!changingCity); setCityResults([]); setMessage(""); }}>
+      onClick={() => { if(compact){compact.open({category:'weather',tab:'forecast'});return;} setChangingCity(!changingCity); setCityResults([]); setMessage(""); }}>
       {changingCity ? "Close" : "Open city search"}
     </ButtonItem></PanelSectionRow>
     {changingCity ? <>
@@ -1198,7 +1448,7 @@ function LightBarBrightness({ status, setStatus }: {
       <PanelSectionRow><ButtonItem label="Find city" disabled={searching || cityQuery.trim().length < 2}
         onClick={() => void findCity()}>{searching ? "Searching…" : "Search"}</ButtonItem></PanelSectionRow>
       {cityResults.map((city, index) => <PanelSectionRow key={`${city.latitude}:${city.longitude}:${index}`}>
-        <ButtonItem label={`${city.name}, ${city.country}`} onClick={() => void chooseCity(city)}>Use this city</ButtonItem>
+        <ButtonItem label={`${city.name}, ${city.country}`} untranslatedProps={["label"]} onClick={() => void chooseCity(city)}>Use this city</ButtonItem>
       </PanelSectionRow>)}
     </> : null}
     {message ? <PanelSectionRow><div style={{ color: "#ffd27a", fontSize: ".78em" }}>{message}</div></PanelSectionRow> : null}
@@ -1209,7 +1459,7 @@ function ScreenSyncPanel({ status, setStatus }: { status: Status; setStatus: (ne
   const [showLiveDiagnostics, setShowLiveDiagnostics] = useState(false);
   const activation = status.screen_sync.activation;
   const directGamescopeSelector = status.screen_sync.node_id === null
-    && status.screen_sync.capture_selector.includes("Gamescope name");
+    && status.screen_sync.capture_selector.toLowerCase().includes("gamescope name");
   const activationLabel = activation.reason === "manual-preview"
     ? `Manual preview (${Math.ceil(activation.preview_remaining_s)} s remaining)`
     : activation.reason === "steam-screensaver"
@@ -1228,17 +1478,17 @@ function ScreenSyncPanel({ status, setStatus }: { status: Status; setStatus: (ne
     : status.screen_sync.phase === "conflict"
       ? "Paused because another app is capturing Gamescope"
       : status.screen_sync.phase === "waiting"
-        ? `Capture closed, waiting to rediscover Gamescope${status.screen_sync.error ? `: ${status.screen_sync.error}` : ""}`
+        ? `Waiting for Gamescope${status.screen_sync.error ? `: ${status.screen_sync.error}` : ""}`
       : status.screen_sync.phase === "error"
         ? `Unavailable: ${status.screen_sync.error}`
         : status.current_display === "screen_sync" && status.game.appid > 0
           ? "Waiting for safe LED ownership"
           : "Select Screen Sync as the in-game display or for the current game";
   return <>
-    <PanelSection title="Screen Sync">
-      <PanelSectionRow><div style={{ fontSize: ".8em", opacity: .82 }}>
-        Matches the visible Gamescope picture to the 17-pixel light bar. Frames stay in memory and are never saved or sent over the network.
-      </div></PanelSectionRow>
+    <SettingsDetails title="Capture status"><PanelSection title="Screen Sync">
+      <SettingsHelpText><PanelSectionRow><div style={{ fontSize: ".8em", opacity: .82 }}>
+        Matches the visible picture to the light bar. Frames stay in memory and are never saved or sent over the network.
+      </div></PanelSectionRow></SettingsHelpText>
       <PanelSectionRow><ToggleField
         label="Show live diagnostics"
         description="Shows capture source, PipeWire state, frame rate and the live 17-colour preview. Intended for troubleshooting."
@@ -1282,18 +1532,13 @@ function ScreenSyncPanel({ status, setStatus }: { status: Status; setStatus: (ne
         {status.screen_sync.crop_top || status.screen_sync.crop_bottom
           ? <div>Ignored black bars: {status.screen_sync.crop_top} top, {status.screen_sync.crop_bottom} bottom</div>
           : null}
-        <PalettePreview colors={status.screen_sync.colors} />
+        <PalettePreview source="screen_sync" colors={status.screen_sync.colors} />
       </div></PanelSectionRow> : null}
-    </PanelSection>
-    <PanelSection title="Activation">
-      <PanelSectionRow><ToggleField
-        label="Use during Steam screensaver"
-        description="Temporarily follows the colours shown by Steam's screensaver. Your Home and in-game displays return when it closes."
-        checked={status.screen_sync_screensaver_enabled}
-        onChange={async (value) => setStatus(await setSetting("screen_sync_screensaver_enabled", value))} />
-      </PanelSectionRow>
+    </PanelSection></SettingsDetails>
+    <SettingsDetails title="Activation and preview"><PanelSection title="Activation">
+      <ScreensaverLightBarChoice status={status} setStatus={setStatus}/>
       <PanelSectionRow><div style={{ width: "100%", fontSize: ".78em", opacity: .78 }}>
-        {showLiveDiagnostics ? <div>{activationLabel}</div> : null}
+        <div>{activationLabel}</div>
         <div>In-game default: {displayLabel(status.game_display)}</div>
         {status.display_override !== "inherit" && status.game.appid > 0
           ? <div>Current game override: {displayLabel(status.display_override)}</div>
@@ -1302,10 +1547,10 @@ function ScreenSyncPanel({ status, setStatus }: { status: Status; setStatus: (ne
       <PanelSectionRow><ButtonItem
         label="Preview Screen Sync"
         description="Uses the real capture and rendering path for 15 seconds without changing Display routing."
-        onClick={() => void previewScreenSync().then(setStatus).catch(console.warn)}>
+        onClick={() => void previewScreenSync().then(setStatus).catch(actionFailed)}>
         Preview for 15 seconds
       </ButtonItem></PanelSectionRow>
-    </PanelSection>
+    </PanelSection></SettingsDetails>
     <PanelSection title="Screen mapping">
       <PanelSectionRow><DropdownItem label="Style" rgOptions={SCREEN_SYNC_STYLE_OPTIONS}
         selectedOption={status.screen_sync_style}
@@ -1329,59 +1574,22 @@ function ScreenSyncPanel({ status, setStatus }: { status: Status; setStatus: (ne
         value={status.screen_sync_black_threshold} min={0} max={32} step={1} showValue
         onChange={async (value) => setStatus(await setSetting("screen_sync_black_threshold", value))} /></PanelSectionRow>
     </PanelSection>
-    <PanelSection title="Capture fallback">
-      <PanelSectionRow><div style={{ fontSize: ".76em", opacity: .76 }}>
+    <SettingsDetails title="Capture fallback"><PanelSection title="Capture fallback">
+      <SettingsHelpText><PanelSectionRow><div style={{ fontSize: ".76em", opacity: .76 }}>
         When Screen Sync pauses for Steam Game Recording or another capture consumer, Customization+ takes over automatically. The centre LED remains red while recording.
-      </div></PanelSectionRow>
+      </div></PanelSectionRow></SettingsHelpText>
       {showLiveDiagnostics && status.screen_sync.fallback_active ? <PanelSectionRow><div style={{ fontSize: ".78em" }}>
         Active: {status.screen_sync.fallback_reason}
       </div></PanelSectionRow> : null}
-    </PanelSection>
-    <PanelSection title="Capture safety">
-      <PanelSectionRow>
+    </PanelSection></SettingsDetails>
+    <SettingsDetails title="Capture safety"><PanelSection title="Capture safety">
+      <SettingsHelpText><PanelSectionRow>
         <div style={{ fontSize: ".76em", opacity: .74, paddingBottom: 8 }}>
           Screen Sync uses the local Gamescope PipeWire video source at 34 by 18 pixels and 10 frames per second. If Steam Game Recording, screen sharing, or another Gamescope capture consumer is active, capture stops and the fallback is used instead of competing for the stream.
         </div>
-      </PanelSectionRow>
-    </PanelSection>
+      </PanelSectionRow></SettingsHelpText>
+    </PanelSection></SettingsDetails>
   </>;
-}
-
-function HifiCrestLab({ status, setStatus, quick = false }: {
-  status: Status;
-  setStatus: (next: Status) => void;
-  quick?: boolean;
-}) {
-  const [showQuickDiagnostics, setShowQuickDiagnostics] = useState(false);
-  return <PanelSection title={quick ? "Hi-Fi Crest Lab" : "Hi-Fi Crest Lab · temporary"}>
-    <PanelSectionRow><div style={{ fontSize: ".78em", opacity: .82 }}>
-      Live physical calibration. Changes apply immediately. 100% on all three controls reproduces the reference engine.
-    </div></PanelSectionRow>
-    {quick ? <PanelSectionRow><ToggleField
-      label="Show live diagnostics"
-      description="Shows Audio Sync timing, latency and analysis queue details. Intended for troubleshooting."
-      checked={showQuickDiagnostics}
-      onChange={setShowQuickDiagnostics} />
-    </PanelSectionRow> : null}
-    {quick && showQuickDiagnostics ? <AudioTimingReadout status={status} /> : null}
-    <PanelSectionRow><SliderField label="Crest strength"
-      description="Controls only the centre-out travelling wave. 0% disables it; 100% is the reference renderer."
-      value={status.audio_sync_lab_crest_strength} min={0} max={250} step={5} showValue valueSuffix="%"
-      onChange={async (value) => setStatus(await setSetting("audio_sync_lab_crest_strength", value))} /></PanelSectionRow>
-    <PanelSectionRow><SliderField label="Edge reach"
-      description="Controls how much energy remains when the crest reaches the outer LEDs without changing its travel speed."
-      value={status.audio_sync_lab_edge_reach} min={50} max={200} step={5} showValue valueSuffix="%"
-      onChange={async (value) => setStatus(await setSetting("audio_sync_lab_edge_reach", value))} /></PanelSectionRow>
-    <PanelSectionRow><SliderField label="Background level"
-      description="Controls the permanent bass, mid and high visualizer under the crest."
-      value={status.audio_sync_lab_background} min={0} max={150} step={5} showValue valueSuffix="%"
-      onChange={async (value) => setStatus(await setSetting("audio_sync_lab_background", value))} /></PanelSectionRow>
-    {quick ? <PanelSectionRow><ButtonItem label="Preview Audio Sync"
-      description="Starts the real system audio path for 15 seconds without changing Display routing."
-      onClick={() => void previewAudioSync().then(setStatus).catch(console.warn)}>
-      Preview for 15 seconds
-    </ButtonItem></PanelSectionRow> : null}
-  </PanelSection>;
 }
 
 function AudioContextMapping({ context, status, setStatus }: {
@@ -1418,7 +1626,7 @@ function AudioContextMapping({ context, status, setStatus }: {
     {palette === "custom" ? colourKeys.map((key, index) => <PanelSectionRow key={key}>
       <PreciseColorEditor label={["High frequencies · edges", "Middle frequencies · shoulders", "Low frequencies · centre"][index]}
         color={status[key]}
-        onChange={(color) => void setSetting(key, color).then(setStatus).catch(console.warn)} />
+        onChange={(color) => void setSetting(key, color).then(setStatus).catch(actionFailed)} />
     </PanelSectionRow>) : null}
     <PanelSectionRow><div style={{ fontSize: ".76em", opacity: .78 }}>
       <b>Recommended shared tuning:</b> {recommended.reactivity[0].toUpperCase() + recommended.reactivity.slice(1)} · Brightness {recommended.brightness} / 255<br />
@@ -1426,15 +1634,15 @@ function AudioContextMapping({ context, status, setStatus }: {
     </div></PanelSectionRow>
     <PanelSectionRow><ButtonItem label="Apply recommended shared tuning"
       description="Loads the Steam Machine reference response for this pattern. It changes shared reactivity and brightness, but not either context palette."
-      onClick={() => void setSetting(styleKey, style).then(setStatus).catch(console.warn)}>
+      onClick={() => void setSetting(styleKey, style).then(setStatus).catch(actionFailed)}>
       Apply
     </ButtonItem></PanelSectionRow>
-    {palette === "screen-sync" ? <PanelSectionRow><div style={{ fontSize: ".76em", opacity: .74 }}>
+    {palette === "screen-sync" ? <SettingsHelpText><PanelSectionRow><div style={{ fontSize: ".76em", opacity: .74 }}>
       Screen Sync extracts three coherent colours from live Gamescope. Artwork is used when live capture is unavailable. During session changes, the last stable palette is held until a new contextual palette is ready.
-    </div></PanelSectionRow> : null}
-    {palette === "artwork" ? <PanelSectionRow><div style={{ fontSize: ".76em", opacity: .74 }}>
+    </div></PanelSectionRow></SettingsHelpText> : null}
+    {palette === "artwork" ? <SettingsHelpText><PanelSectionRow><div style={{ fontSize: ".76em", opacity: .74 }}>
       Artwork uses the current game's three-colour artwork palette. During session changes, the last stable palette is held until the new artwork palette is ready.
-    </div></PanelSectionRow> : null}
+    </div></PanelSectionRow></SettingsHelpText> : null}
   </PanelSection>;
 }
 
@@ -1474,7 +1682,7 @@ function AudioTimingReadout({ status }: { status: Status }) {
     {status.audio_sync_style === "hifi-crest" ? <div>
       Crest: {Math.round(timing.crest.cooldown_ms)} ms retrigger · {Math.round(timing.crest.centre_to_edge_ms)} ms centre to edge · {Math.round(timing.crest.lifetime_ms)} ms base lifetime
     </div> : EXPERIMENTAL_AUDIO_DESCRIPTIONS[status.audio_sync_style] ? <div>
-      Lab renderer: 60 ms quantized frames · physical-bar optical encoder active
+      Animation cadence: 60 ms frames · optical blending active
     </div> : null}
     {audio.dropped_blocks > 0 ? <div style={{ color: "#ff9a9a" }}>
       Warning: {audio.dropped_blocks} analysis block{audio.dropped_blocks === 1 ? "" : "s"} dropped because the processing queue filled.
@@ -1494,12 +1702,11 @@ function AudioSyncPanel({ status, setStatus }: { status: Status; setStatus: (nex
       : status.current_display === "audio_sync"
         ? "Waiting for safe LED ownership"
         : "Select Audio Sync in Display routing or start a preview";
-  const hifiCrestUsed = status.audio_sync_home_style === "hifi-crest" || status.audio_sync_game_style === "hifi-crest";
   return <>
-    <PanelSection title="Audio Sync">
-      <PanelSectionRow><div style={{ fontSize: ".8em", opacity: .84 }}>
+    <SettingsDetails title="Audio status and preview"><PanelSection title="Audio Sync">
+      <SettingsHelpText><PanelSectionRow><div style={{ fontSize: ".8em", opacity: .84 }}>
         Turns the mixed system output into a responsive 17-pixel display. Capture and analysis stay local in memory. Audio is never saved or sent over the network.
-      </div></PanelSectionRow>
+      </div></PanelSectionRow></SettingsHelpText>
       <PanelSectionRow><ToggleField
         label="Show live diagnostics"
         description="Shows capture state, live levels, palette source, timing and the 17-LED preview. Intended for troubleshooting."
@@ -1524,7 +1731,7 @@ function AudioSyncPanel({ status, setStatus }: { status: Status; setStatus: (nex
           Palette source: <b>{status.audio_sync.palette_source === "screen-sync" ? "Screen Sync" : status.audio_sync.palette_source === "artwork" ? "Artwork" : status.audio_sync.palette_source === "held-transition" ? "Last stable palette" : status.audio_sync.palette_source === "selected" ? "Selected palette" : "Sapphire fallback"}</b>
           {status.audio_sync_palette === "screen-sync" && status.audio_sync.palette_source !== "screen-sync" && status.screen_sync.error ? ` · ${status.screen_sync.error}` : ""}
         </div> : null}
-        <PalettePreview colors={status.audio_sync.colors} />
+        <PalettePreview source="audio_sync" colors={status.audio_sync.colors} />
         {ADAPTIVE_AUDIO_STYLES.includes(status.audio_sync_style) ? <div>
           Impact {Math.round(status.audio_sync.hifi_metrics.impact * 100)}% · Attack {Math.round(status.audio_sync.hifi_metrics.attack * 100)}% · Texture {Math.round(status.audio_sync.hifi_metrics.texture * 100)}% · Stereo {Math.round(status.audio_sync.hifi_metrics.stereo * 100)}% · Window {status.audio_sync.hifi_metrics.window_s.toFixed(1)} s
         </div> : null}
@@ -1532,16 +1739,16 @@ function AudioSyncPanel({ status, setStatus }: { status: Status; setStatus: (nex
       {showLiveDiagnostics ? <AudioTimingReadout status={status} /> : null}
       <PanelSectionRow><ButtonItem label="Preview Audio Sync"
         description="Uses the real system audio path for 15 seconds without changing Display routing."
-        onClick={() => void previewAudioSync().then(setStatus).catch(console.warn)}>
+        onClick={() => void previewAudioSync().then(setStatus).catch(actionFailed)}>
         Preview for 15 seconds
       </ButtonItem></PanelSectionRow>
-    </PanelSection>
+    </PanelSection></SettingsDetails>
     <AudioContextMapping context="home" status={status} setStatus={setStatus} />
     <AudioContextMapping context="game" status={status} setStatus={setStatus} />
     <PanelSection title="Shared response">
-      <PanelSectionRow><div style={{ fontSize: ".76em", opacity: .78 }}>
+      <SettingsHelpText><PanelSectionRow><div style={{ fontSize: ".76em", opacity: .78 }}>
         Reactivity and brightness are shared by Home and in-game patterns. Automatic source-level matching stays active for every pattern.
-      </div></PanelSectionRow>
+      </div></PanelSectionRow></SettingsHelpText>
       <PanelSectionRow><DropdownItem label="Reactivity" rgOptions={AUDIO_SYNC_REACTIVITY_OPTIONS}
         selectedOption={status.audio_sync_reactivity}
         onChange={async (option) => setStatus(await setSetting("audio_sync_reactivity", String(option.data)))} /></PanelSectionRow>
@@ -1550,127 +1757,43 @@ function AudioSyncPanel({ status, setStatus }: { status: Status; setStatus: (nex
         value={status.audio_sync_brightness} min={34} max={255} step={1} showValue valueSuffix=" / 255"
         onChange={async (value) => setStatus(await setSetting("audio_sync_brightness", value))} /></PanelSectionRow>
     </PanelSection>
-    {status.audio_sync_hifi_lab_enabled && hifiCrestUsed
-      ? <HifiCrestLab status={status} setStatus={setStatus} />
-      : null}
-    <PanelSection title="Priority and recovery">
-      <PanelSectionRow><ToggleField
-        label="Let Steam screensaver take over"
-        description="Uses Screen Sync while Steam's screensaver is active, then restores Audio Sync automatically. This is the same option shown on the Screen Sync page."
-        checked={status.screen_sync_screensaver_enabled}
-        onChange={async (value) => setStatus(await setSetting("screen_sync_screensaver_enabled", value))} />
-      </PanelSectionRow>
-      <PanelSectionRow><div style={{ fontSize: ".77em", opacity: .8 }}>
+    <SettingsDetails title="Audio recovery and priority"><PanelSection title="Priority and recovery">
+      <SettingsHelpText><PanelSectionRow><div style={{ fontSize: ".77em", opacity: .8 }}>
         Steam and temporary alerts keep priority. Screensaver Screen Sync pauses Audio Sync, which resumes automatically afterward.
-      </div></PanelSectionRow>
-      {status.audio_sync_style === "audio-pulse" ? <PanelSectionRow><div style={{ fontSize: ".76em", opacity: .74 }}>
+      </div></PanelSectionRow></SettingsHelpText>
+      {status.audio_sync_style === "audio-pulse" ? <SettingsHelpText><PanelSectionRow><div style={{ fontSize: ".76em", opacity: .74 }}>
         Audio Pulse applies one global audio envelope to a mirrored three-colour gradient from the selected palette.
-      </div></PanelSectionRow> : null}
-      {status.audio_sync_style === "bass" ? <PanelSectionRow><div style={{ fontSize: ".76em", opacity: .74 }}>
+      </div></PanelSectionRow></SettingsHelpText> : null}
+      {status.audio_sync_style === "bass" ? <SettingsHelpText><PanelSectionRow><div style={{ fontSize: ".76em", opacity: .74 }}>
         Bass pulse mirrors the selected three-colour palette as an edge, shoulder, centre, shoulder, edge gradient. Low-frequency energy remains strongest at the centre and softer toward both edges.
-      </div></PanelSectionRow> : null}
-      {status.audio_sync_style === "hifi-crest" ? <PanelSectionRow><div style={{ fontSize: ".76em", opacity: .74 }}>
+      </div></PanelSectionRow></SettingsHelpText> : null}
+      {status.audio_sync_style === "hifi-crest" ? <SettingsHelpText><PanelSectionRow><div style={{ fontSize: ".76em", opacity: .74 }}>
         Hi-Fi Crest places bass impact at the centre, mid attack on both shoulders and high texture at the edges. Stereo balance weights each side, while strong bass onsets launch a restrained centre-out crest.
-      </div></PanelSectionRow> : null}
+      </div></PanelSectionRow></SettingsHelpText> : null}
       {EXPERIMENTAL_AUDIO_DESCRIPTIONS[status.audio_sync_style] ? <PanelSectionRow><div style={{ fontSize: ".76em", opacity: .74 }}>
         <b>Experimental optical pattern.</b> {EXPERIMENTAL_AUDIO_DESCRIPTIONS[status.audio_sync_style]}
       </div></PanelSectionRow> : null}
-    </PanelSection>
+    </PanelSection></SettingsDetails>
   </>;
 }
 
-function CompatibilityPanel({ status, setStatus }: { status: Status; setStatus: (next: Status) => void }) {
-  const [showCompatibilityControls, setShowCompatibilityControls] = useState(false);
-  const priorities = ([
-    ["Artwork", "stripmine_priority_artwork", "The sampled game artwork display."],
-    ["Performance", "stripmine_priority_performance", "CPU, GPU and mixed performance displays."],
-    ["Weather", "stripmine_priority_weather", "Permanent and preview weather animations."],
-    ["Controller displays", "stripmine_priority_controller", "Battery gauges, connection and charging displays."],
-    ["Game launches", "stripmine_priority_game_launches", "Temporary animations using colours from the launched game's artwork."],
-    ["Customization+", "stripmine_priority_customization", "The persistent user-authored display."],
-    ["Screen Sync", "stripmine_priority_screen_sync", "Live colours captured from the running game."],
-    ["Audio Sync", "stripmine_priority_audio_sync", "Live colours driven by the mixed system audio output."],
-    ["Light Events", "stripmine_priority_light_events", "Notifications, achievements, screenshots and recording cues."],
-  ] as const);
-  return <>
-    <PanelSection title="Plugin compatibility">
-      <PanelSectionRow>
-        <ToggleField
-          label="Show TW3-SteamRGB and StripMine controls"
-          description="Reveal external ownership coordination and per-display StripMine priorities."
-          checked={showCompatibilityControls}
-          onChange={setShowCompatibilityControls}
-        />
-      </PanelSectionRow>
-    </PanelSection>
-    {showCompatibilityControls ? <>
-    <PanelSection title="TW3-SteamRGB compatibility">
-      <PanelSectionRow>
-        <ToggleField
-          label="Yield to TW3-SteamRGB HUD"
-          description="While The Witcher 3 is running, pause GabeCubeAura permanent displays only when TW3-SteamRGB publishes a fresh ownership claim."
-          checked={status.tw3_steamrgb_integration_enabled}
-          onChange={async (value) => setStatus(await setSetting("tw3_steamrgb_integration_enabled", value))}
-        />
-      </PanelSectionRow>
-      <PanelSectionRow>
-        <div style={{ width: "100%", fontSize: ".82em", opacity: .86 }}>
-          {status.tw3_steamrgb_detected
-            ? status.tw3_steamrgb_active
-              ? "A live TW3-SteamRGB claim is active. GabeCubeAura keeps temporary alerts available but yields its permanent display."
-              : "A live TW3-SteamRGB claim was detected but is being ignored by this setting."
-            : status.game.appid === 292030
-              ? "The Witcher 3 is running, but no live TW3-SteamRGB claim is detected. GabeCubeAura keeps control."
-              : "No live TW3-SteamRGB claim is detected."}
-          <div style={{ marginTop: 6, opacity: .72 }}>
-            Disable this only when TW3-SteamRGB is absent or for troubleshooting. If another plugin is physically writing to the bar, GabeCubeAura can still yield through its normal Valve and external-owner safety guard.
-          </div>
-        </div>
-      </PanelSectionRow>
-    </PanelSection>
-    <PanelSection title="StripMine compatibility">
-      <PanelSectionRow>
-        <ToggleField
-          label="Coordinate LED ownership"
-          description="GabeCubeAura and StripMine exchange a short local lease before either writes. Unknown applications are still treated as conflicts."
-          checked={status.stripmine_integration_enabled}
-          onChange={async (value) => setStatus(await setSetting("stripmine_integration_enabled", value))}
-        />
-      </PanelSectionRow>
-      <PanelSectionRow>
-        <div style={{ width: "100%", fontSize: ".82em", opacity: .86 }}>
-          {status.stripmine_detected
-            ? "StripMine is active and the ownership link is live."
-            : "StripMine is not currently claiming the light bar."}
-          <div style={{ marginTop: 6, opacity: .72 }}>
-            The selected owner keeps the bar until its output ends. Transfers wait for an acknowledgement, so intentional takeovers do not appear as external conflicts.
-          </div>
-        </div>
-      </PanelSectionRow>
-    </PanelSection>
-    <PanelSection title="Priority while StripMine is active">
-      {priorities.map(([label, key, description]) => <PanelSectionRow key={key}>
-        <DropdownItem
-          label={label}
-          description={description}
-          rgOptions={COMPANION_PRIORITY_OPTIONS}
-          selectedOption={status[key]}
-          onChange={async (option) => setStatus(await setSetting(key, option.data as CompanionPriority))}
-        />
-      </PanelSectionRow>)}
-      <PanelSectionRow>
-        <div style={{ width: "100%", fontSize: ".78em", opacity: .75 }}>
-          Playtime countdowns and their critical alerts always remain GabeCubeAura priorities. If coordination is disabled, both plugins fall back to their independent ownership guards.
-        </div>
-      </PanelSectionRow>
-    </PanelSection>
-    </> : null}
-  </>;
-}
+type Page = "profiles" | "quick" | "routing" | "customization" | "artwork" | "performance" | "screen-sync" | "audio-sync" | "launches" | "countdown" | "events" | "controllers" | "weather" | "pixel-settings" | "pixel-artwork" | "updates" | "advanced";
 
-type Page = "quick" | "routing" | "customization" | "artwork" | "performance" | "screen-sync" | "audio-sync" | "launches" | "countdown" | "events" | "controllers" | "weather" | "updates" | "advanced";
+const statusRefreshDelay = (page: Page) => {
+  if (page === "events" || page === "controllers" || page === "launches") return 1000;
+  if (page === "weather" || page === "performance"
+      || page === "screen-sync" || page === "audio-sync") return 2000;
+  if (page === "quick") return 2000;
+  return 10000;
+};
+
+// Settings routes mount separate Content instances. Preserve the last valid
+// snapshot between them so navigation never falls back to a blank Loading row
+// while the backend refreshes in the background.
+let retainedStatus: Status | null = null;
 
 const PAGE_END_LABELS: Record<Exclude<Page, "quick">, string> = {
+  profiles: "Ambience profiles",
   routing: "Display routing",
   customization: "Customization+",
   artwork: "Artwork",
@@ -1682,6 +1805,8 @@ const PAGE_END_LABELS: Record<Exclude<Page, "quick">, string> = {
   events: "Light events",
   controllers: "Controllers",
   weather: "Weather",
+  "pixel-settings": "Pixel Studio Settings",
+  "pixel-artwork": "Faceplate Artwork Studio",
   updates: "Updates",
   advanced: "Advanced",
 };
@@ -1694,27 +1819,12 @@ function SettingsPageEnd({ page, setStatus }: {
     <PanelSectionRow><ButtonItem
       label={`End of ${PAGE_END_LABELS[page]} settings`}
       description="This final row keeps the complete page reachable with controller navigation."
-      onClick={() => void getStatus().then(setStatus).catch(console.warn)}>
+      onClick={() => void getStatus().then(setStatus).catch(actionFailed)}>
       Refresh status
     </ButtonItem></PanelSectionRow>
   </PanelSection>;
 }
 
-const ONBOARDING_PRESETS: { data: DisplayPreset; label: string; detail: string; colors: RGB[] }[] = [
-  { data: "moderate", label: "Moderate", detail: "Customization+ at Home and Artwork in games.", colors: [[255, 153, 10], [0, 200, 255], [180, 48, 255]] },
-  { data: "atmosphere", label: "Atmosphere", detail: "Weather at Home, Slow Prism fallback; Artwork in games.", colors: [[60, 135, 220], [190, 220, 255], [255, 205, 90]] },
-  { data: "signals", label: "Signals", detail: "Controller status at Home and performance in games.", colors: [[0, 180, 45], [230, 110, 0], [220, 12, 24]] },
-  { data: "immersive", label: "Immersive", detail: "Audio Sync at Home and Screen Sync in games.", colors: [[20, 65, 105], [35, 115, 175], [80, 185, 220]] },
-];
-const RECOMMENDED_ONBOARDING_PRESET: DisplayPreset = "immersive";
-const RECOMMENDED_DAY_BRIGHTNESS = 9;
-
-function onboardingPreview(colors: RGB[]): RGB[] {
-  if (!colors.length) return Array.from({ length: 17 }, () => [0, 0, 0] as RGB);
-  return Array.from({ length: 17 }, (_, index) => (
-    colors[Math.min(colors.length - 1, Math.floor(index * colors.length / 17))]
-  ));
-}
 
 function SetupFrame({ step, title, description, children, showScrollCue = false }: {
   step: 1 | 2 | 3;
@@ -1737,7 +1847,7 @@ function SetupFrame({ step, title, description, children, showScrollCue = false 
     boxSizing: "border-box",
     overflow: "hidden",
     position: "relative",
-    background: "radial-gradient(circle at 16% 0%, rgba(26,159,255,.18), transparent 38%), linear-gradient(145deg, #101821 0%, #11151b 52%, #090d12 100%)",
+    background: "var(--gpSystemDarkestGrey,#0e141b)",
   }} onScrollCapture={() => setScrollCueVisible(false)}>
     <ScrollPanel><div style={{ width: "100%", maxWidth: 1040, margin: "0 auto", boxSizing: "border-box", padding: "40px clamp(32px, 6vw, 88px) 156px" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 28 }}>
@@ -1754,27 +1864,17 @@ function SetupFrame({ step, title, description, children, showScrollCue = false 
           const complete = number < step;
           return <div key={label} style={{
             padding: "10px 14px",
-            borderRadius: 999,
             textAlign: "center",
             fontSize: ".78em",
-            fontWeight: active ? 700 : 500,
-            color: active || complete ? "#e9f7ff" : "rgba(255,255,255,.56)",
-            background: active ? "rgba(38,159,255,.28)" : complete ? "rgba(38,159,255,.13)" : "rgba(255,255,255,.055)",
-            border: active ? "1px solid rgba(104,199,255,.65)" : "1px solid rgba(255,255,255,.09)",
+            fontWeight: active ? 700 : 400,
           }}>{complete ? "✓ " : `${number}. `}{label}</div>;
         })}
       </div>
       <div style={{ marginBottom: 24 }}>
-        <h1 style={{ fontSize: "2em", margin: "0 0 8px", letterSpacing: "-.025em" }}>{title}</h1>
+        <DialogHeader>{title}</DialogHeader>
         <div style={{ maxWidth: 760, fontSize: ".95em", lineHeight: 1.5, opacity: .75 }}>{description}</div>
       </div>
-      <div style={{
-        padding: "clamp(20px, 3.5vw, 36px)",
-        borderRadius: 20,
-        background: "rgba(7,12,18,.72)",
-        border: "1px solid rgba(255,255,255,.11)",
-        boxShadow: "0 24px 70px rgba(0,0,0,.25)",
-      }}>{children}</div>
+      <DialogBody><DialogControlsSection>{children}</DialogControlsSection></DialogBody>
     </div></ScrollPanel>
     {scrollCueVisible ? <div role="note" style={{
       position: "absolute",
@@ -1801,255 +1901,14 @@ function SetupFrame({ step, title, description, children, showScrollCue = false 
 
 function LowBrightnessWarning({ mode, value }: { mode: "Day" | "Night"; value: number }) {
   if (value >= 8) return null;
-  return <div style={{ margin: "0 0 18px", padding: "11px 14px", borderRadius: 10,
+  return <Localized><div style={{ margin: "0 0 18px", padding: "11px 14px", borderRadius: 10,
     color: "#ff8f8f", background: "rgba(190, 32, 42, .16)", border: "1px solid rgba(255, 92, 102, .52)", fontWeight: 700 }}>
     {mode} output is {value}/255. Below 8/255, the lighting experience may be strongly affected.
-  </div>;
+  </div></Localized>;
 }
 
-function SetupActions({ primaryLabel, primaryText, primaryDisabled = false, onPrimary, secondaryLabel, secondaryText, onSecondary }: {
-  primaryLabel: string;
-  primaryText: string;
-  primaryDisabled?: boolean;
-  onPrimary: () => void;
-  secondaryLabel: string;
-  secondaryText: string;
-  onSecondary: () => void;
-}) {
-  return <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.7fr) minmax(0, 1fr)", gap: 12, marginTop: 24, scrollMarginBottom: 156 }}>
-    <ButtonItem layout="below" label={primaryLabel} disabled={primaryDisabled} onClick={onPrimary}>{primaryText}</ButtonItem>
-    <ButtonItem layout="below" label={secondaryLabel} disabled={primaryDisabled} onClick={onSecondary}>{secondaryText}</ButtonItem>
-  </div>;
-}
 
-function FirstRunSetup({ status, setStatus, onClose }: {
-  status: Status;
-  setStatus: (next: Status) => void;
-  onClose: () => void;
-}) {
-  const [step, setStep] = useState(1);
-  const [preset, setPreset] = useState<DisplayPreset>(RECOMMENDED_ONBOARDING_PRESET);
-  const [location, setLocation] = useState<WeatherLocation | null>(status.weather_location);
-  const [nightEnabled, setNightEnabled] = useState(Boolean(status.weather_location));
-  const [dayBrightness, setDayBrightness] = useState(status.light_bar_day_brightness || RECOMMENDED_DAY_BRIGHTNESS);
-  const [nightBrightness, setNightBrightness] = useState(status.night_mode_brightness || 35);
-  const [cityQuery, setCityQuery] = useState("");
-  const [countryQuery, setCountryQuery] = useState("");
-  const [cityResults, setCityResults] = useState<WeatherLocation[]>([]);
-  const [searching, setSearching] = useState(false);
-  const [message, setMessage] = useState("");
-  const [saving, setSaving] = useState(false);
-  const effectiveNightBrightness = Math.max(1, Math.round(dayBrightness * nightBrightness / 100));
-  const selected = ONBOARDING_PRESETS.find((item) => item.data === preset) ?? ONBOARDING_PRESETS[3];
-  const livePreviewColors = status.display_preset_preview.colors.length ? status.display_preset_preview.colors
-    : status.provider.startsWith("audio-sync") ? status.audio_sync.colors
-    : status.provider.startsWith("screen-sync") ? status.screen_sync.colors
-      : status.provider.startsWith("customization:") ? status.customization.colors
-        : status.provider === "blackout" ? Array.from({ length: 17 }, () => [0, 0, 0] as RGB)
-          : status.provider.startsWith("artwork") ? (status.artwork.colors ?? []) : [];
-
-  useEffect(() => {
-    if (!status.display_preset_preview.active) return;
-    const timer = window.setInterval(() => {
-      void getStatus().then(setStatus).catch(console.warn);
-    }, 250);
-    return () => window.clearInterval(timer);
-  }, [status.display_preset_preview.active, setStatus]);
-
-  const choosePreset = async (nextPreset: DisplayPreset) => {
-    setPreset(nextPreset);
-    setMessage("");
-    try { setStatus(await previewDisplayPreset(nextPreset)); }
-    catch (error) { setMessage(`Preset preview failed: ${String(error)}`); }
-  };
-
-  const previewBrightness = async (mode: "day" | "night", key: "light_bar_day_brightness" | "night_mode_brightness", value: number) => {
-    try {
-      setStatus(await setLightBarBrightness(key, value, mode));
-    } catch (error) { setMessage(`Brightness preview failed: ${String(error)}`); }
-  };
-
-  const findCity = async () => {
-    setSearching(true);
-    setMessage("");
-    try {
-      const city = cityQuery.trim();
-      const country = countryQuery.trim();
-      const response = await searchWeatherCities(country ? `${city}, ${country}` : city);
-      setCityResults(response.results);
-      if (response.error) setMessage(`City search failed: ${response.error}`);
-      else if (!response.results.length) setMessage("No matching city. Try the full city and country name.");
-    } catch (error) {
-      setCityResults([]);
-      setMessage(`City search failed: ${String(error)}`);
-    } finally {
-      setSearching(false);
-    }
-  };
-
-  const chooseCity = (city: WeatherLocation) => {
-    setLocation(city);
-    setNightEnabled(true);
-    setCityResults([]);
-    setCityQuery(city.name);
-    setCountryQuery(city.country);
-    setMessage("City selected. Night mode will follow local sunset and sunrise.");
-  };
-
-  const finish = async () => {
-    setSaving(true);
-    setMessage("");
-    try {
-      let next = await setSetting("display_preset", preset);
-      next = await setSetting("light_bar_day_brightness", dayBrightness);
-      if (location) next = await setSetting("weather_location", location);
-      next = await setSetting("night_mode_brightness", nightBrightness);
-      next = await setSetting("night_mode_enabled", Boolean(nightEnabled && location));
-      await disconnectPrivateUpdateAuthorization();
-      await setUpdatePreferences(true, true, 1440, "stable");
-      next = await setSetting("onboarding_completed", true);
-      setStatus(next);
-      onClose();
-    } catch (error) {
-      setMessage(`Setup could not be saved: ${String(error)}`);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const skip = async () => {
-    setSaving(true);
-    try {
-      let next = await setSetting("display_preset", RECOMMENDED_ONBOARDING_PRESET);
-      next = await setSetting("light_bar_day_brightness", RECOMMENDED_DAY_BRIGHTNESS);
-      await disconnectPrivateUpdateAuthorization();
-      await setUpdatePreferences(true, true, 1440, "stable");
-      next = await setSetting("onboarding_completed", true);
-      setStatus(next);
-      onClose();
-    } catch (error) {
-      setMessage(`Setup could not be closed: ${String(error)}`);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  if (step === 1) return <SetupFrame step={1} showScrollCue title="Choose your experience"
-    description="Choose a complete Home and in-game experience. Brightness is configured separately and never changes with the preset.">
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 14 }}>
-      {ONBOARDING_PRESETS.map((item) => <div key={item.data} style={{
-        padding: 14,
-        borderRadius: 14,
-        background: item.data === preset ? "rgba(38,159,255,.15)" : "rgba(255,255,255,.035)",
-        border: item.data === preset ? "1px solid rgba(104,199,255,.58)" : "1px solid rgba(255,255,255,.08)",
-      }}>
-        <ButtonItem layout="below" label={`${item.data === preset ? "✓ " : ""}${item.label}`}
-          description={item.detail} onClick={() => void choosePreset(item.data)}>
-          {item.data === preset ? "Selected" : "Choose"}
-        </ButtonItem>
-      </div>)}
-    </div>
-    <div style={{ marginTop: 20, padding: "14px 16px", borderRadius: 12, background: "rgba(255,255,255,.05)", lineHeight: 1.45 }}>
-      <b>{selected.label}</b><span style={{ opacity: .72 }}> · {selected.detail}</span>
-      <div style={{ marginTop: 12 }}><PalettePreview colors={livePreviewColors.length ? livePreviewColors : onboardingPreview(selected.colors)} /></div>
-      <div style={{ marginTop: 7, fontSize: ".78em", opacity: .7 }}>
-        {status.display_preset_preview.active
-          ? status.display_preset_preview.preset === "immersive"
-            ? `Guided demo on the real bar · ${status.display_preset_preview.phase} · ${Math.ceil(status.display_preset_preview.remaining_s)} s`
-            : `Live engine preview on the real bar · ${Math.ceil(status.display_preset_preview.remaining_s)} s`
-          : selected.data === "immersive"
-            ? "Choose Immersive again for a synthetic Audio Sync and Screen Sync demo on the real bar."
-            : "Choose the preset again to run its real 10-second Home preview on the light bar."}
-      </div>
-    </div>
-    {message ? <div style={{ marginTop: 12, color: "#ffbc9e" }}>{message}</div> : null}
-    <SetupActions primaryLabel="Continue" primaryText="Set up night mode" onPrimary={() => setStep(2)}
-      secondaryLabel="Skip guided setup" secondaryText={saving ? "Saving…" : "Keep recommended defaults"}
-      primaryDisabled={saving} onSecondary={() => void skip()} />
-  </SetupFrame>;
-
-  if (step === 2) return <SetupFrame step={2} showScrollCue title="Set your brightness"
-    description="Set the direct hardware brightness for daytime, then optionally dim it automatically using exact local sunset and sunrise times.">
-    <SliderField label="Day brightness" value={dayBrightness} min={1} max={255} step={1} showValue valueSuffix=" / 255"
-      onChange={(value) => { setDayBrightness(value); void previewBrightness("day", "light_bar_day_brightness", value); }} />
-    <div style={{ margin: "8px 0 18px", fontSize: ".8em", opacity: .7 }}>Recommended starting value: 9/255. The real bar previews every change immediately.</div>
-    <LowBrightnessWarning mode="Day" value={dayBrightness} />
-    <ToggleField label="Dim automatically after sunset"
-      description="Use a chosen city's exact solar times. No IP geolocation."
-      checked={nightEnabled} onChange={setNightEnabled} />
-    {nightEnabled ? <>
-    {location ? <div style={{ padding: "16px 18px", borderRadius: 14, background: "rgba(38,159,255,.11)", border: "1px solid rgba(104,199,255,.3)" }}>
-      <div style={{ fontSize: "1.08em", fontWeight: 700 }}>{location.name}, {location.country}</div>
-      <div style={{ marginTop: 5, opacity: .72 }}>Sunrise and sunset are calculated for this exact location.</div>
-    </div> : <>
-      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.4fr) minmax(0, 1fr)", gap: 12 }}>
-        <TextField label="City or postal code" value={cityQuery}
-          onChange={(event) => setCityQuery(event.currentTarget.value)} />
-        <TextField label="Country (optional)" value={countryQuery}
-          onChange={(event) => setCountryQuery(event.currentTarget.value)} />
-      </div>
-      <div style={{ marginTop: 12 }}><ButtonItem layout="below" label="Find city"
-        disabled={searching || cityQuery.trim().length < 2}
-        onClick={() => void findCity()}>{searching ? "Searching…" : "Search"}</ButtonItem></div>
-      {cityResults.length ? <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10, marginTop: 12 }}>
-        {cityResults.map((city, index) => <ButtonItem key={`${city.latitude}:${city.longitude}:${index}`}
-          layout="below" label={`${city.name}, ${city.country}`} onClick={() => chooseCity(city)}>Use this city</ButtonItem>)}
-      </div> : null}
-    </>}
-    {location ? <div style={{ marginTop: 16 }}>
-      <div style={{ marginTop: 12 }}><SliderField label="Night brightness" value={nightBrightness}
-        description={`${effectiveNightBrightness}/255 at the current day setting.`}
-        min={10} max={100} step={5} showValue valueSuffix="%" onChange={(value) => {
-          setNightBrightness(value); void previewBrightness("night", "night_mode_brightness", value);
-        }} /></div>
-      <div style={{ margin: "8px 0 18px", fontSize: ".8em", opacity: .7 }}>
-        Recommended starting value: 9/255 effective output. Current night output: {effectiveNightBrightness}/255.
-      </div>
-      <LowBrightnessWarning mode="Night" value={effectiveNightBrightness} />
-      <div style={{ marginTop: 12 }}><ButtonItem layout="below" label="Change city" onClick={() => {
-        setLocation(null); setCityResults([]); setMessage("");
-      }}>Choose another</ButtonItem></div>
-    </div> : <div style={{ marginTop: 16, opacity: .72, lineHeight: 1.45 }}>
-      You can continue without a city. Automatic night mode will remain off and can be configured later in Weather settings.
-    </div>}
-    </> : null}
-    {message ? <div style={{ marginTop: 14, color: message.includes("failed") || message.includes("No matching") ? "#ffbc9e" : "#a9ddff" }}>{message}</div> : null}
-    <div style={{ marginTop: 18, opacity: .68, fontSize: ".82em" }}>
-      Important alerts temporarily use day brightness. Thermal protection always returns complete control to Valve.
-    </div>
-    <SetupActions primaryLabel="Continue" primaryText="Review setup" onPrimary={() => setStep(3)}
-      secondaryLabel="Back" secondaryText="Lighting style" onSecondary={() => setStep(1)} />
-  </SetupFrame>;
-
-  return <SetupFrame step={3} showScrollCue title="Ready to start"
-    description="Review the choices that will be saved. You can change all of them later from GabeCubeAura settings.">
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 12 }}>
-      {[{ label: "Lighting preset", value: selected.label },
-      { label: "Day brightness", value: `${dayBrightness}/255` }, {
-        label: "Night brightness", value: nightEnabled && location
-          ? `${location.name} · ${nightBrightness}% · ${effectiveNightBrightness}/255` : "Off",
-      }].map((item) => <div key={item.label} style={{
-        minHeight: 92,
-        padding: "16px 18px",
-        borderRadius: 14,
-        background: "rgba(255,255,255,.045)",
-        border: "1px solid rgba(255,255,255,.08)",
-      }}>
-        <div style={{ fontSize: ".76em", opacity: .62, marginBottom: 8 }}>{item.label}</div>
-        <div style={{ fontWeight: 700, lineHeight: 1.35 }}>{item.value}</div>
-      </div>)}
-    </div>
-    <div style={{ marginTop: 16, padding: "13px 16px", borderRadius: 12, background: "rgba(83,185,243,.08)", fontSize: ".82em", lineHeight: 1.45, opacity: .84 }}>
-      Private Lab authentication is not kept. Updates use the Stable channel with one automatic check every 24 hours.
-    </div>
-    {message ? <div style={{ marginTop: 14, color: "#ffbc9e" }}>{message}</div> : null}
-    <SetupActions primaryLabel="Apply setup" primaryText={saving ? "Saving…" : "Start GabeCubeAura"}
-      primaryDisabled={saving} onPrimary={() => void finish()}
-      secondaryLabel="Back" secondaryText="Brightness" onSecondary={() => setStep(2)} />
-  </SetupFrame>;
-}
-
-function FirstRunSetupRoute() {
+function FirstRunSetupRoute({faceplateOnly=false}:{faceplateOnly?:boolean}) {
   const [status, setStatus] = useState<Status | null>(null);
   const [error, setError] = useState("");
 
@@ -2069,61 +1928,1177 @@ function FirstRunSetupRoute() {
     {error ? <div style={{ marginTop: 16 }}><ButtonItem label="Back" onClick={() => Navigation.NavigateBack()}>Return to Steam</ButtonItem></div> : null}
   </SetupFrame>;
 
-  if (!status.available) return <SetupFrame step={1} title="Light bar unavailable"
-    description="The guided setup will remain available after GabeCubeAura detects the 17-pixel valve-leds device.">
-    <div style={{ opacity: .78 }}>{status.error || "No compatible light bar was found."}</div>
-    <div style={{ marginTop: 16 }}><ButtonItem label="Back" onClick={() => Navigation.NavigateBack()}>Return to Steam</ButtonItem></div>
-  </SetupFrame>;
-
-  if (status.onboarding_completed) return <SetupFrame step={3} title="Setup already complete"
-    description="Your saved configuration is active. Detailed settings remain available from the GabeCubeAura panel.">
-    <ButtonItem label="Back" onClick={() => Navigation.NavigateBack()}>Return to Steam</ButtonItem>
-  </SetupFrame>;
-
-  return <FirstRunSetup status={status} setStatus={setStatus} onClose={() => Navigation.NavigateBack()} />;
+  return <FirstRunOnboarding faceplateOnly={faceplateOnly} status={status} setStatus={next=>{retainedStatus=next;publishQuickSetupStatus(next);setStatus(next);}}
+    openBrowser={openCopyCapableBrowser} onClose={() => Navigation.NavigateBack()} />;
 }
 
-function Content({ page = "quick" }: { page?: Page }) {
-  const [status, setStatusState] = useState<Status | null>(null);
+const FACEPLATE_ARTWORK_SEARCH_OPTIONS = [
+  { data: "static", label: "Static square · 1:1" },
+  { data: "animated_any", label: "Animated · hero, portrait or wide" },
+  { data: "hero_pan", label: "Static horizontal hero · panorama" },
+];
+
+const FACEPLATE_LOOP_CLEANUP_OPTIONS = [
+  { data: "no", label: "No cut · keep every frame" },
+  { data: "soft", label: "Soft · automatic" },
+  { data: "medium", label: "Medium · best seam within 0.5 s" },
+  { data: "aggressive", label: "Aggressive · best seam within 1 s" },
+];
+
+const FACEPLATE_RESULT_PREVIEW_OPTIONS = [
+  { data: "artwork", label: "Artwork in-game · exact prepared GIF" },
+  { data: "dashboard", label: "Artwork Dashboard · artwork with live overlay" },
+  { data: "weather-dashboard", label: "Weather Dashboard · current atmosphere" },
+];
+
+const FACEPLATE_ARTWORK_STYLE_OPTIONS = [
+  { data: "art", label: "Artwork only" },
+  { data: "logo_dim", label: "Artwork + logo on shaded band" },
+  { data: "logo", label: "Artwork + logo, no band" },
+  { data: "logo_only", label: "Logo only, black background" },
+];
+const FACEPLATE_LOGO_POSITION_OPTIONS = [
+  { data: "bottom", label: "Bottom · above status bar" },
+  { data: "bottom_rail", label: "Bottom · replaces status bar" },
+  { data: "centre", label: "Centre" },
+  { data: "top", label: "Top · replaces clock" },
+];
+
+function PixelStudioArtworkPanel({ status, setStatus }: {
+  status: Status;
+  setStatus: (next: Status) => void;
+}) {
+  const [games, setGames] = useState<FaceplateInstalledGame[]>([]);
+  const [gameQuery, setGameQuery] = useState("");
+  const [selectedGame, setSelectedGame] = useState<FaceplateInstalledGame | null>(null);
+  const [choosingGame, setChoosingGame] = useState(true);
+  const [preference, setPreference] = useState<"static" | "animated_any" | "hero_pan">("static");
+  const [results, setResults] = useState<FaceplateArtworkAsset[]>([]);
+  const [resultIndex, setResultIndex] = useState(0);
+  const [selectedAsset, setSelectedAsset] = useState<FaceplateArtworkAsset | null>(null);
+  const [artworkState, setArtworkState] = useState<FaceplateArtworkState | null>(null);
+  const [library, setLibrary] = useState<FaceplateArtworkLibraryEntry[]>([]);
+  const [librarySelection, setLibrarySelection] = useState("");
+  const [libraryBusy, setLibraryBusy] = useState(false);
+  const [showAdjustments, setShowAdjustments] = useState(false);
+  const [cropEditing, setCropEditing] = useState(false);
+  const [previewPlaying, setPreviewPlaying] = useState(false);
+  const [previewError, setPreviewError] = useState("");
+  const [dashboardPreview, setDashboardPreview] = useState("");
+  const [dashboardPreviewBusy, setDashboardPreviewBusy] = useState(false);
+  const [weatherDashboardPreview, setWeatherDashboardPreview] = useState("");
+  const [nativePreview, setNativePreview] = useState("");
+  const [nativePreviewBusy, setNativePreviewBusy] = useState(false);
+  const [previewTarget, setPreviewTarget] = useState<
+    "artwork" | "dashboard" | "weather-dashboard"
+  >("artwork");
+  const [cropY, setCropY] = useState(50);
+  const [cropX, setCropX] = useState(50);
+  const [saturation, setSaturation] = useState(110);
+  const [brightness, setBrightness] = useState(100);
+  const [logoScale, setLogoScale] = useState(100);
+  const logoScaleEdited = useRef(false);
+  const [dashboardTreatment, setDashboardTreatment] = useState<"none" | "cinema" | "hero-cut" | "palette-echo">("none");
+  const [dashboardCompression, setDashboardCompression] = useState<"compatible" | "balanced" | "fine">("compatible");
+  const [dashboardClockSize, setDashboardClockSize] = useState<"compact" | "large">("large");
+  const [dashboardShowSession, setDashboardShowSession] = useState(true);
+  const [dashboardShowBattery, setDashboardShowBattery] = useState(true);
+  const [useForDashboardHome, setUseForDashboardHome] = useState(false);
+  type Destination = "game" | "game-dashboard" | "home" | "both";
+  const [destination, setDestination] = useState<Destination>("game");
+  const [draftPreviewKey, setDraftPreviewKey] = useState("");
+  const [appliedDraftKey, setAppliedDraftKey] = useState("");
+  const [loopCleanup, setLoopCleanup] = useState<"no" | "soft" | "medium" | "aggressive">("no");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const activateWhenReady = useRef<{ appid: number; destination: Destination } | null>(null);
+  const appliedSha = useRef("");
+  const applyingPrepared = useRef(false);
+  const [deliveryWatch, setDeliveryWatch] = useState(0);
+  const [deliveryStatus, setDeliveryStatus] = useState<Awaited<ReturnType<typeof getFaceplateDeliveryStatus>> | null>(null);
+  const [deliveryReadError, setDeliveryReadError] = useState("");
+  const preparedIdentity = useRef("");
+  const prepareFocus = useRef("use-artwork");
+  const deliveryKey = useRef("");
+  const preparationIdentity = JSON.stringify([
+    selectedGame?.appid, selectedAsset?.id, selectedAsset?.kind,
+    cropX, cropY, saturation, brightness, logoScale, loopCleanup, preference,
+    dashboardTreatment, dashboardCompression,
+    dashboardClockSize, dashboardShowSession, dashboardShowBattery,
+    status.faceplate_artwork_profiles[String(selectedGame?.appid)]?.style ?? status.faceplate_artwork_style,
+    status.faceplate_artwork_profiles[String(selectedGame?.appid)]?.position ?? status.faceplate_logo_position,
+  ]);
+  const artworkPanelRef = useRef<HTMLDivElement | null>(null);
+  const focusFrame = useRef<number | null>(null);
+  const libraryRequest = useRef(0);
+
+  const restoreArtworkFocus = useCallback((target: string) => {
+    if (focusFrame.current != null) window.cancelAnimationFrame(focusFrame.current);
+    let attempts = 0;
+    const tryFocus = () => {
+      focusFrame.current = null;
+      const panel = artworkPanelRef.current;
+      const region = panel?.querySelector<HTMLElement>(`[data-artwork-focus="${target}"]`) ?? null;
+      if (region?.isConnected) {
+        try {
+          const focusNav = getFocusNavController();
+          if (!focusNav?.m_ActiveContext && focusNav?.m_LastActiveContext) {
+            focusNav.FindAnActiveContext?.();
+          }
+          if (takeArtworkNativeFocus(
+            region,
+            (getGamepadNavigationTrees() || []) as ArtworkNativeNavigationTree[],
+          )) return;
+        } catch (error) {
+          console.warn("[GabeCubeAura] Pixel Studio focus restore failed", error);
+          return;
+        }
+      }
+      attempts += 1;
+      if (attempts < 18) focusFrame.current = window.requestAnimationFrame(tryFocus);
+    };
+    focusFrame.current = window.requestAnimationFrame(tryFocus);
+  }, []);
+
+  useEffect(() => () => {
+    if (focusFrame.current != null) window.cancelAnimationFrame(focusFrame.current);
+  }, []);
+
+  const refreshArtworkState = useCallback(async (appid: number) => {
+    if (appid <= 0) return;
+    setArtworkState(await getFaceplateArtworkJob(appid));
+  }, []);
+
+  const refreshLibrary = useCallback(async () => {
+    const request = ++libraryRequest.current;
+    const value = await getFaceplateArtworkLibrary();
+    // A delete or a newer refresh may have changed the local list while the
+    // backend was resolving Steam game names. Never restore that stale list.
+    if (request !== libraryRequest.current) return;
+    setLibrary(value.entries);
+    setLibrarySelection((current) => current && value.entries.some(
+      (item) => `${item.appid}:${item.mode}` === current,
+    ) ? current : value.entries.length
+      ? `${value.entries[0].appid}:${value.entries[0].mode}` : "");
+  }, []);
+
+  useEffect(() => {
+    void refreshLibrary().catch((error) => {
+      console.warn("[GabeCubeAura] artwork library failed", error);
+    });
+  }, [refreshLibrary]);
+
+  const activatePrepared = useCallback(async (
+    appid: number, mode: "static" | "animated" | "pan",
+    prepared?: FaceplateArtworkManifest,
+    target: Destination = destination,
+  ) => {
+    if (applyingPrepared.current) return;
+    applyingPrepared.current = true;
+    try {
+      if (STUDIO_UX) {
+        setBusy(true);
+        appliedSha.current = prepared?.sha256 ?? "";
+        if (target === "game" || target === "game-dashboard") {
+          await activateFaceplateArtwork(appid, mode, true, prepared?.sha256,
+            target === "game" ? "artwork" : "artwork-dashboard");
+        } else await commitFaceplateDashboardArtwork(appid, mode, true, target === "home", prepared?.sha256, false);
+        await getStatus().then(setStatus).catch((error) => {
+          console.warn("[GabeCubeAura] artwork applied; status refresh failed", error);
+        });
+        setAppliedDraftKey(`${prepared?.sha256}:${target}`);
+        if ((target === "home" && status.game.appid === 0) || target === "both"
+            || (target.startsWith("game") && status.game.appid === appid)) {
+          deliveryKey.current = "";
+          setDeliveryStatus(null); setDeliveryReadError("");
+          try {
+            const receipt = await getFaceplateDeliveryStatus();
+            deliveryKey.current = receipt.routing.desired_content_key;
+            setDeliveryStatus(receipt);
+          } catch { /* The bounded receipt reader below can retry once. */ }
+          setDeliveryWatch((previous) => previous + 1);
+        }
+        await Promise.all([refreshArtworkState(appid), refreshLibrary()]).catch((error) => {
+          console.warn("[GabeCubeAura] artwork applied; library refresh failed", error);
+        });
+        setMessage(target === "home" && status.game.appid > 0
+          ? "Saved for Home. It will appear when the game closes."
+          : target.startsWith("game") && status.game.appid !== appid
+            ? "Saved. It will appear when this game starts."
+            : "Display selected. Sending to the Faceplate…");
+        restoreArtworkFocus(mode === "static" ? prepareFocus.current : "result-preview");
+        return;
+      }
+      let nextStatus = status;
+      if (useForDashboardHome) {
+        // One backend transaction activates the prepared copy, stores the
+        // Dashboard assignment and reconciles the panel exactly once.
+        nextStatus = await assignFaceplateDashboardArtwork(appid, mode);
+        setStatus(nextStatus);
+      } else {
+        await activateFaceplateArtwork(appid, mode);
+      }
+      await refreshArtworkState(appid);
+      await refreshLibrary();
+      const removed = prepared?.loop_trimmed_frames ?? 0;
+      const cleanup = prepared?.loop_cleanup === "no"
+        ? " Every source frame was kept."
+        : removed
+        ? ` Loop cleanup removed ${removed} frames (${((prepared?.loop_trimmed_ms ?? 0) / 1000).toFixed(1)} s).`
+        : prepared?.loop_cleanup ? " Loop cleanup removed no terminal frames." : "";
+      const legacyTarget = useForDashboardHome ? "dashboard" : "artwork";
+      setPreviewTarget(legacyTarget);
+      if (legacyTarget === "dashboard") setDashboardPreviewBusy(true);
+      else setNativePreviewBusy(true);
+      try {
+        if (legacyTarget === "dashboard") {
+          const preview = await getFaceplateArtworkDashboardPreview(appid, "", false, true);
+          setDashboardPreview(preview.data_uri);
+        } else {
+          const preview = await getFaceplateArtworkPreview(appid);
+          setNativePreview(preview.data_uri);
+          if (preview.error) throw new Error(preview.error);
+        }
+        setMessage(
+          `${useForDashboardHome ? "Dashboard Home and game artwork are ready." : "Done. This artwork will appear automatically when the game starts."}${cleanup}`,
+        );
+      } catch (error) {
+        setMessage(
+          `${useForDashboardHome ? "Dashboard Home and game artwork are ready." : "The game artwork is active."} Preview unavailable: ${String(error)}`,
+        );
+      } finally {
+        setDashboardPreviewBusy(false); setNativePreviewBusy(false);
+        restoreArtworkFocus("result-preview");
+      }
+    } catch (error) {
+      setMessage(`The artwork is ready but could not be activated: ${String(error)}`);
+    } finally {
+      applyingPrepared.current = false;
+      setBusy(false);
+    }
+  }, [refreshArtworkState, refreshLibrary, restoreArtworkFocus, setStatus, status, useForDashboardHome, destination]);
+
+  useEffect(() => {
+    if (!deliveryWatch) return;
+    let alive = true;
+    let timer: number | null = null;
+    const deadline = Date.now() + 120_000;
+    const poll = async () => {
+      try {
+        const next = await getFaceplateDeliveryStatus();
+        if (!alive) return;
+        setDeliveryStatus(next);
+        if (!deliveryKey.current) deliveryKey.current = next.routing.desired_content_key;
+        if (next.routing.desired_content_key !== deliveryKey.current) {
+          setDeliveryReadError("Saved. Another display is now requested. Check the Decky panel.");
+          return;
+        }
+        const state = next.routing.preparation.state;
+        if (next.apply_deferred_reason || (!next.automation.busy && !next.automation.queued
+            && (["error", "unconfirmed"].includes(state)
+              || (state === "ready" && next.routing.effective_content_key === deliveryKey.current)))) return;
+        if (Date.now() >= deadline) {
+          setDeliveryReadError("Transfer still pending. Check status in the Decky panel.");
+          return;
+        }
+        timer = window.setTimeout(() => void poll(), 2000);
+      } catch {
+        if (alive) setDeliveryReadError("Could not read transfer status. Check the Decky panel.");
+      }
+    };
+    void poll();
+    return () => { alive = false; if (timer != null) window.clearTimeout(timer); };
+  }, [deliveryWatch]);
+
+  useEffect(() => {
+    const job = artworkState?.job;
+    if (!selectedGame || !STUDIO_UX || job?.state !== "ready" || !job.mode
+        || job.appid !== selectedGame?.appid || !job.prepared?.sha256
+        || preparedIdentity.current !== preparationIdentity) return;
+    let alive = true;
+    setDraftPreviewKey("");
+    const dashboard = destination !== "game";
+    setNativePreview(""); setDashboardPreview("");
+    setNativePreviewBusy(true);
+    void (dashboard
+      ? getFaceplateArtworkDashboardPreview(
+          selectedGame.appid, job.mode, true, destination === "home" || destination === "both",
+        )
+      : getPreparedFaceplateArtworkPreview(selectedGame.appid, job.mode)
+    ).then((preview) => {
+      if (!alive) return;
+      if (dashboard) setDashboardPreview(preview.data_uri);
+      else setNativePreview(preview.data_uri);
+      setCropEditing(false);
+      setDraftPreviewKey(job.prepared?.sha256 ?? "");
+      if (appliedSha.current !== job.prepared?.sha256 && !activateWhenReady.current) {
+        setMessage("Preview ready. Apply to use this display.");
+      }
+    }).catch((error) => {
+      if (alive) setMessage(`Prepared preview unavailable: ${String(error)}. Prepare again to retry.`);
+    }).finally(() => {
+      if (alive) {
+        setNativePreviewBusy(false); setDashboardPreviewBusy(false);
+        const region = artworkPanelRef.current?.querySelector<HTMLElement>(`[data-artwork-focus="${prepareFocus.current}"]`);
+        if (!activateWhenReady.current && appliedSha.current !== job.prepared?.sha256
+            && (region?.contains(document.activeElement)
+              || region?.matches(":focus-within,.gpfocuswithin")
+              || region?.querySelector(".gpfocus,.gpfocuswithin"))) {
+          restoreArtworkFocus(job.mode === "static" ? "use-static" : "result-preview");
+        }
+      }
+    });
+    return () => { alive = false; };
+  }, [STUDIO_UX, selectedGame?.appid, artworkState?.job.state, artworkState?.job.prepared?.sha256, destination, preparationIdentity, status.faceplate_dashboard_show_clock, status.faceplate_dashboard_show_weather, status.faceplate_dashboard_contexts]);
+
+  useEffect(() => {
+    if (!selectedGame) return;
+    void refreshArtworkState(selectedGame.appid).catch((error) => {
+      console.warn("[GabeCubeAura] faceplate artwork state failed", error);
+    });
+  }, [selectedGame?.appid, refreshArtworkState]);
+
+  useEffect(() => {
+    const saved = artworkState?.selected;
+    if (!saved?.asset_id) return;
+    setDashboardTreatment(
+      ["cinema", "hero-cut", "palette-echo"].includes(saved.dashboard_treatment || "")
+        ? saved.dashboard_treatment as typeof dashboardTreatment : "none",
+    );
+    setDashboardCompression(
+      ["balanced", "fine"].includes(saved.dashboard_compression || "")
+        ? saved.dashboard_compression as typeof dashboardCompression : "compatible",
+    );
+    setDashboardClockSize(saved.dashboard_clock_size === "compact" ? "compact" : "large");
+    setDashboardShowSession(saved.dashboard_show_session ?? true);
+    setDashboardShowBattery(saved.dashboard_show_battery ?? true);
+  }, [selectedGame?.appid, artworkState?.selected?.asset_id]);
+
+  useEffect(() => {
+    if (!selectedGame || !artworkState
+        || !["queued", "running", "cancelling"].includes(artworkState.job.state)) return;
+    let alive = true;
+    let timer: number | null = null;
+    const poll = async () => {
+      try {
+        const next = await getFaceplateArtworkJob(selectedGame.appid);
+        if (!alive) return;
+        setArtworkState(next);
+        if (["queued", "running", "cancelling"].includes(next.job.state)) {
+          timer = window.setTimeout(() => void poll(), 1000);
+        } else if (next.job.state === "ready" && next.job.mode && activateWhenReady.current) {
+          const target = activateWhenReady.current;
+          activateWhenReady.current = null;
+          if (target.appid === selectedGame.appid) {
+            await activatePrepared(target.appid, next.job.mode, next.job.prepared, target.destination);
+          }
+        } else if (["failed", "cancelled"].includes(next.job.state)) {
+          activateWhenReady.current = null;
+        }
+      } catch (error) {
+        console.warn("[GabeCubeAura] preparation poll failed", error);
+        if (alive) timer = window.setTimeout(() => void poll(), 1500);
+      }
+    };
+    timer = window.setTimeout(() => void poll(), 1000);
+    return () => {
+      alive = false;
+      if (timer != null) window.clearTimeout(timer);
+    };
+  }, [selectedGame?.appid, artworkState?.job.state, activatePrepared]);
+
+  const gameProfile = selectedGame
+    ? status.faceplate_artwork_profiles[String(selectedGame.appid)] : undefined;
+  const effectiveArtStyle = gameProfile?.style ?? status.faceplate_artwork_style;
+  const effectiveLogoPosition = gameProfile?.position ?? status.faceplate_logo_position;
+
+  const setArtworkPresentation = async (
+    key: "style" | "position", value: string,
+  ) => {
+    if (key === "position" && value === "bottom_rail") {
+      setDashboardShowSession(false);
+      setDashboardShowBattery(false);
+    }
+    if (gameProfile && selectedGame) {
+      const id = String(selectedGame.appid);
+      const next = {
+        ...status.faceplate_artwork_profiles,
+        [id]: { ...gameProfile, [key]: value },
+      };
+      setStatus(await setSetting("faceplate_artwork_profiles", next));
+    } else {
+      setStatus(await setSetting(
+        key === "style" ? "faceplate_artwork_style" : "faceplate_logo_position",
+        value,
+      ));
+    }
+    restoreArtworkFocus(key === "style" ? "artwork-style" : "logo-position");
+  };
+
+  const matchingGames = STUDIO_UX ? installedGameChoices(games, gameQuery) : gameQuery.trim().length >= 2
+    ? games.filter((game) => game.name.toLocaleLowerCase().includes(
+      gameQuery.trim().toLocaleLowerCase(),
+    )).slice(0, 5)
+    : [];
+  const job = artworkState?.job;
+  const jobRunning = Boolean(job && ["queued", "running", "cancelling"].includes(job.state));
+  const selectedLibraryEntry = library.find(
+    (item) => `${item.appid}:${item.mode}` === librarySelection,
+  ) ?? null;
+  const preparationMode: "static" | "animated" | "pan" = selectedAsset?.animated
+    ? "animated" : selectedAsset?.kind === "hero" && preference === "hero_pan" ? "pan" : "static";
+  useEffect(() => {
+    if (logoScaleEdited.current || !selectedGame) return;
+    const saved = artworkState?.prepared[preparationMode] ?? artworkState?.selected;
+    if (saved?.appid === selectedGame.appid) {
+      const size = saved.logo_scale;
+      setLogoScale(typeof size === "number" && Number.isInteger(size) && size >= 50 && size <= 100 ? size : 100);
+    }
+  }, [selectedGame?.appid, preparationMode, artworkState?.prepared, artworkState?.selected]);
+  const candidate = results[resultIndex] ?? null;
+  const previewKind = candidate ? artworkPreviewMedia(candidate.thumb, candidate.animated) : "image";
+  const weatherDashboardCondition: WeatherCondition = status.weather.condition ?? "clear_day";
+  const weatherDashboardVariant = Number(status[
+    `weather_${weatherDashboardCondition}_variant` as keyof Status
+  ] ?? 0);
+  const resultPreview = (STUDIO_UX ? destination === "game" : previewTarget === "artwork")
+    ? nativePreview
+    : STUDIO_UX || previewTarget === "dashboard" ? dashboardPreview : weatherDashboardPreview;
+  const sourcePreview = candidate ? <ArtworkCropPreview asset={candidate}
+    cropX={cropX} cropY={cropY} guides={showAdjustments} videoRef={videoRef}
+    onPlay={() => setPreviewPlaying(true)} onPause={() => setPreviewPlaying(false)}
+    onError={() => setPreviewError("This preview could not be played. You can still use the artwork.")} /> : null;
+
+  useEffect(() => {
+    setPreviewPlaying(false);
+    setPreviewError("");
+  }, [candidate?.id, candidate?.kind, candidate?.thumb]);
+
+  const loadGames = async () => {
+    let nextFocus = "choose-game";
+    setBusy(true); setMessage("Reading installed Steam games…");
+    try {
+      const value = await getFaceplateInstalledGames();
+      setGames(value.games); setMessage(`${value.count} installed games found.`);
+      if (value.games.length) nextFocus = "game-search";
+    } catch (error) {
+      setMessage(`Could not read installed games: ${String(error)}`);
+    } finally {
+      setBusy(false);
+      restoreArtworkFocus(nextFocus);
+    }
+  };
+
+  const search = async () => {
+    if (!selectedGame) return;
+    setDraftPreviewKey("");
+    setBusy(true); setMessage("Searching SteamGridDB…"); setResults([]); setResultIndex(0); setSelectedAsset(null);
+    try {
+      const value = await searchFaceplateArtwork(selectedGame.appid, preference);
+      setResults(value.results);
+      setSelectedAsset(value.results[0] ?? null);
+      setMessage(value.count ? `${value.count} artwork choices found.` : "No matching artwork found.");
+    } catch (error) {
+      setMessage(`Search failed: ${String(error)}`);
+    } finally {
+      setBusy(false);
+      restoreArtworkFocus("artwork-search");
+    }
+  };
+
+  const prepare = async (apply = false) => {
+    if (!selectedGame || !selectedAsset) return;
+    if (busy || jobRunning) return;
+    prepareFocus.current = apply && showAdjustments ? "use-static" : "use-artwork";
+    activateWhenReady.current = apply ? { appid: selectedGame.appid, destination } : null;
+    appliedSha.current = "";
+    preparedIdentity.current = preparationIdentity;
+    setDeliveryWatch(0); setDeliveryStatus(null); setDeliveryReadError("");
+    setDraftPreviewKey(""); setAppliedDraftKey("");
+    setBusy(true); setMessage("Preparing your artwork. The current faceplate image stays visible.");
+    try {
+      const next = await prepareFaceplateArtwork(
+        selectedGame.appid, selectedAsset.id, selectedAsset.kind, preparationMode,
+        cropY, saturation, brightness, cropX, dashboardTreatment,
+        false, dashboardClockSize,
+        dashboardShowSession, dashboardShowBattery,
+        dashboardCompression,
+        preparationMode === "animated" ? loopCleanup : "no",
+        Boolean(STUDIO_UX), logoScale,
+      );
+      setArtworkState((previous) => ({
+        job: next, selected: previous?.selected ?? {}, prepared: previous?.prepared ?? {},
+      }));
+      if (next.state === "ready" && next.mode && activateWhenReady.current) {
+        const target = activateWhenReady.current;
+        activateWhenReady.current = null;
+        await activatePrepared(target.appid, next.mode, next.prepared, target.destination);
+      }
+    } catch (error) {
+      activateWhenReady.current = null;
+      setMessage(`Preparation failed: ${String(error)}`);
+    } finally {
+      setBusy(false);
+      restoreArtworkFocus(prepareFocus.current);
+    }
+  };
+
+  const chooseGame = (game: FaceplateInstalledGame) => {
+    activateWhenReady.current = null;
+    appliedSha.current = "";
+    preparedIdentity.current = "";
+    setDeliveryWatch(0); setDeliveryStatus(null); setDeliveryReadError("");
+    setDraftPreviewKey(""); setAppliedDraftKey("");
+    setSelectedGame(game); setChoosingGame(false); setGameQuery("");
+    setResults([]); setResultIndex(0); setSelectedAsset(null); setShowAdjustments(false);
+    setDashboardPreview(""); setWeatherDashboardPreview(""); setNativePreview("");
+    setLoopCleanup("no"); setMessage("");
+    logoScaleEdited.current = false; setLogoScale(100);
+    setPreviewTarget("artwork");
+    setUseForDashboardHome(
+      status.faceplate_dashboard_home_source === "artwork"
+      && status.faceplate_dashboard_home_appid === game.appid,
+    );
+    restoreArtworkFocus("artwork-type");
+  };
+
+  const showResult = (index: number) => {
+    setDraftPreviewKey("");
+    const nextIndex = Math.max(0, Math.min(results.length - 1, index));
+    setResultIndex(nextIndex); setSelectedAsset(results[nextIndex] ?? null); setMessage("");
+    restoreArtworkFocus("gallery-navigation");
+  };
+
+  const togglePreview = async () => {
+    const video = videoRef.current;
+    if (!video) return;
+    if (video.paused) {
+      try { await video.play(); setPreviewError(""); }
+      catch { setPreviewError("Preview could not start. The source can still be prepared for the faceplate."); }
+    } else video.pause();
+    restoreArtworkFocus("preview-playback");
+  };
+
+  const useLibraryEntry = async (home: boolean) => {
+    if (!selectedLibraryEntry) return;
+    setLibraryBusy(true); setMessage("");
+    try {
+      if (home) {
+        if (!selectedLibraryEntry.dashboard_ready) {
+          throw new Error("This saved copy must be prepared again before it can be used by Dashboard Home.");
+        }
+        const next = await assignFaceplateDashboardArtwork(
+          selectedLibraryEntry.appid, selectedLibraryEntry.mode,
+          false, Boolean(STUDIO_UX),
+        );
+        setStatus(next);
+        const preview = await getFaceplateArtworkDashboardPreview(selectedLibraryEntry.appid, "", false, true);
+        setDashboardPreview(preview.data_uri);
+        setPreviewTarget("dashboard");
+      } else {
+        await activateFaceplateArtwork(selectedLibraryEntry.appid, selectedLibraryEntry.mode);
+        const preview = await getFaceplateArtworkPreview(selectedLibraryEntry.appid);
+        setNativePreview(preview.data_uri);
+        setPreviewTarget("artwork");
+      }
+      await refreshLibrary();
+      setMessage(home
+        ? "Saved artwork assigned to Dashboard Home."
+        : "Saved artwork activated for this game.");
+    } catch (error) {
+      setMessage(`Could not activate saved artwork: ${String(error)}`);
+    } finally {
+      setLibraryBusy(false);
+      restoreArtworkFocus("saved-artwork");
+    }
+  };
+
+  const confirmLibraryDelete = () => {
+    if (!selectedLibraryEntry) return;
+    const item = selectedLibraryEntry;
+    const wasDashboardHome = status.faceplate_dashboard_home_appid === item.appid;
+    let modal: ReturnType<typeof showModal> | undefined;
+    modal = showModal(<ConfirmModal strTitle="Delete saved Faceplate artwork?"
+      strDescription={`This removes the prepared ${item.mode} copy for ${item.name || `App ${item.appid}`}. The SteamGridDB source can be searched and prepared again later.`}
+      strOKButtonText="Delete" strCancelButtonText="Cancel" bDestructiveWarning
+      onCancel={() => modal?.Close()}
+      onOK={() => {
+        modal?.Close();
+        const previousLibrary = library;
+        const previousSelection = librarySelection;
+        // Invalidate any library response already in flight before applying
+        // the optimistic removal below.
+        libraryRequest.current += 1;
+        const optimistic = library.filter(
+          (entry) => !(entry.appid === item.appid && entry.mode === item.mode),
+        );
+        const nextSelection = optimistic.length
+          ? `${optimistic[0].appid}:${optimistic[0].mode}` : "";
+        // Remove the card before filesystem/game-name refresh work completes.
+        // If the RPC fails, the exact prior list and selection are restored.
+        setLibrary(optimistic);
+        setLibrarySelection(nextSelection);
+        setLibraryBusy(true);
+        setMessage("Deleting saved artwork…");
+        void (async () => {
+          try {
+            const value = await deleteFaceplateArtwork(item.appid, item.mode);
+            libraryRequest.current += 1;
+            const names = new Map(previousLibrary.map(
+              (entry) => [`${entry.appid}:${entry.mode}`, entry.name],
+            ));
+            const entries = value.entries.map((entry) => ({
+              ...entry,
+              name: entry.name || names.get(`${entry.appid}:${entry.mode}`) || "",
+            }));
+            setLibrary(entries);
+            setLibrarySelection((current) => current && entries.some(
+              (entry) => `${entry.appid}:${entry.mode}` === current,
+            ) ? current : entries.length
+              ? `${entries[0].appid}:${entries[0].mode}` : "");
+            const next = await getStatus();
+            setStatus(next);
+            if (selectedGame?.appid === item.appid) {
+              await refreshArtworkState(item.appid);
+            }
+            if (wasDashboardHome && next.faceplate_dashboard_home_appid !== item.appid) {
+              setDashboardPreview("");
+            }
+            setMessage("Saved artwork deleted.");
+          } catch (error) {
+            setLibrary(previousLibrary);
+            setLibrarySelection(previousSelection);
+            setMessage(`Could not delete saved artwork: ${String(error)}`);
+          } finally {
+            setLibraryBusy(false);
+            restoreArtworkFocus(optimistic.length ? "saved-artwork" : "choose-game");
+          }
+        })();
+      }} />);
+  };
+
+  return <Focusable ref={artworkPanelRef} preferredFocus
+    navEntryPreferPosition={NavEntryPositionPreferences.PREFERRED_CHILD}
+    style={{ width: "100%" }}>
+    {library.length ? <PanelSection title="Saved artwork">
+      <PanelSectionRow><Focusable data-artwork-focus="saved-artwork" style={{ width: "100%" }}>
+        <DropdownItem label="Your Faceplate library"
+          untranslatedOptions
+          description="Prepared once and reused instantly. No conversion runs when a game starts."
+          rgOptions={library.map((item) => ({
+            data: `${item.appid}:${item.mode}`,
+            label: `${item.name || `App ${item.appid}`} · ${item.mode}${item.active ? ` · ${translate("Active")}` : ""}${item.dashboard_ready ? "" : ` · ${translate("Dashboard update needed")}`}`,
+          }))}
+          selectedOption={librarySelection}
+          onChange={(option) => {
+            setLibrarySelection(String(option.data));
+            restoreArtworkFocus("saved-artwork");
+          }} />
+      </Focusable></PanelSectionRow>
+      {selectedLibraryEntry?.thumb ? <PanelSectionRow><div style={{
+        width: "100%", overflow: "hidden", borderRadius: 14, background: "#070a11",
+      }}>
+        {artworkPreviewMedia(selectedLibraryEntry.thumb, Boolean(selectedLibraryEntry.animated)) === "video"
+          ? <video key={librarySelection} src={selectedLibraryEntry.thumb} autoPlay muted loop playsInline
+            preload="metadata" controls={false}
+            style={{ display: "block", width: "100%", height: 220, objectFit: "contain" }} />
+          : <img src={selectedLibraryEntry.thumb} loading="lazy" referrerPolicy="no-referrer"
+            style={{ display: "block", width: "100%", height: 220, objectFit: "contain" }} />}
+      </div></PanelSectionRow> : null}
+      <PanelSectionRow><ButtonItem label="Use for this game"
+        description="Activates the prepared copy for automatic in-game display."
+        disabled={libraryBusy || jobRunning}
+        onClick={() => void useLibraryEntry(false)}>{libraryBusy ? "Working…" : "Use"}</ButtonItem></PanelSectionRow>
+      <PanelSectionRow><ButtonItem label="Use for Dashboard Home"
+        description={selectedLibraryEntry?.dashboard_ready
+          ? "Keeps the artwork and adds the exact Realistic Dashboard overlay."
+          : "Prepare this saved artwork once again to create its Dashboard background."}
+        disabled={libraryBusy || jobRunning
+          || !selectedLibraryEntry?.dashboard_ready}
+        onClick={() => void useLibraryEntry(true)}>Assign</ButtonItem></PanelSectionRow>
+      <PanelSectionRow><ButtonItem label="Delete from library"
+        disabled={libraryBusy || jobRunning || status.game.appid > 0}
+        onClick={confirmLibraryDelete}>Delete</ButtonItem></PanelSectionRow>
+    </PanelSection> : null}
+    <PanelSection title="Game">
+      {selectedGame && !choosingGame ? <>
+        <PanelSectionRow><div style={{
+          width: "100%", padding: "12px 14px", borderRadius: 12,
+          background: "linear-gradient(135deg,rgba(40,215,255,.15),rgba(173,92,255,.12))",
+        }}>
+          <div translate="no" style={{ fontSize: "1.05em", fontWeight: 700 }}>{selectedGame.name}</div>
+          <div style={{ marginTop: 4, fontSize: ".76em", opacity: .68 }}>
+            {artworkState?.selected?.asset_id
+              ? `${artworkState.selected.animated ? "Animated" : "Static"} artwork active`
+              : "No custom faceplate artwork yet"}
+          </div>
+        </div></PanelSectionRow>
+        <PanelSectionRow><Focusable data-artwork-focus="change-game" style={{ width: "100%" }}>
+          <ButtonItem label="Choose another game" disabled={jobRunning}
+            onClick={() => {
+              setChoosingGame(true); setGameQuery("");
+              restoreArtworkFocus("game-search");
+            }}>Change</ButtonItem>
+        </Focusable></PanelSectionRow>
+      </> : <>
+        {!games.length ? <PanelSectionRow><Focusable data-artwork-focus="choose-game" style={{ width: "100%" }}>
+          <ButtonItem label="Choose a game"
+            description="Shows only games installed on this Steam Machine."
+            disabled={busy || jobRunning} onClick={() => void loadGames()}>
+            {busy ? "Loading…" : "Continue"}
+          </ButtonItem>
+        </Focusable></PanelSectionRow> : <>
+          <PanelSectionRow><Focusable data-artwork-focus="game-search" style={{ width: "100%" }}>
+            <TextField label="Search your games" description={STUDIO_UX ? "Browse installed games or filter by name." : "Type two letters or more."}
+              value={gameQuery} onChange={(event) => setGameQuery(event.currentTarget.value)} />
+          </Focusable>
+          </PanelSectionRow>
+          {matchingGames.map((game) => <PanelSectionRow key={game.appid}><Focusable
+            data-artwork-focus={`game-${game.appid}`} style={{ width: "100%" }}>
+            <ButtonItem label={game.name} untranslatedProps={["label"]} disabled={busy || jobRunning} onClick={() => chooseGame(game)}>
+              Choose
+            </ButtonItem>
+          </Focusable></PanelSectionRow>)}
+        </>}
+      </>}
+      {message && !selectedAsset ? <PanelSectionRow><div style={{ width: "100%", fontSize: ".78em", lineHeight: 1.45 }}>
+        {message}
+      </div></PanelSectionRow> : null}
+    </PanelSection>
+
+    {selectedGame && !choosingGame ? <PanelSection title="Artwork">
+      <PanelSectionRow><Focusable data-artwork-focus="artwork-type" style={{ width: "100%" }}>
+        <DropdownItem label="What would you like?"
+          description="Animated includes wide and portrait artwork."
+          disabled={busy || jobRunning}
+          rgOptions={FACEPLATE_ARTWORK_SEARCH_OPTIONS} selectedOption={preference}
+          onChange={(option) => {
+            setPreference(option.data as typeof preference); setResults([]); setResultIndex(0); setSelectedAsset(null);
+            restoreArtworkFocus("artwork-type");
+          }} />
+      </Focusable>
+      </PanelSectionRow>
+      <PanelSectionRow><Focusable data-artwork-focus="artwork-search" style={{ width: "100%" }}>
+        <ButtonItem label={results.length ? "Show different artwork" : "Show artwork"}
+          description={status.faceplate.steamgriddb.configured
+            ? "Looks through SteamGridDB for this game."
+            : "Add your SteamGridDB key in Pixel Studio Settings first."}
+          disabled={busy || jobRunning || !status.faceplate.steamgriddb.configured}
+          onClick={() => void search()}>{busy ? "Loading…" : results.length ? "Refresh" : "Continue"}</ButtonItem>
+      </Focusable>
+      </PanelSectionRow>
+      {candidate ? <>
+        <PanelSectionRow><div style={{
+          width: "100%", overflow: "hidden", borderRadius: 14,
+          background: "#070a11", boxShadow: "0 8px 24px rgba(0,0,0,.32)",
+        }}>
+          {!showAdjustments && (!draftPreviewKey || cropEditing) ? sourcePreview : null}
+          <div style={{ padding: "10px 12px 12px" }}>
+            <div style={{ fontSize: ".84em", fontWeight: 700 }}>
+              {candidate.animated ? "Animated artwork" : candidate.kind === "hero" ? "Wide artwork" : "Square artwork"}
+            </div>
+            <div style={{ marginTop: 3, fontSize: ".72em", opacity: .65 }}>
+              {candidate.width}×{candidate.height}{candidate.author ? ` · ${candidate.author}` : ""}
+            </div>
+          </div>
+        </div></PanelSectionRow>
+        <PanelSectionRow><Focusable data-artwork-focus="gallery-navigation"
+          navEntryPreferPosition={NavEntryPositionPreferences.FIRST}
+          style={{ display: "flex", width: "100%", gap: 10, alignItems: "center" }}>
+          <DialogButton style={{ minWidth: 64, flex: "0 0 64px" }} disabled={resultIndex <= 0 || busy || jobRunning}
+            onClick={() => showResult(resultIndex - 1)}>‹</DialogButton>
+          <div style={{ flex: 1, textAlign: "center", fontSize: ".8em", fontWeight: 650 }}>
+            {artworkResultLabel(resultIndex, results.length)}
+          </div>
+          <DialogButton style={{ minWidth: 64, flex: "0 0 64px" }}
+            disabled={resultIndex >= results.length - 1 || busy || jobRunning}
+            onClick={() => showResult(resultIndex + 1)}>›</DialogButton>
+        </Focusable></PanelSectionRow>
+        {previewKind === "video" && !draftPreviewKey ? <PanelSectionRow><Focusable
+          data-artwork-focus="preview-playback" style={{ width: "100%" }}>
+          <ButtonItem label={previewPlaying ? "Pause animation" : "Play animation"}
+            description="Muted preview. This does not affect the final faceplate GIF."
+            onClick={() => void togglePreview()}>{previewPlaying ? "Pause" : "Play"}</ButtonItem>
+        </Focusable>
+        </PanelSectionRow> : null}
+        {previewError ? <PanelSectionRow><div style={{ width: "100%", fontSize: ".76em", color: "#ffcf70" }}>
+          {previewError}
+        </div></PanelSectionRow> : null}
+      </> : null}
+    </PanelSection> : null}
+
+    {selectedAsset && selectedGame && !choosingGame ? <PanelSection title="Use on Faceplate">
+      <PanelSectionRow><Focusable data-artwork-focus="adjust-image" style={{ width: "100%" }}>
+        <ToggleField label="Adjust image"
+          description="Optional crop, colour and brightness controls."
+          disabled={busy || jobRunning}
+          checked={showAdjustments} onChange={(value) => {
+            setShowAdjustments(value);
+            setCropEditing(value);
+            restoreArtworkFocus("adjust-image");
+          }} />
+      </Focusable>
+      </PanelSectionRow>
+      {showAdjustments ? <>
+        {!draftPreviewKey || cropEditing ? <PanelSectionRow><div style={{ width: "100%" }}>{sourcePreview}
+          <Localized><div style={{ marginTop: 6, fontSize: ".78em" }}>
+            {preparationMode === "pan" ? "Red edges show one position. The animation scans the full width."
+              : "The image between the red lines will fill the 64 × 54 matrix."}
+          </div></Localized>
+        </div></PanelSectionRow> : null}
+        <PanelSectionRow><Focusable data-artwork-focus="artwork-style" style={{ width: "100%" }}>
+          <DropdownItem label="Artwork layout"
+            description="Optional. The default keeps the image clean and unobstructed."
+            rgOptions={FACEPLATE_ARTWORK_STYLE_OPTIONS}
+            selectedOption={effectiveArtStyle}
+            onChange={(option) => void setArtworkPresentation(
+              "style", option.data as Status["faceplate_artwork_style"],
+            ).catch(actionFailed)} />
+        </Focusable></PanelSectionRow>
+        {effectiveArtStyle !== "art" ? <PanelSectionRow><Focusable
+          data-artwork-focus="logo-position" style={{ width: "100%" }}>
+          <DropdownItem label="Logo position"
+            rgOptions={FACEPLATE_LOGO_POSITION_OPTIONS}
+            selectedOption={effectiveLogoPosition}
+            onChange={(option) => void setArtworkPresentation(
+              "position", option.data as Status["faceplate_logo_position"],
+            ).catch(actionFailed)} />
+        </Focusable></PanelSectionRow> : null}
+        {effectiveArtStyle !== "art" ? <ArtworkLogoScale value={logoScale} disabled={busy || jobRunning}
+          onChange={(value) => {
+            logoScaleEdited.current = true; setLogoScale(value); setDraftPreviewKey("");
+          }} /> : null}
+        <PanelSectionRow><SliderField label="Horizontal crop" value={cropX} min={0} max={100} step={5}
+          disabled={busy || jobRunning || preparationMode === "pan"}
+          showValue valueSuffix="%" onChange={(value) => { setCropX(value); setDraftPreviewKey(""); }} /></PanelSectionRow>
+        <PanelSectionRow><SliderField label="Vertical crop" value={cropY} min={0} max={100} step={5}
+          disabled={busy || jobRunning}
+          showValue valueSuffix="%" onChange={(value) => { setCropY(value); setDraftPreviewKey(""); }} /></PanelSectionRow>
+        <PanelSectionRow><SliderField label="Saturation" value={saturation} min={50} max={180} step={5}
+          disabled={busy || jobRunning}
+          showValue valueSuffix="%" onChange={(value) => { setSaturation(value); setDraftPreviewKey(""); }} /></PanelSectionRow>
+        <PanelSectionRow><SliderField label="Brightness" value={brightness} min={50} max={150} step={5}
+          disabled={busy || jobRunning}
+          showValue valueSuffix="%" onChange={(value) => { setBrightness(value); setDraftPreviewKey(""); }} /></PanelSectionRow>
+        {preparationMode === "animated" ? <PanelSectionRow><Focusable
+          data-artwork-focus="loop-cleanup" style={{ width: "100%" }}>
+          <DropdownItem label="Loop ending cleanup"
+            disabled={busy || jobRunning}
+            description={loopCleanup === "no"
+              ? "No cut · keeps the full animation and repairs damaged frames."
+              : loopCleanup === "soft"
+              ? "Soft · removes obvious defects at the end."
+              : loopCleanup === "medium"
+                ? "Cuts 0.1–0.5 s at the best visual join with the beginning."
+                : "Cuts 0.4–1.0 s at the best visual join. May remove authored motion."}
+            rgOptions={FACEPLATE_LOOP_CLEANUP_OPTIONS} selectedOption={loopCleanup}
+            onChange={(option) => {
+              setLoopCleanup(option.data as typeof loopCleanup);
+              setDraftPreviewKey("");
+              restoreArtworkFocus("loop-cleanup");
+            }} />
+        </Focusable></PanelSectionRow> : null}
+        <PanelSectionRow><DropdownItem label="Artwork Dashboard style"
+          disabled={busy || jobRunning}
+          description={dashboardTreatment === "none"
+            ? "Original colours. No full-image filter; only the small readability masks behind live information remain."
+            : "Optional visual treatment. Prepared once; no conversion happens when the game starts."}
+          rgOptions={[
+            { data: "none", label: "No filter · original colours" },
+            { data: "cinema", label: "Dark cinema" },
+            { data: "hero-cut", label: "Hero cut" },
+            { data: "palette-echo", label: "Palette echo" },
+          ]}
+          selectedOption={dashboardTreatment}
+          onChange={(option) => { setDashboardTreatment(option.data as typeof dashboardTreatment); setDraftPreviewKey(""); }}
+        /></PanelSectionRow>
+        <PanelSectionRow><DropdownItem label="Dashboard compression"
+          disabled={busy || jobRunning}
+          description={dashboardCompression === "compatible"
+            ? "Strong compression. Uses fewer colours for broad Faceplate compatibility."
+            : dashboardCompression === "balanced"
+              ? "Medium compression. Stable ordered dithering restores gradients without changing the hardware palette."
+              : "Light compression. Full spatial error diffusion preserves the most colour nuance."}
+          rgOptions={[
+            { data: "compatible", label: "Strong · Compatible" },
+            { data: "balanced", label: "Medium · Balanced detail" },
+            { data: "fine", label: "Light · Fine detail" },
+          ]}
+          selectedOption={dashboardCompression}
+          onChange={(option) => { setDashboardCompression(
+            option.data as typeof dashboardCompression,
+          ); setDraftPreviewKey(""); }}
+        /></PanelSectionRow>
+      </> : null}
+      {STUDIO_UX ? <PanelSectionRow><DropdownItem label="Apply to"
+        description="Preparing and previewing do not change either display."
+        disabled={busy || jobRunning}
+        rgOptions={[
+          { data: "game", label: "Game · artwork only" },
+          { data: "game-dashboard", label: "Game · illustrated Dashboard" },
+          { data: "home", label: "Home · illustrated Dashboard" },
+          { data: "both", label: "Home + game · illustrated Dashboard" },
+        ]}
+        selectedOption={destination}
+        onChange={(option) => { setDestination(option.data as typeof destination); setPreviewTarget(option.data === "game" ? "artwork" : "dashboard"); }} /></PanelSectionRow>
+        : <PanelSectionRow><DropdownItem label="Dashboard Home after preparation"
+        description={useForDashboardHome
+          ? "Artwork Dashboard will use this game artwork behind the live information overlay."
+          : "Weather Dashboard remains active; this artwork is prepared for in-game use only."}
+        rgOptions={FACEPLATE_DASHBOARD_SOURCE_OPTIONS}
+        selectedOption={useForDashboardHome ? "artwork" : "weather"}
+        onChange={(option) => setUseForDashboardHome(option.data === "artwork")} /></PanelSectionRow>}
+      {preparationMode !== "static" || showAdjustments ? <PanelSectionRow><Focusable data-artwork-focus="use-artwork" style={{ width: "100%" }}>
+        <ButtonItem label={preparationMode === "static" ? "Prepare preview" : "Prepare animation preview"}
+          description={status.game.appid > 0 && artworkNeedsIdleGame(preparationMode)
+            ? "Quit the running game first."
+            : "Creates a local 64 × 54 preview without sending it. Apply when ready."}
+          disabled={status.game.appid > 0 && artworkNeedsIdleGame(preparationMode)}
+          onClick={() => void prepare()}>{jobRunning ? "Preparing…" : STUDIO_UX ? "Prepare" : "Use"}</ButtonItem>
+      </Focusable>
+      </PanelSectionRow> : null}
+      {preparationMode === "static" ? <PanelSectionRow><Focusable data-artwork-focus={showAdjustments ? "use-static" : "use-artwork"} style={{ width: "100%" }}><ButtonItem label="Use this image"
+        description="Prepares one static frame and applies your chosen display. Also works during a game."
+        onClick={() => {
+          if (busy || jobRunning || appliedDraftKey === `${draftPreviewKey}:${destination}`) return;
+          prepareFocus.current = showAdjustments ? "use-static" : "use-artwork";
+          if (draftPreviewKey && job?.state === "ready" && job.mode && draftPreviewKey === job.prepared?.sha256) {
+            void activatePrepared(selectedGame.appid, job.mode, job.prepared);
+          } else void prepare(true);
+        }}>Use</ButtonItem></Focusable></PanelSectionRow>
+        : <SettingsHelpText><PanelSectionRow><Localized><div style={{ fontSize: ".78em", lineHeight: 1.5 }}>
+          Prepare animations with no game running. Then review the preview and Apply. Your current image stays visible until transfer finishes.
+        </div></Localized></PanelSectionRow></SettingsHelpText>}
+      {STUDIO_UX && job?.state === "ready" && job.appid === selectedGame?.appid ? <>
+        {draftPreviewKey && resultPreview && !cropEditing ? <PanelSectionRow><img src={resultPreview}
+          alt="Prepared Faceplate draft, not yet applied"
+          style={{ display: "block", width: 256, maxWidth: "100%", imageRendering: "pixelated", aspectRatio: "64/54" }} /></PanelSectionRow> : null}
+        {preparationMode !== "static" ? <PanelSectionRow><Focusable data-artwork-focus="result-preview" style={{ width: "100%" }}><ButtonItem label={destination === "game" || destination === "game-dashboard" ? "Apply to this game" : destination === "home" ? "Apply to Dashboard Home" : "Apply to both"}
+          disabled={!draftPreviewKey || draftPreviewKey !== job.prepared?.sha256}
+          description="Selects the requested display and sends it when its destination is active."
+          onClick={() => !busy && !jobRunning && appliedDraftKey !== `${draftPreviewKey}:${destination}` && job.mode && selectedGame && void activatePrepared(selectedGame.appid, job.mode, job.prepared)}>{appliedDraftKey === `${draftPreviewKey}:${destination}` ? "Applied" : "Apply"}</ButtonItem></Focusable></PanelSectionRow> : null}
+      </> : null}
+      {job && ["queued", "running", "cancelling", "failed", "cancelled"].includes(job.state) ? <PanelSectionRow><div style={{ width: "100%", fontSize: ".8em", lineHeight: 1.5 }}>
+        <div style={{ height: 10, borderRadius: 5, overflow: "hidden", background: "rgba(255,255,255,.12)" }}>
+          <div style={{ width: `${Math.max(0, Math.min(100, job.percent || 0))}%`, height: "100%", background: "linear-gradient(90deg,#28d7ff,#ad5cff)" }} />
+        </div>
+        <div style={{ marginTop: 7 }}><b>{job.percent || 0}%</b> · {job.detail || job.stage}</div>
+      </div></PanelSectionRow> : null}
+      {jobRunning ? <PanelSectionRow><Focusable data-artwork-focus="cancel-preparation" style={{ width: "100%" }}>
+        <ButtonItem label="Cancel preparation" onClick={() => {
+          activateWhenReady.current = null;
+          void cancelFaceplateArtwork().then((next) => setArtworkState((previous) => ({
+            job: next, selected: previous?.selected ?? {}, prepared: previous?.prepared ?? {},
+          }))).finally(() => restoreArtworkFocus("use-artwork"));
+        }}>Cancel</ButtonItem>
+      </Focusable></PanelSectionRow> : null}
+      {message && (!deliveryWatch || deliveryReadError) ? <PanelSectionRow><div style={{ width: "100%", fontSize: ".78em", lineHeight: 1.45 }}>
+        {message}
+      </div></PanelSectionRow> : null}
+      {deliveryWatch > 0 ? <PanelSectionRow><Localized><div style={{ width: "100%", fontSize: ".8em", lineHeight: 1.45 }}>
+        {deliveryReadError || (deliveryStatus?.apply_deferred_reason
+          ? "Saved. Display is paused; it will resume when available."
+          : deliveryStatus ? faceplateUXState({ faceplate: deliveryStatus, faceplate_lab_enabled: status.faceplate_lab_enabled }).label
+            : "Sending to the Faceplate…")}
+      </div></Localized></PanelSectionRow> : null}
+    </PanelSection> : null}
+
+    {!STUDIO_UX && selectedGame && !choosingGame && artworkState?.selected?.asset_id
+      ? <PanelSection title="Faceplate result preview">
+        <PanelSectionRow><Focusable data-artwork-focus="preview-target" style={{ width: "100%" }}>
+          <DropdownItem label="Preview"
+            description={previewTarget === "artwork"
+              ? "The exact GIF used automatically when this game starts."
+              : previewTarget === "dashboard"
+                ? "The same full-quality artwork with the Dashboard overlay."
+                : "The current Realistic weather atmosphere with the Dashboard overlay."}
+            rgOptions={FACEPLATE_RESULT_PREVIEW_OPTIONS} selectedOption={previewTarget}
+            onChange={(option) => {
+              setPreviewTarget(option.data as typeof previewTarget);
+              restoreArtworkFocus("preview-target");
+            }} />
+        </Focusable></PanelSectionRow>
+        {resultPreview
+          ? <PanelSectionRow><div style={{
+            width: "100%", background: "#05070b", borderRadius: 14,
+            textAlign: "center", padding: 14,
+          }}>
+            <img src={resultPreview}
+              alt={previewTarget === "artwork"
+                ? "Artwork in-game Faceplate preview"
+                : previewTarget === "dashboard"
+                  ? "Artwork Dashboard Faceplate preview"
+                  : "Weather Dashboard Faceplate preview"}
+              style={{ display: "block", width: 256, maxWidth: "100%",
+                margin: "0 auto", aspectRatio: "64/54", objectFit: "contain",
+                imageRendering: "pixelated" }} />
+            <div style={{ marginTop: 7, fontSize: ".74em", opacity: .7 }}>
+              {previewTarget === "artwork" ? "Artwork in-game"
+                : previewTarget === "dashboard" ? "Artwork Dashboard" : "Weather Dashboard"}
+              {" · local preview only · nothing sent to the Faceplate"}
+            </div>
+          </div></PanelSectionRow> : null}
+        <PanelSectionRow><Focusable data-artwork-focus="result-preview" style={{ width: "100%" }}>
+          <ButtonItem label={previewTarget === "artwork"
+            ? "Preview Artwork in-game"
+            : previewTarget === "dashboard" ? "Preview Artwork Dashboard"
+              : "Preview Weather Dashboard"}
+            description={previewTarget === "dashboard"
+              ? "Uses the prepared background or local Steam artwork, without a serial transfer."
+              : "Renders the selected result locally without a serial transfer."}
+            disabled={dashboardPreviewBusy || nativePreviewBusy || jobRunning}
+            onClick={() => {
+              if (previewTarget === "artwork") {
+                setNativePreviewBusy(true);
+                void getFaceplateArtworkPreview(selectedGame.appid)
+                  .then((value) => {
+                    setNativePreview(value.data_uri);
+                    setMessage(value.error ? value.error : "");
+                  })
+                  .catch((error) => setMessage(`Preview failed: ${String(error)}`))
+                  .finally(() => {
+                    setNativePreviewBusy(false);
+                    restoreArtworkFocus("result-preview");
+                  });
+              } else if (previewTarget === "dashboard") {
+                setDashboardPreviewBusy(true);
+                void getFaceplateArtworkDashboardPreview(selectedGame.appid, "", false, useForDashboardHome)
+                  .then((value) => { setDashboardPreview(value.data_uri); setMessage(""); })
+                  .catch((error) => setMessage(`Preview failed: ${String(error)}`))
+                  .finally(() => {
+                    setDashboardPreviewBusy(false);
+                    restoreArtworkFocus("result-preview");
+                  });
+              } else {
+                setDashboardPreviewBusy(true);
+                void getFaceplateDashboardPreview(
+                  weatherDashboardCondition, weatherDashboardVariant,
+                  "weather-artwork-v2",
+                )
+                  .then((value) => {
+                    setWeatherDashboardPreview(value.data_uri);
+                    setMessage(value.error ? `Preview failed: ${value.error}` : "");
+                  })
+                  .catch((error) => setMessage(`Preview failed: ${String(error)}`))
+                  .finally(() => {
+                    setDashboardPreviewBusy(false);
+                    restoreArtworkFocus("result-preview");
+                  });
+              }
+            }}>{dashboardPreviewBusy || nativePreviewBusy ? "Rendering…" : "Preview"}</ButtonItem>
+        </Focusable></PanelSectionRow>
+      </PanelSection> : null}
+  </Focusable>;
+}
+
+function QuickSettingsAction(){
+  const completed=useSyncExternalStore(subscribeQuickSetup,quickSetupCompleted,quickSetupCompleted);
+  return <DialogButton className="gca-quick-gear" aria-label="Settings" disabled={!completed}
+    style={{ width: 30, height: 30, minWidth: 0, minHeight: 30, padding: 0,
+      flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+    onClick={() => { if(!quickSetupCompleted())return;Navigation.CloseSideMenus(); Navigation.Navigate("/gabecubeaura/settings"); }}>
+    <TbSettings size={19} aria-hidden="true" />
+  </DialogButton>;
+}
+
+function QuickAccessContent(){
+  const active=useQuickAccessVisible();
+  return <Content active={active}/>;
+}
+
+function actionFailed(error: unknown) {
+  publicActionError = String(error).replace(/^Error:\s*/, '');
+  window.dispatchEvent(new Event('gca-action-error'));
+}
+let publicActionError = '';
+
+function Content({ active=true, page: sourcePage = "quick", settingsView, initialSource, onFaceplateConnectionChange }: {
+  active?: boolean; page?: Page; settingsView?: SettingsSelection;
+  initialSource?: SettingsSourcePage;
+  onFaceplateConnectionChange?: (connected:boolean)=>void;
+}) {
+  const [effect,setEffect]=useState(()=>initialSettingsEffect(initialSource,retainedStatus?.game.appid??0));
+  const effectChosen=useRef(false);
+  const [sync,setSync]=useState(initialSource==='audio-sync'?'audio-sync':'screen-sync');
+  const [eventSource,setEventSource]=useState(initialSource==='launches'?'launches':'notification');
+  const sources:Page[]=settingsView?settingsSources(settingsView,effect,sync,eventSource):[sourcePage];
+  const page=sources[0];
+  const [status, setStatusState] = useState<Status | null>(() => retainedStatus);
+  useEffect(()=>{
+    if(!effectChosen.current)setEffect(initialSettingsEffect(initialSource,status?.game.appid??0));
+  },[initialSource,status?.game.appid]);
   const [hero, setHero] = useState<ArtworkPayload | null>(null);
   const [heroRequestKey, setHeroRequestKey] = useState("");
   const [launchHero, setLaunchHero] = useState<ArtworkPayload | null>(null);
   const [launchHeroRequestKey, setLaunchHeroRequestKey] = useState("");
   const artworkRequests = useRef({ artwork: 0, launch: 0 });
   const [showDebug, setShowDebug] = useState(false);
-  const [configurationExportPath, setConfigurationExportPath] = useState("");
-  const [configurationExportError, setConfigurationExportError] = useState("");
+  const [actionError,setActionError]=useState('');
+  useEffect(()=>{const update=()=>setActionError(publicActionError);window.addEventListener('gca-action-error',update);
+    return()=>window.removeEventListener('gca-action-error',update);},[]);
+
+  const [languageBusy, setLanguageBusy] = useState(false);
+  const [languageError, setLanguageError] = useState("");
   const [configurationActionMessage, setConfigurationActionMessage] = useState("");
   const [configurationBusy, setConfigurationBusy] = useState(false);
   const [launchPreviewError, setLaunchPreviewError] = useState("");
   const [routingMessage, setRoutingMessage] = useState("");
+  const [faceplateRoutingMessage, setFaceplateRoutingMessage] = useState("");
   const [update, setUpdate] = useState<UpdateStatus | null>(null);
   const [updateBusy, setUpdateBusy] = useState(false);
-  const [updateLabResult, setUpdateLabResult] = useState<UpdateLabResult | null>(null);
-  const [updateLabReportPath, setUpdateLabReportPath] = useState("");
+  const [updateInstallError, setUpdateInstallError] = useState("");
+  const [, setDiagnostics] = useState<DiagnosticStatus | null>(null);
+  const [diagnosticBusy, setDiagnosticBusy] = useState(false);
+  const [steamGridDbKey, setSteamGridDbKey] = useState("");
+  const [faceplateActionBusy, setFaceplateActionBusy] = useState(false);
   const manualTimer = useRef<number | null>(null);
   const artworkVibranceTimer = useRef<number | null>(null);
+  const statusReads = useRef(statusRefreshGate());
+  useEffect(()=>subscribeQuickSetup(()=>{
+    if(!retainedStatus)return;
+    // Setup/reset can finish on a full-screen route while this panel is hidden.
+    statusReads.current.invalidate();
+    setStatusState(retainedStatus);
+  }),[]);
   const setStatus = (next: Status) => {
+    statusReads.current.invalidate();
+    retainedStatus = next;
+    publishQuickSetupStatus(next);
+    setUILanguage(next.ui_language);
     setStatusState(next);
+    // Reuse the existing status stream: no secondary hardware polling.
+    onFaceplateConnectionChange?.(next.faceplate.available===true);
   };
 
   useEffect(() => {
+    if(!active)return;
     let alive = true;
-    void getStatus().then((next) => alive && setStatus(next)).catch(console.warn);
-    const timer = window.setInterval(() => {
-      void getStatus().then((next) => alive && setStatus(next)).catch(() => undefined);
-    }, page === "events" || page === "controllers" || page === "weather"
-      || page === "launches" ? 100
-      : page === "screen-sync" || page === "audio-sync" ? 250 : 1000);
+    let timer: number | null = null;
+    let delay = statusRefreshDelay(page);
+    const refresh = async () => {
+      const ticket = statusReads.current.ticket();
+      try {
+        const next = await getStatus();
+        delay = statusRefreshDelay(page);
+        if (alive && statusReads.current.accepts(ticket)) setStatus(next);
+      } catch (error) {
+        if (alive) console.warn("[GabeCubeAura] status refresh failed", error);
+      } finally {
+        if (alive) timer = window.setTimeout(() => void refresh(), delay);
+      }
+    };
+    void refresh();
     return () => {
       alive = false;
-      window.clearInterval(timer);
+      if (timer != null) window.clearTimeout(timer);
       if (manualTimer.current != null) window.clearTimeout(manualTimer.current);
       if (artworkVibranceTimer.current != null) window.clearTimeout(artworkVibranceTimer.current);
     };
-  }, [page]);
+  }, [page,active]);
 
   useEffect(() => {
+    if(!active)return;
     if (page !== "quick" && page !== "updates" && page !== "advanced") return;
     let alive = true;
     const refresh = () => void getUpdateStatus()
@@ -2135,30 +3110,17 @@ function Content({ page = "quick" }: { page?: Page }) {
       alive = false;
       window.clearInterval(timer);
     };
-  }, [page]);
+  }, [page,active]);
 
   useEffect(() => {
-    if (page !== "updates" || update?.private_auth_state !== "pending") return;
+    if (page !== "advanced") return;
     let alive = true;
-    let inFlight = false;
-    const poll = async () => {
-      if (inFlight) return;
-      inFlight = true;
-      try {
-        const next = await pollPrivateUpdateAuthorization();
-        if (alive) setUpdate(next);
-      } catch (error) {
-        console.warn("[GabeCubeAura] private authorization poll failed", error);
-      } finally {
-        inFlight = false;
-      }
-    };
-    const timer = window.setInterval(() => void poll(), 5000);
-    return () => {
-      alive = false;
-      window.clearInterval(timer);
-    };
-  }, [page, update?.private_auth_state]);
+    void getDiagnosticStatus()
+      .then((next) => { if (alive) setDiagnostics(next); })
+      .catch((error) => console.warn("[GabeCubeAura] diagnostic status failed", error));
+    return () => { alive = false; };
+  }, [page]);
+
 
   useEffect(() => {
     setLaunchPreviewError("");
@@ -2179,7 +3141,7 @@ function Content({ page = "quick" }: { page?: Page }) {
     }
     const current = await getStatus();
     if (request !== artworkRequests.current[purpose]) return;
-    const artwork = await getArtwork(appid, source, purpose);
+    const artwork = await getArtwork(appid, source, purpose, true);
     if (request !== artworkRequests.current[purpose]) return;
     setArtwork(artwork);
     setRequestKey(`${appid}:${source}`);
@@ -2209,10 +3171,11 @@ function Content({ page = "quick" }: { page?: Page }) {
     setHeroRequestKey("");
     setLaunchHeroRequestKey("");
     if (next.game.appid > 0) {
-      void Promise.all([
-        loadAndSampleArtwork(next.game.appid, next.artwork_source, "artwork"),
-        loadAndSampleArtwork(next.game.appid, next.launch_artwork_source, "launch"),
-      ]).catch(console.warn);
+      void loadAndSampleArtwork(next.game.appid, next.artwork_source, "artwork")
+        .then(() => loadAndSampleArtwork(
+          next.game.appid, next.launch_artwork_source, "launch",
+        ))
+        .catch(actionFailed);
     }
   };
 
@@ -2250,33 +3213,46 @@ function Content({ page = "quick" }: { page?: Page }) {
     }
   };
 
-  const confirmConfigurationReset = () => {
+  const confirmReset = (allData: boolean) => {
     let modal: ReturnType<typeof showModal> | undefined;
-    modal = showModal(<ConfirmModal strTitle="Reset GabeCubeAura settings?"
-      strDescription="All saved settings and per-game profiles will return to the shipped defaults. The personal timer stops. Export a JSON backup first if you want to restore them later."
-      strOKButtonText="Reset settings" strCancelButtonText="Cancel" bDestructiveWarning
+    modal = showModal(<ConfirmModal
+      strTitle={allData ? "Erase all GabeCubeAura data?" : "Reset settings only?"}
+      strDescription={allData
+        ? "Deletes settings, per-game profiles, saved artwork, saved ambiences and the SteamGridDB key. The personal timer stops. This cannot be undone."
+        : "Returns settings and per-game preferences to defaults and stops the personal timer. Your SteamGridDB key, saved artwork and saved ambiences are kept."}
+      strOKButtonText={allData ? "Erase all GCA data" : "Reset settings only"}
+      strCancelButtonText="Cancel" bDestructiveWarning={allData}
       onCancel={() => modal?.Close()}
       onOK={() => {
         modal?.Close();
         setConfigurationBusy(true);
         setConfigurationActionMessage("");
-        void resetConfiguration().then((next) => {
+        const action = allData
+          ? factoryResetConfiguration('delete-gca-settings-content-and-access')
+          : resetSettingsOnly();
+        void action.then((next) => {
           setStatus(next);
           refreshArtworkAfterConfiguration(next);
-          setConfigurationActionMessage("Settings and per-game profiles reset to GabeCubeAura defaults.");
+          void getUpdateStatus().then(setUpdate).catch(actionFailed);
+          setConfigurationActionMessage(allData
+            ? "GCA settings, saved content and local access have been erased."
+            : "Settings reset. Your keys and saved content were kept.");
         }).catch((error) => {
           setConfigurationActionMessage(`Reset failed: ${String(error)}`);
         }).finally(() => setConfigurationBusy(false));
       }} />);
   };
+  const confirmConfigurationReset = () => confirmReset(true);
+  const confirmSettingsOnlyReset = () => confirmReset(false);
 
   useEffect(() => {
     if (!status) return;
     const contextualAudioPalette = ADAPTIVE_AUDIO_STYLES.includes(status.audio_sync_style)
       && ["screen-sync", "artwork"].includes(status.audio_sync_palette);
-    const needsArtwork = page === "artwork" || page === "launches"
-      || (page === "quick" && status.current_display === "artwork")
-      || contextualAudioPalette && (page === "audio-sync" || status.current_display === "audio_sync");
+    // The quick panel has its own read-only thumbnail path. Never sample,
+    // decode a source image or prepare palettes just because it is opened.
+    const needsArtwork = page !== 'quick' && (page === "artwork" || page === "launches"
+      || contextualAudioPalette && (page === "audio-sync" || status.current_display === "audio_sync"));
     if (!needsArtwork) {
       setHero(null);
       setHeroRequestKey("");
@@ -2298,27 +3274,8 @@ function Content({ page = "quick" }: { page?: Page }) {
   if (!status) {
     return <PanelSection><PanelSectionRow>Loading GabeCubeAura…</PanelSectionRow></PanelSection>;
   }
-  if (!status.available) {
-    return (
-      <PanelSection title="GabeCubeAura">
-        <PanelSectionRow>
-          <div style={{ fontSize: ".88em", opacity: 0.82 }}>
-            No 17-pixel <code>valve-leds</code> light bar was found. GabeCubeAura is idle and has made no hardware changes.
-            {status.error ? <div style={{ marginTop: 6 }}>{status.error}</div> : null}
-          </div>
-        </PanelSectionRow>
-      </PanelSection>
-    );
-  }
-  if (page === "quick" && !status.onboarding_completed) return <PanelSection title="Welcome to GabeCubeAura">
-    <PanelSectionRow><div style={{ fontSize: ".84em", lineHeight: 1.45, opacity: .82 }}>
-      Complete the guided first-time setup in a full-screen SteamOS page.
-    </div></PanelSectionRow>
-    <PanelSectionRow><ButtonItem label="Open guided setup" onClick={() => {
-      Navigation.Navigate("/gabecubeaura/setup");
-      Navigation.CloseSideMenus();
-    }}>Choose lighting and night mode</ButtonItem></PanelSectionRow>
-  </PanelSection>;
+  // The UI no longer depends on the historical renderer setting.
+
 
   const changeArtworkSetting = async (key: string, value: unknown) => {
     const next = await setArtworkSetting(status.game.appid, key, value);
@@ -2333,6 +3290,19 @@ function Content({ page = "quick" }: { page?: Page }) {
       setRoutingMessage("");
     } catch (error) {
       setRoutingMessage(String(error).replace(/^Error:\s*/, ""));
+    }
+  };
+  const changeFaceplateRoute = async (
+    home: "weather" | "dashboard" | "artwork" | "artwork-dashboard" | "native-clock",
+    game: "dashboard" | "artwork" | "artwork-dashboard" | "weather" | "player-city",
+  ) => {
+    setFaceplateActionBusy(true); setFaceplateRoutingMessage("");
+    try {
+      setStatus(await setFaceplateRouting(home, game, status.faceplate.routing.preference_revision));
+    } catch (error) {
+      setFaceplateRoutingMessage(`Display choice could not be saved: ${String(error)}`);
+    } finally {
+      setFaceplateActionBusy(false);
     }
   };
   const changeManualPosition = (value: number) => {
@@ -2379,7 +3349,8 @@ function Content({ page = "quick" }: { page?: Page }) {
     }
   };
   const performanceColors = performancePreview(status);
-  const baseShownColors = status.provider.startsWith("launch-artwork:") ? status.launch_artwork.colors
+  const baseShownColors = status.provider.startsWith("faceplate-extension:") ? status.faceplate_extension?.colours ?? []
+    : status.provider.startsWith("launch-artwork:") ? status.launch_artwork.colors
     : status.provider.startsWith("screen-sync") ? status.screen_sync.colors
     : status.provider.startsWith("audio-sync") ? status.audio_sync.colors
     : status.provider.startsWith("customization:") ? status.customization.colors
@@ -2391,25 +3362,11 @@ function Content({ page = "quick" }: { page?: Page }) {
         : status.provider.startsWith("performance") ? performanceColors : [];
   const shownColors = status.provider.endsWith("+recording")
     ? addRecordingMarker(status, baseShownColors) : baseShownColors;
-  const shownLabel = status.provider.startsWith("launch-artwork:")
-    ? `Game launch · ${LAUNCH_ARTWORK_PATTERN_OPTIONS.find((item) => item.data === status.launch_artwork_pattern)?.label ?? status.launch_artwork_pattern}`
-    : status.provider.startsWith("screen-sync") ? "Screen Sync"
-    : status.provider.startsWith("audio-sync") ? "Audio Sync"
-    : status.provider.startsWith("customization:") ? `Customization+ · ${customizationPatternLabel(status.customization_pattern)}`
-    : status.provider.startsWith("event:") ? status.events.variant
-    : status.provider.startsWith("controller:") ? `Controller · ${status.controllers.variant}`
-      : status.provider === "controller-battery" ? "Controller battery"
-      : status.provider === "controller-charging" ? "Controller charging"
-      : status.provider === "controller-charge-complete" ? "Controller fully charged"
-      : status.provider.startsWith("weather") ? `Weather · ${status.weather.location?.name ?? "preview"}`
-    : status.provider === "countdown" ? status.countdown.label
-      : status.provider === "blackout" ? "Blackout · LEDs held off"
-      : status.provider === "valve" ? "Steam / another app"
-        : status.provider === "none" ? "No GabeCubeAura output" : status.provider;
-  const showPage = (target: Page) => page === target;
+  const showPage = (target: Page) => sources.includes(target);
 
   const runUpdateAction = async (action: () => Promise<UpdateStatus>) => {
     setUpdateBusy(true);
+    setUpdateInstallError("");
     try {
       setUpdate(await action());
     } catch (error) {
@@ -2420,51 +3377,68 @@ function Content({ page = "quick" }: { page?: Page }) {
     }
   };
 
-  const confirmUpdateInstall = () => {
-    if (!update?.confirmation_token || !update.available_version) return;
-    const token = update.confirmation_token;
-    const target = update.available_version;
+  const confirmUpdateInstall = (prepared: UpdateStatus | null = update) => {
+    if (!prepared?.confirmation_token || !prepared.available_version) return;
+    const token = prepared.confirmation_token;
+    const target = prepared.available_version;
     let modal: ReturnType<typeof showModal> | undefined;
-    modal = showModal(<ConfirmModal strTitle="Update GabeCubeAura?"
-      strDescription={`Update from ${update.installed_version} to ${target}? The downloaded package passed its checksum and package checks. Your settings and artwork cache will be kept. Decky will restart briefly.`}
-      strOKButtonText="Update and restart Decky" strCancelButtonText="Cancel"
+    modal = showModal(<ConfirmModal strTitle={prepared.recovery_prepared ? "Restore the previous version?" : "Update GabeCubeAura?"}
+      strDescription={prepared.recovery_prepared
+        ? prepared.recovery_preserves_current_settings
+          ? `Return to ${target}? The pinned archive has been verified. Current settings are kept and backed up before Decky restarts.`
+          : `Restore ${target} and its saved settings, preferences and artwork selections? Your current state is backed up before Decky restarts. Changes made since the backup will no longer be selected.`
+        : `Update from ${prepared.installed_version} to ${target}? The downloaded package passed its checksum and package checks. ${prepared.bundle_components.length > 1 ? "GabeCubeAura, the faceplate service and Pixel Studio will be updated together with one rollback point. " : ""}Your settings and artwork cache will be kept. Decky will restart briefly.`}
+      strOKButtonText={prepared.recovery_prepared ? "Restore and restart Decky" : "Update and restart Decky"} strCancelButtonText="Cancel"
       onCancel={() => modal?.Close()}
       onOK={() => {
         modal?.Close();
         setUpdateBusy(true);
+        setUpdateInstallError("");
         void installPreparedUpdate(token).catch((error) => {
           console.warn("[GabeCubeAura] update installation failed", error);
           setUpdateBusy(false);
-          void getUpdateStatus().then(setUpdate).catch(console.warn);
+          setUpdateInstallError("Installation did not start. Review the update error below or retry.");
+          void getUpdateStatus().then(setUpdate).catch(actionFailed);
         });
       }} />);
   };
 
-  const runUpdateLab = async (scenario: UpdateLabResult["scenario"]) => {
-    setUpdateBusy(true);
-    setUpdateLabReportPath("");
-    try {
-      setUpdateLabResult(await runUpdateLabScenario(scenario));
-    } catch (error) {
-      setUpdateLabResult({
-        scenario,
-        passed: false,
-        started_at: 0,
-        finished_at: 0,
-        details: String(error),
-        report_available: false,
-      });
-    } finally {
-      setUpdateBusy(false);
-    }
-  };
-
   return (
-    <>
-      {status.thermal_protection.active ? <PanelSection title="Thermal protection">
+    <LedPreviewActivity.Provider value={active}>
+      {actionError?<PanelSectionRow><Localized><div role="alert">{actionError}</div></Localized>
+        <DialogButton onClick={()=>{publicActionError='';setActionError('');}}>{translate('Close',status.ui_language)}</DialogButton></PanelSectionRow>:null}
+      {settingsView?.category==='display'&&settingsView.tab==='effects'?<><PanelSectionRow><DropdownItem label="Effect to configure"
+        selectedOption={effect} rgOptions={[{data:'customization',label:'Customization+'},{data:'artwork',label:'Steam artwork colours'}]}
+        onChange={option=>{effectChosen.current=true;setEffect(String(option.data));}}/></PanelSectionRow>
+        <PanelSectionRow><Localized><small className="gca-effect-summary">{EFFECTS_HELP}</small></Localized></PanelSectionRow></>:null}
+      {settingsView?.category==='display'&&settingsView.tab==='sync'?<PanelSectionRow><DropdownItem label="Synchronization to configure"
+        selectedOption={sync} rgOptions={[{data:'screen-sync',label:'Screen Sync'},{data:'audio-sync',label:'Audio Sync'}]}
+        onChange={option=>setSync(String(option.data))}/></PanelSectionRow>:null}
+      {settingsView?.category==='signals'&&settingsView.tab==='events'?<PanelSectionRow><DropdownItem label="Event to configure"
+        selectedOption={eventSource} rgOptions={[{data:'notification',label:'Steam notification'},{data:'achievement',label:'Achievement'},{data:'screenshot',label:'Screenshot'},{data:'recording',label:'Recording'},{data:'launches',label:'Game launches'}]}
+        onChange={option=>setEventSource(String(option.data))}/></PanelSectionRow>:null}
+      {page === "profiles" ? <AmbienceProfilesPanel /> : null}
+      {page === "quick" ? <>
+        {!status.onboarding_completed ? <PanelSection title="First-time setup"><PanelSectionRow><QuickAction
+          onClick={() => { Navigation.CloseSideMenus(); Navigation.Navigate("/gabecubeaura/setup"); }}>Open guided setup</QuickAction></PanelSectionRow>
+          <PanelSectionRow><Localized><small role="status">Finish the guided setup to unlock the controls below.</small></Localized></PanelSectionRow></PanelSection> : null}
+        <FaceplateSetupNotice status={status} onOpen={() => {
+          Navigation.CloseSideMenus(); Navigation.Navigate("/gabecubeaura/setup/faceplate");
+        }}/>
+        <UpdateAvailableButton update={update} disabled={!status.onboarding_completed} onOpen={() => {
+          if(!quickSetupCompleted())return;Navigation.CloseSideMenus(); Navigation.Navigate('/gabecubeaura/settings/updates');
+        }} />
+        <CompactQuickPanel active={active} status={status} setStatus={setStatus} colors={shownColors??[]}
+          onMutationChange={active => statusReads.current.writing(active)}
+          onOpenGame={() => { Navigation.CloseSideMenus(); Navigation.Navigate(LIGHT_BAR_ARTWORK_ROUTE); }}
+          onOpenArtwork={() => { Navigation.CloseSideMenus(); Navigation.Navigate("/gabecubeaura/settings/pixel-artwork"); }}
+          onOpenSettings={() => { Navigation.CloseSideMenus(); Navigation.Navigate("/gabecubeaura/settings"); }} />
+      </> : null}
+
+      {page !== "quick" && status.thermal_protection.active ? <PanelSection title="Thermal protection">
         <PanelSectionRow>
           <div style={{ width: "100%", color: "#ffcc66", fontSize: ".88em", lineHeight: 1.45 }}>
-            <b>Désactivé temporairement : protection thermique</b>
+            <b>Temporarily disabled: thermal protection</b>
             <div style={{ opacity: .82 }}>
               Valve controls the light bar until CPU and GPU stay below 90°C for 30 seconds.
               {status.thermal_protection.recovery_remaining_s == null ? " Waiting for coherent sensor readings." : ` Recovery in ${Math.ceil(status.thermal_protection.recovery_remaining_s)} s.`}
@@ -2472,86 +3446,11 @@ function Content({ page = "quick" }: { page?: Page }) {
           </div>
         </PanelSectionRow>
       </PanelSection> : null}
-      {page === "quick" ? <PanelSection title="Status">
-        <PanelSectionRow>
-          <div style={{ width: "100%", fontSize: ".88em", lineHeight: 1.45 }}>
-            <div><b>{status.active ? "Active" : "Suspended"}</b> · owner: {status.owner}</div>
-            <div>Provider: {status.provider}</div>
-            {status.game.appid > 0 || status.game.title ? (
-              <div>{status.game.title || "Running game"} · AppID {status.game.appid || "unknown"}</div>
-            ) : <div>No game running</div>}
-            {status.suspension_reason ? <div style={{ opacity: 0.72 }}>{status.suspension_reason}</div> : null}
-          </div>
-        </PanelSectionRow>
-      </PanelSection> : null}
-
-      {page === "quick" && update?.phase === "available" ? <PanelSection title="Software update">
-        <PanelSectionRow>
-          <ButtonItem label={`Update available: ${update.available_version}`}
-            description="Review the release notes and package checks before installing."
-            onClick={() => { Navigation.CloseSideMenus(); Navigation.Navigate("/gabecubeaura/settings/updates"); }}>
-            Review update
-          </ButtonItem>
-        </PanelSectionRow>
-      </PanelSection> : null}
-
-      {page === "quick" ? <PanelSection title="Permanent displays">
-        <PanelSectionRow><ToggleField label="Enable GabeCubeAura"
-          checked={status.signalbar_enabled}
-          onChange={async (value) => setStatus(await setSetting("signalbar_enabled", value))} /></PanelSectionRow>
-        {status.game.appid > 0 ? <>
-          <PanelSectionRow><DropdownItem label="Display for this game"
-            description={`Saved for ${status.game.title || `AppID ${status.game.appid}`}. Does not change other games.`}
-            rgOptions={[{ data: "inherit", label: "Use in-game default" }, ...GAME_DISPLAY_OPTIONS]}
-            selectedOption={status.display_override}
-            onChange={async (option) => setStatus(await setGameDisplay(status.game.appid, String(option.data)))} /></PanelSectionRow>
-          <PanelSectionRow><div style={{ fontSize: ".78em", opacity: .75 }}>
-            {!status.signalbar_enabled ? "GabeCubeAura is disabled. The saved game choice will apply when re-enabled."
-              : `Active display: ${displayLabel(status.current_display)}${status.display_override === "inherit" ? " (in-game default)" : " (game profile)"}. Temporary signals keep their own priority.`}
-          </div></PanelSectionRow>
-        </> : null}
-      </PanelSection> : null}
-
-      {page === "quick" ? <PanelSection title="Now showing">
-        <PanelSectionRow>
-          <div style={{ width: "100%", fontSize: ".84em" }}>
-            <div><b>{shownLabel}</b></div>
-            {status.game.title ? <div>{status.game.title}</div> : null}
-            {status.provider.startsWith("controller") && status.controllers.controllers.length ? <div style={{ marginTop: 5 }}>
-              {status.controllers.controllers.map((controller) =>
-                `${controller.name} ${controllerChargeLabel(controller)}`).join(" · ")}
-            </div> : null}
-            {status.provider.startsWith("weather") ? <div style={{ marginTop: 5 }}>
-              {WEATHER_CONDITIONS.find((item) => item.data === status.weather.condition)?.label ?? "Current weather"}
-            </div> : null}
-            {status.provider.startsWith("performance") ? <div style={{ marginTop: 7 }}>
-              <div style={{ marginBottom: 4, fontSize: ".92em", opacity: .72 }}>Performance sensors</div>
-              <PerformanceReadout status={status} />
-            </div> : null}
-            {status.provider.startsWith("artwork") && status.game.appid > 0 ? <div style={{ marginTop: 8 }}>
-              <div style={{ marginBottom: 6, opacity: .76 }}>
-                Game artwork{currentArtwork?.source_label ? ` · ${currentArtwork.source_label}` : ""}
-              </div>
-              {currentArtwork ? <ArtworkImage artwork={currentArtwork} title={status.game.title || "current game"} compact />
-                : <div style={{ opacity: .65 }}>No game artwork available yet.</div>}
-            </div> : null}
-            <PalettePreview colors={shownColors} />
-            <div style={{ opacity: .65 }}>17-LED logical preview</div>
-          </div>
-        </PanelSectionRow>
-        <PanelSectionRow>
-          <ButtonItem label="Detailed settings" onClick={() => { Navigation.CloseSideMenus(); Navigation.Navigate("/gabecubeaura/settings"); }}>
-            Open settings
-          </ButtonItem>
-        </PanelSectionRow>
-      </PanelSection> : null}
-
-      {page === "quick" && status.audio_sync_hifi_lab_enabled && status.audio_sync_style === "hifi-crest"
-        ? <HifiCrestLab status={status} setStatus={setStatus} quick />
-        : null}
 
       {showPage("routing") ? <>
-        <PanelSection title="GabeCubeAura">
+        <PanelSection title={settingsView?undefined:'GabeCubeAura'}>
+          {!settingsView?<PanelSectionRow><ButtonItem label="Guided setup"
+            onClick={() => { Navigation.CloseSideMenus(); Navigation.Navigate("/gabecubeaura/setup"); }}>Review my setup</ButtonItem></PanelSectionRow>:null}
           <PanelSectionRow><ToggleField label="Enable GabeCubeAura"
             description="Turns off every GabeCubeAura light without deleting display routes, launch effects, or per-game choices."
             checked={status.signalbar_enabled}
@@ -2562,11 +3461,13 @@ function Content({ page = "quick" }: { page?: Page }) {
               : DISPLAY_PRESET_DESCRIPTIONS[status.display_preset] ?? DISPLAY_PRESET_DESCRIPTIONS.custom}
             rgOptions={DISPLAY_PRESET_OPTIONS} selectedOption={status.display_preset}
             onChange={(option) => void applyDisplayPreset(String(option.data))} /></PanelSectionRow>
+          {settingsView?<PanelSectionRow><Localized><small className="gca-preset-summary">{presetSummary(status.display_preset)}</small></Localized></PanelSectionRow>:null}
           {routingMessage ? <PanelSectionRow><div style={{ fontSize: ".78em", color: "#ffd27a" }}>
             {routingMessage}
           </div></PanelSectionRow> : null}
         </PanelSection>
-        <PanelSection title="Display routing">
+        <PanelSection title={settingsView?'Light bar display':'Display routing'}>
+          <SettingsDetails title="Steam priority and thermal protection">
           <PanelSectionRow><DropdownItem label="Steam ownership"
             description={VALVE_OWNERSHIP_DESCRIPTIONS[status.valve_ownership_policy] ?? VALVE_OWNERSHIP_DESCRIPTIONS.cooperative}
             rgOptions={VALVE_OWNERSHIP_OPTIONS} selectedOption={status.valve_ownership_policy}
@@ -2574,22 +3475,41 @@ function Content({ page = "quick" }: { page?: Page }) {
           <PanelSectionRow><div style={{ fontSize: ".76em", opacity: .78 }}>
             Thermal protection reads CPU and GPU temperatures independently of LED colours. At 94°C GabeCubeAura immediately returns the light bar to Valve, then waits for 30 continuous seconds below 90°C. A fixed red colour remains available for ordinary lighting.
           </div></PanelSectionRow>
+          </SettingsDetails>
           <PanelSectionRow><DropdownItem label="Home display"
             description="The permanent display used when no game is running. Temporary alerts and previews may still replace it."
-            rgOptions={HOME_DISPLAY_OPTIONS} selectedOption={status.home_display}
+            rgOptions={HOME_DISPLAY_OPTIONS.filter(option=>!settingsView||status.faceplate.available||option.data!=='faceplate_extension'||status.home_display==='faceplate_extension')} selectedOption={status.home_display}
+            renderButtonValue={(value) => legacyGameDisplayLabel(status.home_display, value)}
             onChange={async (option) => setStatus(await setSetting("home_display", String(option.data)))} /></PanelSectionRow>
           <PanelSectionRow><DropdownItem label="In-game display"
             description="The permanent display used by games without their own override."
-            rgOptions={GAME_DISPLAY_OPTIONS} selectedOption={status.game_display}
+            rgOptions={gameDisplayOptions(status.faceplate.available, status.game_display)} selectedOption={status.game_display}
+            renderButtonValue={(value) => legacyGameDisplayLabel(status.game_display, value)}
             onChange={async (option) => setStatus(await setSetting("game_display", String(option.data)))} /></PanelSectionRow>
-          <PanelSectionRow><div style={{ fontSize: ".78em", opacity: .75 }}>
-            <b>GabeCubeAura Off</b> releases the permanent display to Steam. <b>Blackout</b> actively holds all 17 LEDs off while keeping GabeCubeAura ownership. Temporary GabeCubeAura layers still follow the selected preset. The master switch releases everything. Weather requires a city.
-          </div></PanelSectionRow>
+          <ScreensaverLightBarChoice status={status} setStatus={setStatus}/>
+          {status.home_display === "faceplate_extension" || status.game_display === "faceplate_extension" || status.current_display === "faceplate_extension" || status.screensaver_light_bar_mode === "faceplate_extension" ? <>
+            <PanelSectionRow><DropdownItem label="Faceplate image projection"
+              description="Uses the original image before Dashboard text and its bottom row. Animations give stable average colours, not frame-synchronised motion."
+              rgOptions={[{ data: "bottom", label: "Bottom edge" }, { data: "whole", label: "Whole image" }]}
+              selectedOption={status.faceplate_extension_mapping ?? "bottom"}
+              onChange={async (option) => setStatus(await setSetting("faceplate_extension_mapping", String(option.data)))} /></PanelSectionRow>
+            <PanelSectionRow><SliderField label="Extension colour saturation"
+              description="100% keeps the original colours. Higher values reduce white in tinted colours without increasing the brightest RGB channel. Pure white and grey remain neutral."
+              value={status.faceplate_extension_saturation ?? 100} min={0} max={250} step={5} showValue valueSuffix="%"
+              onChange={async (value) => setStatus(await setSetting("faceplate_extension_saturation", value))} /></PanelSectionRow>
+            <PanelSectionRow><Localized><div style={{ fontSize: ".78em", opacity: .75 }}>
+              Supports Artwork, Realistic Weather, Dashboard backgrounds and Steam Players City without its counter. When the Faceplate is unavailable, the light bar uses current-game Artwork, or returns control to Steam at Home. The saved extension resumes when the Faceplate returns. Global brightness and priority alerts are unchanged.
+            </div></Localized></PanelSectionRow>
+          </> : null}
+          <SettingsHelpText><PanelSectionRow><div style={{ fontSize: ".78em", opacity: .75 }}>
+            Light bar off keeps the Faceplate running. Light bar + Faceplate off applies only during the game. The master switch turns both displays off everywhere. Steam control is in Advanced.
+          </div></PanelSectionRow></SettingsHelpText>
         </PanelSection>
         {status.game.appid > 0 ? <PanelSection title="Current game override">
-          <PanelSectionRow><DropdownItem label={status.game.title || `AppID ${status.game.appid}`}
+          <PanelSectionRow><DropdownItem label={status.game.title || `AppID ${status.game.appid}`} untranslatedProps={["label"]}
             description="Saved for this AppID only."
-            rgOptions={[{ data: "inherit", label: "Use in-game default" }, ...GAME_DISPLAY_OPTIONS]}
+            rgOptions={[{ data: "inherit", label: "Use in-game default" }, ...gameDisplayOptions(status.faceplate.available, status.display_override)]}
+            renderButtonValue={(value) => legacyGameDisplayLabel(status.display_override, value)}
             selectedOption={status.display_override}
             onChange={async (option) => setStatus(await setGameDisplay(status.game.appid, String(option.data)))} /></PanelSectionRow>
         </PanelSection> : null}
@@ -2602,7 +3522,7 @@ function Content({ page = "quick" }: { page?: Page }) {
 
       {showPage("audio-sync") ? <AudioSyncPanel status={status} setStatus={setStatus} /> : null}
 
-      {showPage("artwork") ? <PanelSection title="Artwork display">
+      {showPage("artwork") ? <><PanelSection title="Artwork display">
         <PanelSectionRow>
           <DropdownItem
             label="Steam image"
@@ -2666,13 +3586,29 @@ function Content({ page = "quick" }: { page?: Page }) {
         ) : null}
         <PanelSectionRow>
           <div style={{ width: "100%", fontSize: ".8em", opacity: 0.86 }}>
-            {status.game.title || (status.game.appid > 0 ? `AppID ${status.game.appid}` : "No game selected")}
+            {status.game.title ? <span translate="no">{status.game.title}</span> : (status.game.appid > 0 ? `AppID ${status.game.appid}` : "No game selected")}
             {currentArtwork?.source_label ? ` · ${currentArtwork.source_label}` : ""}
             {status.artwork.sample_y != null ? ` · row ${Math.round(status.artwork.sample_y * 100)}%` : ""}
-            <PalettePreview colors={artColors} />
+            <PalettePreview source="artwork" colors={artColors} />
           </div>
         </PanelSectionRow>
-      </PanelSection> : null}
+      </PanelSection>
+        <PanelSection title="Faceplate Artwork Studio · 64 × 54">
+          <PanelSectionRow><div style={{ width: "100%", fontSize: ".8em", lineHeight: 1.5 }}>
+            <div><b>Dedicated faceplate path.</b> This does not change the 17-LED Artwork display above.</div>
+            <div style={{ marginTop: 5, opacity: .78 }}>
+              {status.faceplate.last_asset
+                ? `Current matrix asset: ${status.faceplate.last_asset}`
+                : "Artwork Dashboard uses local Steam artwork automatically. Use the Studio for a custom or animated background."}
+            </div>
+          </div></PanelSectionRow>
+          <PanelSectionRow><ButtonItem
+            label="Open Faceplate Artwork Studio"
+            description="Native Decky workflow: choose an installed game, compare lightweight previews, generate outside gameplay, then activate explicitly."
+            onClick={() => { Navigation.CloseSideMenus(); Navigation.Navigate("/gabecubeaura/settings/pixel-artwork"); }}
+          >Choose artwork</ButtonItem></PanelSectionRow>
+        </PanelSection>
+      </> : null}
 
       {showPage("launches") ? <PanelSection title="Game launch animation">
         <PanelSectionRow><ToggleField
@@ -2725,7 +3661,7 @@ function Content({ page = "quick" }: { page?: Page }) {
                     "3": status.launch_artwork_custom_palettes["3"].map((entry) => [...entry] as RGB) as [RGB, RGB, RGB],
                   };
                   palettes[String(status.launch_artwork_colour_count) as "2" | "3"][index] = nextColor;
-                  void setLaunchArtworkSetting(status.game.appid, "custom_palettes", palettes).then(setStatus).catch(console.warn);
+                  void setLaunchArtworkSetting(status.game.appid, "custom_palettes", palettes).then(setStatus).catch(actionFailed);
                 }} />
             </PanelSectionRow>) : null}
         <PanelSectionRow><DropdownItem
@@ -2759,7 +3695,7 @@ function Content({ page = "quick" }: { page?: Page }) {
         >Preview</ButtonItem></PanelSectionRow>
         <PanelSectionRow><div style={{ width: "100%", fontSize: ".78em", opacity: .82 }}>
           Live 17-LED launch preview
-          <PalettePreview colors={status.launch_artwork.colors ?? []} />
+          <PalettePreview source="launch_artwork" colors={status.launch_artwork.colors ?? []} />
         </div></PanelSectionRow>
         <PanelSectionRow><div style={{ fontSize: ".76em", opacity: .72 }}>
           {status.launch_artwork.active
@@ -2833,9 +3769,10 @@ function Content({ page = "quick" }: { page?: Page }) {
         <PanelSectionRow>
           <div style={{ width: "100%" }}>
             <PerformanceReadout status={status} />
-            <PalettePreview colors={performanceColors} />
+            <PalettePreview source="performance" colors={performanceColors} />
           </div>
         </PanelSectionRow>
+        <SettingsDetails title="Temperature colours and thresholds">
         <PanelSectionRow>
           <DropdownItem
             label="Temperature colours"
@@ -2896,88 +3833,226 @@ function Content({ page = "quick" }: { page?: Page }) {
             onChange={async (value) => setStatus(await setSetting("hot_temp_c", value))}
           />
         </PanelSectionRow>
+        </SettingsDetails>
       </PanelSection> : null}
 
       {showPage("countdown") ? <CountdownPanel status={status} setStatus={setStatus} /> : null}
 
-      {showPage("events") ? <EventsPanel status={status} setStatus={setStatus} /> : null}
+      {showPage("events") ? <EventsPanel status={status} setStatus={setStatus} kind={settingsView?eventSource:undefined} /> : null}
 
       {showPage("controllers") ? <ControllersPanel status={status} setStatus={setStatus} /> : null}
 
       {showPage("weather") ? <WeatherPanel status={status} setStatus={setStatus} /> : null}
 
+      {showPage("pixel-artwork") && settingsView ? <PixelStudioArtworkPanel status={status} setStatus={setStatus} /> : null}
+
+      {showPage("pixel-settings") ? <>
+        {STUDIO_UX ? <FaceplateStatePanel status={status} /> : <PixelStudioWeatherCatalog status={status} setStatus={setStatus} />}
+        <SettingsPart slot="faceplate.protection"><FlashProtectionPanel status={status} collapsible={!settingsView}
+          onChange={async enabled=>setStatus(await setSetting('faceplate_flash_protection_enabled',enabled))}/></SettingsPart>
+        <PanelSection title={settingsView?undefined:'Faceplate automation'}>
+          <SettingsPart slot="faceplate.display">
+          <PanelSectionRow><ToggleField label="Follow GabeCubeAura automatically"
+            description="Uses independent Home and in-game Faceplate routes. This switch remains opt-in and never changes the 17-LED routing."
+            checked={status.faceplate_lab_enabled}
+            onChange={async (enabled) => setStatus(await setSetting("faceplate_lab_enabled", enabled))} /></PanelSectionRow>
+          <PanelSectionRow><FaceplateBrightnessSlider status={status} setStatus={setStatus} /></PanelSectionRow>
+          <PanelSectionRow><ToggleField label="Continuous screensaver return (experimental)"
+            description="Keeps the current animation visible while Home loads. Requires validation on your JSAUX faceplate."
+            checked={status.faceplate_continuous_home_return ?? false}
+            onChange={async enabled=>setStatus(await setSetting('faceplate_continuous_home_return',enabled))}/></PanelSectionRow>
+          <PanelSectionRow><DropdownItem
+            label="Faceplate at Home"
+            description="Choose your Home background here. Dashboard adds the information configured in the Dashboard tab."
+            rgOptions={FACEPLATE_HOME_OPTIONS}
+            disabled={faceplateActionBusy}
+            selectedOption={homeFaceChoice(status)}
+            onChange={async (option) => {
+              await changeFaceplateRoute(
+                option.data as "weather" | "dashboard" | "artwork" | "artwork-dashboard" | "native-clock",
+                status.faceplate.routing.routes.game,
+              );
+            }}
+          /></PanelSectionRow>
+          {isDashboardChoice(homeFaceChoice(status)) ? <PanelSectionRow><Localized><div role="status" style={{color:'#ffd27a',fontSize:'.85em'}}>
+            See the Dashboard tab to configure your choices.
+          </div></Localized></PanelSectionRow> : null}
+          {status.faceplate.routing.routes.home === "native-clock" ? <PanelSectionRow>
+            <div style={{ fontSize: ".78em", lineHeight: 1.4, opacity: .8 }}>
+              <div>Uses the JSAUX firmware clock instead of repeatedly uploading GIFs. The panel keeps time autonomously. Blue 24-hour display; entering the mode may still update flash settings.</div>
+              <div>Native appearance cannot be customized. Firmware rotation is undocumented; disable Faceplate 180-degree rotation to use this clock.</div>
+            </div>
+          </PanelSectionRow> : null}
+          </SettingsPart>
+          <SettingsPart slot="faceplate.dashboard">
+            <FaceplateDashboardSettings status={status} setStatus={setStatus} />
+          </SettingsPart>
+          <SettingsPart slot="faceplate.display">
+          <PanelSectionRow><DropdownItem
+            label="Faceplate in game"
+            description="Choose your in-game background here. Dashboard adds the information configured in the Dashboard tab."
+            rgOptions={FACEPLATE_GAME_OPTIONS}
+            disabled={faceplateActionBusy}
+            selectedOption={status.faceplate.routing.routes.game}
+            onChange={async (option) => await changeFaceplateRoute(
+              homeFaceChoice(status),
+              option.data as "dashboard" | "artwork" | "artwork-dashboard" | "weather" | "player-city",
+            )}
+          /></PanelSectionRow>
+          {isDashboardChoice(status.faceplate.routing.routes.game) ? <PanelSectionRow><Localized><div role="status" style={{color:'#ffd27a',fontSize:'.85em'}}>
+            See the Dashboard tab to configure your choices.
+          </div></Localized></PanelSectionRow> : null}
+          {status.faceplate.routing.routes.game==='player-city'?<PanelSectionRow><small role="status">{playerCitySummary(status)}</small></PanelSectionRow>:null}
+          {status.faceplate.routing.routes.game==='player-city'?<PlayerCityRowSettings status={status} setStatus={setStatus} disabled={faceplateActionBusy}/>:null}
+          </SettingsPart>
+          <SettingsPart slot="faceplate.display">
+            {faceplateRoutingMessage ? <PanelSectionRow><Localized><div role="status">{faceplateRoutingMessage}</div></Localized></PanelSectionRow> : null}
+          </SettingsPart>
+          <SettingsPart slot="faceplate.sgdb"><Disclosure title="SteamGridDB key">
+          <PanelSectionRow><ButtonItem
+            label="Log in to SteamGridDB"
+            description="Opens the direct Steam OpenID page in the system browser, avoiding SteamGridDB's blocked popup."
+            onClick={() => openCopyCapableBrowser(STEAMGRIDDB_DIRECT_LOGIN_URL)}
+          >Log in with Steam</ButtonItem></PanelSectionRow>
+          <PanelSectionRow><ButtonItem
+            label="Open API keys in the system browser"
+            description="The full browser restores text selection, right-click and clipboard copy. Open this after logging in."
+            onClick={() => openCopyCapableBrowser(STEAMGRIDDB_API_KEY_URL)}
+          >Open copy-capable browser</ButtonItem></PanelSectionRow>
+          <PanelSectionRow><div style={{ width: "100%", fontSize: ".76em", opacity: .76, lineHeight: 1.45 }}>
+            Keyboard fallback in Steam's browser: focus the API-key field, then press <b>Ctrl+A</b> and <b>Ctrl+C</b>.
+          </div></PanelSectionRow>
+          <PanelSectionRow><TextField
+            label="Personal API key"
+            description={status.faceplate.steamgriddb.configured
+              ? "Configured locally. Paste a replacement only when you want to change it."
+              : "Stored only on this Steam Machine and never included in exports."}
+            value={steamGridDbKey}
+            onChange={(event) => setSteamGridDbKey(event.currentTarget.value)}
+          /></PanelSectionRow>
+          <PanelSectionRow><div style={{ width: "100%", fontSize: ".82em", lineHeight: 1.45 }}>
+            SteamGridDB: <b>{steamGridDBValidationLabel(status.faceplate.steamgriddb.validation_state)}</b>
+            {status.faceplate.steamgriddb.validation_detail
+              ? <div style={{ marginTop: 4, color: "#ffcf8a" }}>Diagnostic: {status.faceplate.steamgriddb.validation_detail}
+                {status.faceplate.steamgriddb.validation_code ? ` · ${status.faceplate.steamgriddb.validation_code}` : ""}</div>
+              : null}
+            {status.faceplate.steamgriddb.validated_at
+              ? <div style={{ marginTop: 4, opacity: .72 }}>Last validation: {new Date(status.faceplate.steamgriddb.validated_at * 1000).toLocaleString()}</div>
+              : null}
+          </div></PanelSectionRow>
+          <PanelSectionRow><ButtonItem
+            label={status.faceplate.steamgriddb.configured ? "Replace SteamGridDB key" : "Save SteamGridDB key"}
+            description="The key is used only by GabeCubeAura for faceplate artwork."
+            disabled={faceplateActionBusy || steamGridDbKey.trim().length < 16}
+            onClick={() => {
+              setFaceplateActionBusy(true);
+              void setSteamGridDBApiKey(steamGridDbKey.trim()).then((next) => {
+                setStatus(next); setSteamGridDbKey("");
+              }).catch(actionFailed).finally(() => setFaceplateActionBusy(false));
+            }}
+          >Save key</ButtonItem></PanelSectionRow>
+          {status.faceplate.steamgriddb.configured ? <PanelSectionRow><ButtonItem
+            label="Verify SteamGridDB key now"
+            description="Performs one lightweight authenticated request. The key itself is never returned to Decky."
+            disabled={faceplateActionBusy}
+            onClick={() => {
+              setFaceplateActionBusy(true);
+              void validateSteamGridDBApiKey().then(setStatus).catch(actionFailed)
+                .finally(() => setFaceplateActionBusy(false));
+            }}
+          >Verify</ButtonItem></PanelSectionRow> : null}
+          {status.faceplate.steamgriddb.configured ? <PanelSectionRow><ButtonItem
+            label="Forget SteamGridDB key"
+            description="Removes the personal key; already compiled faceplate artwork remains available offline."
+            disabled={faceplateActionBusy}
+            onClick={() => {
+              setFaceplateActionBusy(true);
+              void clearSteamGridDBApiKey().then(setStatus).catch(actionFailed)
+                .finally(() => setFaceplateActionBusy(false));
+            }}
+          >Forget</ButtonItem></PanelSectionRow> : null}
+          </Disclosure></SettingsPart>
+          <SettingsPart slot="faceplate.power">
+          <PanelSectionRow><DropdownItem
+            label="Sleep / shutdown power"
+            description="Auto cancels any transfer, retries the volatile power-off before sleep/shutdown, then powers on and reapplies the current scene after resume. It never rewrites an identical GIF."
+            rgOptions={FACEPLATE_POWER_OPTIONS}
+            selectedOption={status.faceplate_power_mode}
+            onChange={async (option) => setStatus(await setSetting("faceplate_power_mode", String(option.data)))}
+          /></PanelSectionRow>
+          {status.faceplate.power_recovery?.retry_pending ? <PanelSectionRow><div style={{ width: "100%", fontSize: ".78em", color: "#ffcf8a", lineHeight: 1.45 }}>
+            Faceplate recovery is retrying automatically
+            {status.faceplate.power_recovery.error ? ` · ${status.faceplate.power_recovery.error}` : ""}
+          </div></PanelSectionRow> : null}
+          <PanelSectionRow><ButtonItem
+            label={status.faceplate.powered === false ? "Turn faceplate on" : "Turn faceplate off"}
+            description={status.faceplate.powered === false
+              ? "Restores panel power and reapplies the current brightness; the stored GIF resumes."
+              : "Turns only the matrix off now. The stored GIF and flash contents are preserved."}
+            disabled={faceplateActionBusy || !status.faceplate.available || status.faceplate.busy}
+            onClick={() => {
+              setFaceplateActionBusy(true);
+              void setFaceplatePower(status.faceplate.powered === false).then(setStatus)
+                .catch(actionFailed).finally(() => setFaceplateActionBusy(false));
+            }}
+          >{status.faceplate.powered === false ? "Power on" : "Power off"}</ButtonItem></PanelSectionRow>
+          </SettingsPart>
+        </PanelSection>
+        {STUDIO_UX ? <PixelStudioWeatherCatalog status={status} setStatus={setStatus} /> : null}
+        <SettingsHelpText><PanelSection title="How it fits together">
+          <PanelSectionRow><div style={{ width: "100%", fontSize: ".78em", opacity: .8, lineHeight: 1.45 }}>
+            Pixel Studio prepares your images. GabeCubeAura manages the Faceplate and light bar together, in one plugin.
+          </div></PanelSectionRow>
+        </PanelSection></SettingsHelpText>
+      </> : null}
+
+      {showPage("pixel-artwork") && !settingsView ? <PixelStudioArtworkPanel status={status} setStatus={setStatus} /> : null}
+
       {showPage("updates") && update ? <>
-        <PanelSection title="Software updates">
+        <SettingsPart slot="updates.install"><PanelSection title="Software updates">
           <PanelSectionRow><div style={{ width: "100%", fontSize: ".82em", lineHeight: 1.45 }}>
             <div>Installed version: <b>{update.installed_version}</b></div>
             <div>{update.channel === "stable" ? "Latest stable version" : update.channel === "beta" ? "Latest beta or stable version" : "Latest private lab version"}: <b>{update.available_version || update.installed_version}</b></div>
             <div>Current status: <b>{updatePhaseLabel(update)}</b></div>
+            {update.phase === "downloading" && update.download_total_bytes ? <div>
+              <progress style={{ width: "100%" }} value={update.download_bytes ?? 0} max={update.download_total_bytes} />
+              {Math.floor(100 * (update.download_bytes ?? 0) / update.download_total_bytes)}% · {((update.download_bytes ?? 0) / 1048576).toFixed(1)} / {(update.download_total_bytes / 1048576).toFixed(1)} MiB
+            </div> : null}
+            {updateInstallError && !update.error ? <div role="alert" style={{ color: "#ffb3b3", marginTop: 6 }}>{updateInstallError}</div> : null}
+            {update.error ? <div role="alert" style={{ color: "#ffb3b3", marginTop: 6 }}>{update.error}</div> : null}
             <div>Last checked: {formatUpdateDate(update.last_checked_at)}</div>
             {update.prepared_digest ? <div>Verified SHA256: <code>{update.prepared_digest.slice(0, 12)}...</code></div> : null}
+            {update.bundle_components.length ? <div>Verified bundle: <b>{update.bundle_components.map((component) => component === "plugin" ? "GabeCubeAura" : component === "faceplate-service" ? "Faceplate service" : "Pixel Studio").join(" · ")}</b></div> : null}
             {update.test_build ? <div style={{ marginTop: 6, color: "#ffd166", fontWeight: 700 }}>TEST BUILD</div> : null}
           </div></PanelSectionRow>
           <PanelSectionRow><ButtonItem label="Check for updates"
-            disabled={updateBusy || ["checking", "downloading", "verifying", "ready", "installing", "restart_pending"].includes(update.phase)}
+            disabled={updateBusy || ["checking", "downloading", "verifying", "preparing_install", "installing", "restart_pending"].includes(update.phase)}
             onClick={() => void runUpdateAction(checkForUpdates)}>Check now</ButtonItem></PanelSectionRow>
           {update.release_url ? <PanelSectionRow><ButtonItem label="View release notes"
             description={`Opens the selected ${update.channel === "private" ? "private Lab" : "public GabeCubeAura"} release page.`}
             onClick={() => Navigation.NavigateToExternalWeb(update.release_url)}>Open GitHub</ButtonItem></PanelSectionRow> : null}
           {update.phase === "available" ? <PanelSectionRow><ButtonItem label="Download update"
-            description="Downloads and checks the archive. Nothing is installed yet."
+            description={update.auto_install ? "Downloads and checks the archive, then installs automatically." : "Downloads and checks the archive. Nothing is installed yet."}
             disabled={updateBusy} onClick={() => void runUpdateAction(prepareUpdate)}>Download and verify</ButtonItem></PanelSectionRow> : null}
-          {update.phase === "ready" ? <PanelSectionRow><ButtonItem label={`Install ${update.available_version}`}
-            description="Settings and artwork caches are kept. Decky restarts briefly."
-            disabled={updateBusy} onClick={confirmUpdateInstall}>Update and restart Decky</ButtonItem></PanelSectionRow> : null}
+          {["downloading", "verifying"].includes(update.phase) ? <PanelSectionRow><ButtonItem label="Cancel preparation"
+            description="Keeps the installed version. Temporary download and staging files are removed."
+            onClick={() => void cancelUpdatePreparation().then(setUpdate)}>Cancel download</ButtonItem></PanelSectionRow> : null}
+          {update.phase === "ready" || (update.phase === "error" && update.confirmation_token) ? <PanelSectionRow><ButtonItem label={`${update.recovery_prepared ? "Restore" : "Install"} ${update.available_version}`}
+            description={update.bundle_components.length > 1 ? "Updates GabeCubeAura, the faceplate service and Pixel Studio together. Settings and artwork caches are kept." : "Settings and artwork caches are kept. Decky restarts briefly."}
+            disabled={updateBusy} onClick={() => confirmUpdateInstall()}>{update.recovery_prepared ? "Restore and restart Decky" : "Update and restart Decky"}</ButtonItem></PanelSectionRow> : null}
           {update.release_notes ? <PanelSectionRow><div style={{ width: "100%", fontSize: ".76em", opacity: .8, whiteSpace: "pre-wrap", maxHeight: 180, overflow: "hidden" }}>
             {update.release_notes}
           </div></PanelSectionRow> : null}
           {update.phase === "error" ? <PanelSectionRow><ButtonItem label="Dismiss update error"
             onClick={() => void runUpdateAction(dismissUpdateError)}>Dismiss</ButtonItem></PanelSectionRow> : null}
-        </PanelSection>
-        {update.channel === "private" ? <PanelSection title="Private Lab access">
-          <PanelSectionRow><div style={{ width: "100%", fontSize: ".78em", opacity: .84, lineHeight: 1.45 }}>
-            <div>Repository: <b>{update.private_repository}</b></div>
-            <div>GitHub access: <b>{update.private_auth_state === "connected" ? "Connected" : update.private_auth_state === "pending" ? "Waiting for authorization" : "Not connected"}</b></div>
-            <div style={{ marginTop: 5 }}>The plugin requests read-only access through a GitHub device code. No password or client secret is stored in GabeCubeAura.</div>
-          </div></PanelSectionRow>
-          {update.private_auth_state !== "connected" && update.private_auth_state !== "pending" ? <PanelSectionRow><ButtonItem
-            label="Connect GitHub"
-            description="Creates a short-lived code for github.com/login/device."
-            disabled={updateBusy || !update.private_auth_configured}
-            onClick={() => void runUpdateAction(startPrivateUpdateAuthorization)}>
-            Generate code
-          </ButtonItem></PanelSectionRow> : null}
-          {update.private_auth_state === "pending" ? <>
-            <PanelSectionRow><div style={{ width: "100%", padding: "8px 0", textAlign: "center" }}>
-              <div style={{ fontSize: ".75em", opacity: .72 }}>Enter this code on GitHub</div>
-              <div style={{ fontSize: "1.45em", fontWeight: 800, letterSpacing: ".14em", marginTop: 4 }}>{update.private_user_code}</div>
-              <div style={{ fontSize: ".72em", opacity: .66, marginTop: 4 }}>Expires {formatUpdateDate(update.private_auth_expires_at)}</div>
-            </div></PanelSectionRow>
-            <PanelSectionRow><ButtonItem label="Open GitHub device authorization"
-              description="Opens GitHub in the browser. Enter the code shown above."
-              onClick={() => Navigation.NavigateToExternalWeb(update.private_verification_uri || "https://github.com/login/device")}>Open GitHub</ButtonItem></PanelSectionRow>
-            <PanelSectionRow><ButtonItem label="I authorized this device"
-              description="Detection is automatic. Use this to check immediately."
-              disabled={updateBusy}
-              onClick={() => void runUpdateAction(pollPrivateUpdateAuthorization)}>Finish connection</ButtonItem></PanelSectionRow>
-          </> : null}
-          {update.private_auth_state === "connected" ? <PanelSectionRow><ButtonItem
-            label="Disconnect Private Lab"
-            description="Deletes the locally stored GitHub access and refresh tokens."
-            disabled={updateBusy}
-            onClick={() => void runUpdateAction(disconnectPrivateUpdateAuthorization)}>
-            Disconnect
-          </ButtonItem></PanelSectionRow> : null}
-          {!update.private_auth_configured ? <PanelSectionRow><div style={{ fontSize: ".76em", color: "#ffb3b3" }}>
-            This build does not yet contain the GitHub App client ID.
-          </div></PanelSectionRow> : null}
-        </PanelSection> : null}
-        <PanelSection title="Automatic checks">
+        </PanelSection></SettingsPart>
+
+        <SettingsPart slot="updates.preferences"><PanelSection title="Automatic checks">
           <PanelSectionRow><ToggleField label="Automatically check for updates"
-            description="Checks the selected Alyenax release channel at this interval. Nothing is installed without your confirmation."
+            description="Checks the selected channel at startup and at your chosen interval."
             checked={update.auto_check} onChange={(value) => void runUpdateAction(() => setUpdatePreferences(value, update.notifications, update.check_interval_minutes, update.channel))} /></PanelSectionRow>
           <PanelSectionRow><DropdownItem label="Check interval"
-            description="How often GabeCubeAura checks automatically. Manual checks remain available."
+            description="How often to check for updates."
             disabled={!update.auto_check || updateBusy}
             rgOptions={UPDATE_INTERVAL_OPTIONS} selectedOption={update.check_interval_minutes}
             onChange={(option) => void runUpdateAction(() => setUpdatePreferences(update.auto_check, update.notifications, Number(option.data), update.channel))} /></PanelSectionRow>
@@ -2985,46 +4060,127 @@ function Content({ page = "quick" }: { page?: Page }) {
             description={update.channel === "stable"
               ? "Stable releases only."
               : update.channel === "beta"
-                ? "Beta releases and later stable releases. Installation still requires confirmation."
+                ? "Beta releases and later stable releases."
                 : "Private hardware-lab releases from Alyenax/GabeCubeAura-Lab. GitHub authorization is required."}
-            disabled={updateBusy || ["downloading", "verifying", "ready", "installing", "restart_pending"].includes(update.phase)}
-            rgOptions={UPDATE_CHANNEL_OPTIONS} selectedOption={update.channel}
+            disabled={updateBusy || ["downloading", "verifying", "preparing_install", "installing", "restart_pending"].includes(update.phase)}
+            rgOptions={UPDATE_CHANNEL_OPTIONS.filter(option => option.data !== "private" || update.private_tools)} selectedOption={update.channel}
             onChange={(option) => void runUpdateAction(() => setUpdatePreferences(update.auto_check, update.notifications, update.check_interval_minutes, String(option.data) as "stable" | "beta" | "private"))} /></PanelSectionRow>
           <PanelSectionRow><ToggleField label="Notify me when an update is available"
             description="Shows one Decky notification for each new version on the selected channel."
             checked={update.notifications} onChange={(value) => void runUpdateAction(() => setUpdatePreferences(update.auto_check, value, update.check_interval_minutes, update.channel))} /></PanelSectionRow>
-        </PanelSection>
-        <PanelSection title="Installation safety">
+        </PanelSection></SettingsPart>
+        <SettingsPart slot="updates.recovery"><SettingsDetails title="Return to the previous version"><PanelSection title="Return to the previous version">
+
+          <PanelSectionRow><div style={{ fontSize: ".8em", lineHeight: 1.45 }}>
+            {update.recovery_available ? `Local backup: ${update.recovery_version}. Settings, preferences and artwork selections are included.`
+              : "No previous-version backup is available. Do not rely on in-app recovery for this installation."}
+            {update.recovery_error ? <div style={{ color: "#ffb3b3" }}>{update.recovery_error}</div> : null}
+          </div></PanelSectionRow>
+          <PanelSectionRow><ButtonItem label="Prepare previous version"
+            description="Verifies the local backup without downloading. Review the restoration confirmation before applying."
+            disabled={!update.recovery_available || updateBusy || ["checking", "downloading", "verifying", "ready", "preparing_install", "installing", "restart_pending"].includes(update.phase)}
+            onClick={() => void runUpdateAction(preparePreviousVersion)}>Verify backup</ButtonItem></PanelSectionRow>
+        </PanelSection></SettingsDetails></SettingsPart>
+        <SettingsPart slot="updates.safety"><SettingsDetails title="Installation integrity and safety"><PanelSection title="Installation safety">
           <PanelSectionRow><div style={{ width: "100%", fontSize: ".78em", opacity: .82 }}>
-            Updates are downloaded from the selected Alyenax repository and checked before installation. Private Lab credentials are stored separately from exported settings. Settings and artwork caches are kept. Decky restarts briefly after an update.
+            Updates are verified before installation. Your settings and artworks are kept. Decky restarts briefly after installation; recovery remains available in case of failure.
             {update.last_result ? <div style={{ marginTop: 7 }}>Last result: {updatePhaseLabel(update)}</div> : null}
           </div></PanelSectionRow>
-          <PanelSectionRow><ButtonItem label="Check again"
+          {!settingsView?<PanelSectionRow><ButtonItem label="Check again"
             description="Final focusable control for controller navigation."
-            disabled={updateBusy || update.phase === "ready"} onClick={() => void runUpdateAction(checkForUpdates)}>Check for updates</ButtonItem></PanelSectionRow>
-        </PanelSection>
+            disabled={updateBusy || update.phase === "ready"} onClick={() => void runUpdateAction(checkForUpdates)}>Check for updates</ButtonItem></PanelSectionRow>:null}
+        </PanelSection></SettingsDetails></SettingsPart>
       </> : null}
 
-      {showPage("advanced") ? <CompatibilityPanel status={status} setStatus={setStatus} /> : null}
+      {showPage("advanced") && !settingsView ? <FlashProtectionPanel status={status}
+        onChange={async (enabled) => setStatus(await setSetting("faceplate_flash_protection_enabled", enabled))} /> : null}
 
-      {showPage("advanced") ? <PanelSection title="Advanced / debug">
+      {showPage("advanced") ? <SettingsPart slot="advanced.diagnostics"><PanelSection title="Troubleshooting">
+        <SettingsPart slot="advanced.diagnostics"><PanelSectionRow><ButtonItem label="Export a local diagnostic"
+          description="Creates a redacted report on your machine. Nothing is sent automatically."
+          disabled={diagnosticBusy} onClick={async () => {
+            setDiagnosticBusy(true);
+            try {
+              const result = await exportDiagnosticReport();
+              setConfigurationActionMessage(`Diagnostic saved to ${result.path}`);
+            } catch (error) { setConfigurationActionMessage(`Could not export diagnostic: ${String(error)}`); }
+            finally { setDiagnosticBusy(false); }
+          }}>Export</ButtonItem></PanelSectionRow></SettingsPart>
+        {configurationActionMessage?<SettingsPart slot="advanced.diagnostics"><PanelSectionRow><div role="status">{configurationActionMessage}</div></PanelSectionRow></SettingsPart>:null}
+      </PanelSection></SettingsPart> : null}
+
+      {showPage("advanced") ? <SettingsPart slot="advanced.support"><PanelSectionRow>
+        <ButtonItem label="Capture diagnostics · 5 minutes" description="Enables temporary local capture details. Export a local diagnostic afterwards."
+          onClick={() => void enableCaptureDiagnostic().then(()=>setConfigurationActionMessage('Capture details enabled for up to 5 minutes.')).catch(error=>setConfigurationActionMessage(String(error)))}>Enable</ButtonItem>
+      </PanelSectionRow></SettingsPart> : null}
+
+
+      {showPage("advanced") && status.faceplate.available && status.faceplate.native_clock ? <SettingsPart slot="advanced.clock"><Disclosure title="Native clock diagnostics">
+        <PanelSectionRow><pre style={{ fontSize: ".72em", whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+          {JSON.stringify({ desired: status.faceplate.routing.desired_scene,
+            effective: status.faceplate.routing.effective_scene,
+            ...status.faceplate.native_clock }, null, 2)}
+        </pre></PanelSectionRow>
+      </Disclosure></SettingsPart> : null}
+      {showPage("advanced") ? <SettingsPart slot={['advanced.general','advanced.data','advanced.engine']}><PanelSection title={settingsView?undefined:'Advanced'}>
+          <SettingsPart slot="advanced.general">
+          {settingsView?<PanelSectionRow><ButtonItem label="Guided setup"
+            onClick={() => { Navigation.CloseSideMenus(); Navigation.Navigate("/gabecubeaura/setup"); }}>Review my setup</ButtonItem></PanelSectionRow>:null}
+          <PanelSectionRow><ToggleField label="Steam control"
+            description="On: Steam controls the light bar. Off: restore your GabeCubeAura display. Faceplate stays independent. Off display choices take priority."
+            disabled={!status.signalbar_enabled}
+            checked={status.steam_control_enabled === true || status.current_display === 'steam'}
+            onChange={async (enabled) => setStatus(await setSteamControl(enabled))} /></PanelSectionRow>
         <PanelSectionRow>
           <ToggleField
-            label="Show Hi-Fi Crest Lab"
-            description="Shows the physical calibration controls in the Decky tab and Audio Sync settings when Hi-Fi Crest is selected."
-            checked={status.audio_sync_hifi_lab_enabled}
-            onChange={async (value) => setStatus(await setSetting("audio_sync_hifi_lab_enabled", value))}
+            label="French interface"
+            description="On: French. Off: English. The language choice is saved automatically."
+            checked={status.ui_language === "fr"}
+            disabled={languageBusy}
+            onChange={async (value) => {
+              setLanguageBusy(true);
+              setLanguageError("");
+              try { setStatus(await setSetting("ui_language", value ? "fr" : "en")); }
+              catch (error) { setLanguageError(`Could not save the language: ${String(error)}`); }
+              finally { setLanguageBusy(false); }
+            }}
           />
         </PanelSectionRow>
-        <PanelSectionRow>
+        {languageError ? <PanelSectionRow><div role="alert">{languageError}</div></PanelSectionRow> : null}
+        {!settingsView?<PanelSectionRow>
           <ToggleField
-            label="Show debug details"
+            label="Show technical details"
             checked={showDebug}
             onChange={setShowDebug}
           />
-        </PanelSectionRow>
-        {showDebug ? (
+        </PanelSectionRow>:null}
+          </SettingsPart>
+          <SettingsPart slot="advanced.data">
+            <CreationBackupSettings connected={status.faceplate.available} open={openSystemBrowser}/>
+
+            <ConfigurationExportSettings disabled={configurationBusy} onBusyChange={setConfigurationBusy}/>
+            <PanelSectionRow><ButtonItem label="Import configuration JSON"
+              description="Choose a GabeCubeAura export from Documents or another location. Replaces saved settings and per-game profiles."
+              disabled={configurationBusy} onClick={() => void chooseConfigurationFile()}>Import JSON</ButtonItem></PanelSectionRow>
+            <PanelSectionRow><ButtonItem label="Reset to defaults"
+              description="Complete reset: deletes settings, saved content and the SteamGridDB key. Confirmation required."
+              disabled={configurationBusy} onClick={confirmConfigurationReset}>Reset</ButtonItem></PanelSectionRow>
+            <PanelSectionRow><ButtonItem label="Reset settings only"
+              description="Restore default settings and forget Faceplate setup. Your keys and saved creations are kept; reconnect the Faceplate to set it up again."
+              disabled={configurationBusy} onClick={confirmSettingsOnlyReset}>Reset settings</ButtonItem></PanelSectionRow>
+            <PanelSectionRow><Localized><div style={{fontSize: '.82em', lineHeight: 1.45}}>
+              Settings only keeps your keys and saved creations. Reset to defaults above erases them.
+            </div></Localized></PanelSectionRow>
+            {configurationActionMessage ? <PanelSectionRow>
+              <div style={{ width: "100%", fontSize: ".76em", overflowWrap: "anywhere" }}>
+                {configurationActionMessage}
+              </div>
+            </PanelSectionRow> : null}
+          </SettingsPart>
+        {showDebug || settingsView?.category==='advanced' ? (
           <>
+            <SettingsPart slot="advanced.snapshot">
+            <SettingsDetails title="Saved configuration">
             <PanelSectionRow>
               <div style={{ width: "100%", padding: "8px 10px", background: "rgba(0, 0, 0, .24)", borderRadius: 6, overflowWrap: "anywhere" }}>
                 <div style={{ fontSize: ".88em", fontWeight: 700 }}>Saved configuration</div>
@@ -3037,39 +4193,9 @@ function Content({ page = "quick" }: { page?: Page }) {
                 </div>)}
               </div>
             </PanelSectionRow>
-            <PanelSectionRow>
-              <ButtonItem
-                label="Export configuration JSON"
-                description={configurationExportPath
-                  ? `Saved to ${configurationExportPath}`
-                  : "Write a readable copy to Documents when available; the exact path appears here."}
-                onClick={() => void exportConfiguration()
-                  .then((result) => {
-                    setConfigurationExportPath(result.path);
-                    setConfigurationExportError("");
-                  })
-                  .catch((error) => {
-                    console.warn("[GabeCubeAura] configuration export failed", error);
-                    setConfigurationExportError(error instanceof Error ? error.message : String(error));
-                  })}
-              >Export JSON</ButtonItem>
-            </PanelSectionRow>
-            {configurationExportError ? <PanelSectionRow>
-              <div style={{ width: "100%", fontSize: ".76em", color: "#ff9e9e", overflowWrap: "anywhere" }}>
-                Export failed: {configurationExportError}
-              </div>
-            </PanelSectionRow> : null}
-            <PanelSectionRow><ButtonItem label="Import configuration JSON"
-              description="Choose a GabeCubeAura export from Documents or another location. Replaces saved settings and per-game profiles."
-              disabled={configurationBusy} onClick={() => void chooseConfigurationFile()}>Import JSON</ButtonItem></PanelSectionRow>
-            <PanelSectionRow><ButtonItem label="Reset to defaults"
-              description="Return to the shipped settings, clear per-game profiles and stop the personal timer. Confirmation required."
-              disabled={configurationBusy} onClick={confirmConfigurationReset}>Reset</ButtonItem></PanelSectionRow>
-            {configurationActionMessage ? <PanelSectionRow>
-              <div style={{ width: "100%", fontSize: ".76em", overflowWrap: "anywhere" }}>
-                {configurationActionMessage}
-              </div>
-            </PanelSectionRow> : null}
+            </SettingsDetails></SettingsPart>
+            <SettingsPart slot="advanced.engine">
+            <SettingsDetails title="Engine, games, controllers and weather">
             <PanelSectionRow>
               <div style={{ width: "100%", fontSize: ".76em", opacity: 0.78, overflowWrap: "anywhere" }}>
                 <div>LED path: {status.debug.led_path}</div>
@@ -3152,6 +4278,8 @@ function Content({ page = "quick" }: { page?: Page }) {
                 </div>)}
               </div>
             </PanelSectionRow>
+            </SettingsDetails></SettingsPart>
+            <SettingsPart slot="advanced.general">
             <PanelSectionRow>
               <ToggleField
                 label="Reverse physical LED order"
@@ -3177,80 +4305,82 @@ function Content({ page = "quick" }: { page?: Page }) {
                 onChange={async (value) => setStatus(await setSetting("countdown_dark_edge_compensation", value))}
               />
             </PanelSectionRow>
+            </SettingsPart>
           </>
         ) : null}
-      </PanelSection> : null}
+      </PanelSection></SettingsPart> : null}
 
-      {showPage("advanced") && update?.test_build ? <PanelSection title="Update lab · TEST BUILD">
-        <PanelSectionRow><div style={{ width: "100%", fontSize: ".78em", opacity: .84 }}>
-          These fixtures use isolated directories. They never replace the installed plugin or restart the real Decky service.
-        </div></PanelSectionRow>
-        <PanelSectionRow><ButtonItem label="Valid package"
-          description="Build and validate a fixed local GabeCubeAura 1.1.0 fixture."
-          disabled={updateBusy} onClick={() => void runUpdateLab("valid-package")}>Run validation only</ButtonItem></PanelSectionRow>
-        <PanelSectionRow><ButtonItem label="Checksum mismatch"
-          description="Confirm that a wrong SHA256 is rejected before staging."
-          disabled={updateBusy} onClick={() => void runUpdateLab("checksum-mismatch")}>Run rejection test</ButtonItem></PanelSectionRow>
-        <PanelSectionRow><ButtonItem label="Rollback rehearsal"
-          description="Install a broken fixture in isolated directories and restore the previous fixture."
-          disabled={updateBusy} onClick={() => void runUpdateLab("rollback")}>Rehearse rollback</ButtonItem></PanelSectionRow>
-        {updateLabResult ? <PanelSectionRow><div style={{ width: "100%", fontSize: ".78em", color: updateLabResult.passed ? "#9ee8b0" : "#ff9e9e" }}>
-          <b>{updateLabResult.passed ? "Passed" : "Failed"}: {updateLabResult.scenario}</b>
-          <div style={{ marginTop: 4, opacity: .86 }}>{updateLabResult.details}</div>
-        </div></PanelSectionRow> : null}
-        <PanelSectionRow><ButtonItem label="Export test report"
-          description={updateLabReportPath || "Writes the bounded fixture report to Documents."}
-          disabled={updateBusy || !updateLabResult?.report_available}
-          onClick={() => void exportUpdateTestReport().then((result) => setUpdateLabReportPath(result.path)).catch((error) => setUpdateLabReportPath(String(error)))}>
-          Export JSON
-        </ButtonItem></PanelSectionRow>
-      </PanelSection> : null}
 
-      {page !== "quick" && page !== "audio-sync" ? <SettingsPageEnd page={page} setStatus={setStatus} /> : null}
 
-    </>
+      {!settingsView && page !== "quick" && page !== "audio-sync" ? <SettingsPageEnd page={page} setStatus={setStatus} /> : null}
+
+    </LedPreviewActivity.Provider>
   );
 }
 
-function GabeCubeAuraSettings() {
-  return <SidebarNavigation title="GabeCubeAura settings" pages={[
-    { title: "Display routing", route: "/gabecubeaura/settings/routing", content: <Content page="routing" /> },
-    { title: "Customization+", route: "/gabecubeaura/settings/customization", content: <Content page="customization" /> },
-    { title: "Artwork", route: "/gabecubeaura/settings/artwork", content: <Content page="artwork" /> },
-    { title: "Performance", route: "/gabecubeaura/settings/performance", content: <Content page="performance" /> },
-    { title: "Game launches", route: "/gabecubeaura/settings/launches", content: <Content page="launches" /> },
-    { title: "Playtime", route: "/gabecubeaura/settings/countdown", content: <Content page="countdown" /> },
-    { title: "Light events", route: "/gabecubeaura/settings/events", content: <Content page="events" /> },
-    { title: "Controllers", route: "/gabecubeaura/settings/controllers", content: <Content page="controllers" /> },
-    { title: "Weather", route: "/gabecubeaura/settings/weather", content: <Content page="weather" /> },
-    { title: "Screen Sync", route: "/gabecubeaura/settings/screen-sync", content: <Content page="screen-sync" /> },
-    { title: "Audio Sync", route: "/gabecubeaura/settings/audio-sync", content: <Content page="audio-sync" /> },
-    { title: "Updates", route: "/gabecubeaura/settings/updates", content: <Content page="updates" /> },
-    "separator",
-    { title: "Advanced / debug", route: "/gabecubeaura/settings/advanced", content: <Content page="advanced" /> },
-  ]} />;
+function FaceplateStatePanel({ status }: { status: Status }) {
+  const compact=useSettingsPresentation();
+  const state = faceplateUXState(status);
+  const weather = status.weather;
+  return <SettingsPart slot="faceplate.status"><PanelSection title="JSAUX matrix · 64 × 54">
+    <PanelSectionRow><div style={{ width: "100%", padding: "10px 12px", borderRadius: 10,
+      background: compact ? 'transparent' : state.tone === "good" ? "rgba(71,222,145,.1)" : "rgba(255,190,80,.1)", fontSize: ".84em", lineHeight: 1.5 }}>
+      <b>{state.label}</b><div>{state.detail}</div>
+      <div style={{ marginTop: 5 }}>Saved at Home: {status.faceplate.routing.routes.home} · In game: {status.faceplate.routing.routes.game}</div>
+      {weather.faceplate_weather_state !== "fresh" ? <div>Weather: {weather.faceplate_weather_state === "cached"
+        ? `last known · ${formatAge(weather.age_s)}` : weather.faceplate_weather_state === "background-only"
+          ? "last known background; readings unavailable" : "readings unavailable"}</div> : null}
+    </div></PanelSectionRow>
+  </PanelSection></SettingsPart>;
 }
 
+function GabeCubeAuraSettings({initialPage}:{initialPage?:SettingsSourcePage}={}) {
+  const params=useParams<{source?:string}>();
+  const source=initialPage??(params.source&&params.source in SETTINGS_ALIASES?params.source as SettingsSourcePage:undefined);
+  const [faceplateConnected,setFaceplateConnected]=useState(()=>retainedStatus?.faceplate.available===true);
+  return <SimpleSettings initialSource={source} initial={source?SETTINGS_ALIASES[source]:undefined}
+    faceplateConnected={faceplateConnected}
+    renderContent={(selection)=><Content key={selection.category} settingsView={selection}
+      initialSource={source}
+      onFaceplateConnectionChange={setFaceplateConnected}/>}/>;
+}
+
+// Existing notifications/bookmarks resolve to the same new interface, never a parallel legacy UI.
+
 export default definePlugin(() => {
+  void getStatus().then((status) => setUILanguage(status.ui_language)).catch(actionFailed);
   // Decky invokes this initializer once when it loads the frontend bundle.
   // Runtime signals must start here, not when the user first opens the panel.
+  void reportRuntimeDiagnostic("frontend_mounted", 0, "definePlugin", 0)
+    .catch(() => undefined);
   const runtime = startGabeCubeAuraRuntime();
+  const timerActions = startTimerActions();
   const weatherTopBar = startWeatherTopBar();
   const updateNotifications = startUpdateNotifications();
-  routerHook.addRoute("/gabecubeaura/settings", GabeCubeAuraSettings);
+  routerHook.addRoute(SETTINGS_ROUTE_PATTERN, GabeCubeAuraSettings, {exact:true});
   routerHook.addRoute("/gabecubeaura/setup", FirstRunSetupRoute, { exact: true });
+  routerHook.addRoute("/gabecubeaura/setup/faceplate", ()=><FirstRunSetupRoute faceplateOnly/>, {exact:true});
   return {
     name: "GabeCubeAura",
-    titleView: <div className={staticClasses.Title}>GabeCubeAura</div>,
-    content: <Content />,
-    icon: <TbCubeSpark />,
+    titleView: <div className={[staticClasses?.Title,'gca-compact-title'].filter(Boolean).join(' ')} style={{ display: 'flex', alignItems: 'center',
+      justifyContent: 'space-between', gap: 8, width: '100%', minWidth: 0 }}>
+      <style>{QUICK_CONTROL_CSS}</style>
+      <span>GabeCubeAura</span>
+      <QuickSettingsAction />
+    </div>,
     alwaysRender: true,
+    content: <QuickAccessContent />,
+    icon: <TbCubeSpark />,
     onDismount() {
+      void reportRuntimeDiagnostic("frontend_unmounted", 0, "Decky dismount", 0)
+        .catch(() => undefined);
       runtime.stop();
+      timerActions.stop();
       weatherTopBar.stop();
       updateNotifications.stop();
-      routerHook.removeRoute("/gabecubeaura/settings");
+      routerHook.removeRoute(SETTINGS_ROUTE_PATTERN);
       routerHook.removeRoute("/gabecubeaura/setup");
+      routerHook.removeRoute("/gabecubeaura/setup/faceplate");
     },
   };
 });

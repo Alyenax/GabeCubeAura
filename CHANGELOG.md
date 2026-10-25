@@ -1,10 +1,12 @@
 # Changelog
 
-## 1.5.0 · not yet released
+## 1.5.0 · 2026-10-25
 
 GabeCubeAura 1.5.0 adds the optional JSAUX Faceplate, prepared artwork, Dashboards and Steam Players City, with updated setup, local backups and display controls. See [what's new](https://github.com/Alyenax/GabeCubeAura/wiki/Release-1.5.0).
 
 ### Added
+
+- A yellow Artwork / Dashboard Artwork guide in the Decky panel when no current creation is ready, with a direct Create artwork button. Older transfer receipts and removed creations no longer hide the guide.
 
 - Logo size in Adjust image, from 50% to 100% in 5% steps, for separately composed logos. Prepare a new preview and apply it; embedded source logos remain part of the image.
 - Preparation, USB transfer and settled-result messages in Decky’s JSAUX panel, using the existing status stream.
@@ -98,6 +100,8 @@ GabeCubeAura 1.5.0 adds the optional JSAUX Faceplate, prepared artwork, Dashboar
   confirmed. Recover unreadable setup progress without trapping the user.
 
 ### Fixed
+
+- Restore source exposure for the two daytime cloud-break weather animations and invalidate their prepared caches. Other weather scenes and saved brightness remain unchanged.
 
 - Fix direct Dashboard Weather ↔ Dashboard Artwork switching across provider-local and zoned time representations, including Apply from the weather Dashboard.
 - Protect Home/game artwork promotion against concurrent Apply requests. A later status-read failure no longer turns a completed application into a false failure.

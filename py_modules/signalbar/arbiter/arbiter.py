@@ -27,11 +27,18 @@ class Arbiter:
                controller_event=None, controller_base=None, weather_base=None,
                customization_base=None, screen_sync_base=None, screen_sync_fallback=None,
                audio_sync_base=None,
-               launch_artwork=None, steam_priority=False, companion_hud_active=False):
+               launch_artwork=None, steam_priority=False, companion_hud_active=False,
+               assistant_base=None, faceplate_extension=None):
+        if mode == "bar_off":
+            return ProviderOutput("blackout", BLACKOUT_FRAME, "Light bar held off")
+        if mode == "steam_control":
+            return ProviderOutput("valve", None, "Explicit Steam control")
         if mode == "disabled":
             return ProviderOutput("none", None, "GabeCubeAura disabled")
         if steam_priority:
             return ProviderOutput("valve", None, "Steam system priority")
+        if assistant_base is not None and guard_allows and not signal_critical:
+            return assistant_base
         # Short, opted-in effects can briefly use an otherwise native-owned bar.
         # The runtime still yields if it detects a new external write mid-effect.
         if controller_event is not None and controller_event.frame is not None and not signal_critical and controller_event.provider == "controller:low":
@@ -51,6 +58,17 @@ class Arbiter:
 
         if signal is not None and signal.frame is not None:
             return signal
+
+        # Steam recording is a persistent state, not a brief decorative event.
+        # When an immersive mode owns the strip, reclaim it as a quiet black
+        # channel with the real red REC marker instead of leaving capture motion
+        # visible beneath it. Critical countdowns and launch transitions above
+        # retain their safety priority.
+        if recording_marker and mode in {"screen_sync", "audio_sync"}:
+            return self._with_recording_marker(
+                ProviderOutput("recording", BLACKOUT_FRAME, "Steam recording owns the light bar"),
+                True, recording_marker_isolation,
+            )
 
         if weather_base is not None and weather_base.provider == "weather:preview" and weather_base.frame is not None:
             return self._with_recording_marker(weather_base, recording_marker, recording_marker_isolation)
@@ -97,6 +115,16 @@ class Arbiter:
                 recording_marker and base.provider.startswith("audio-sync"),
                 recording_marker_isolation,
             )
+
+        if mode == "faceplate_extension":
+            if faceplate_extension is not None and faceplate_extension.frame is not None:
+                base = faceplate_extension
+            elif game.running and artwork.frame is not None:
+                base = ProviderOutput(artwork.provider, artwork.frame,
+                    'Faceplate unavailable; using current-game Artwork')
+            else:
+                base = ProviderOutput('none', None, 'Faceplate unavailable; no current-game Artwork')
+            return self._with_recording_marker(base, recording_marker, recording_marker_isolation)
 
         if controller_base is not None and controller_base.frame is not None:
             return self._with_recording_marker(controller_base, recording_marker, recording_marker_isolation)

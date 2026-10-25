@@ -22,7 +22,7 @@ importers:
         specifier: ^1.0.2
         version: 1.0.2
       '@decky/ui':
-        specifier: ^4.11.0
+        specifier: ^4.12.1
         version: 4.12.1
       '@rollup/rollup-linux-x64-musl':
         specifier: ^4.53.3
@@ -36,6 +36,9 @@ importers:
       '@types/webpack':
         specifier: ^5.28.5
         version: 5.28.5
+      react:
+        specifier: 19.3.0
+        version: 19.3.0
       rollup:
         specifier: ^4.53.3
         version: 4.63.5

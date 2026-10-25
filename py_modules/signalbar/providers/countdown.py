@@ -8,6 +8,7 @@ import time
 from dataclasses import dataclass
 
 from signalbar.models import LED_COUNT, ProviderOutput, normalize_frame
+from .timer_end_action import TimerEndAction, VALID_ACTIONS
 
 
 COUNTDOWN_COLOURS = {
@@ -103,6 +104,7 @@ class _Countdown:
     total_seconds: float
     ends_at: float
     started_at: float
+    power_generation: int = 0
 
 
 class CountdownProvider:
@@ -114,17 +116,22 @@ class CountdownProvider:
         self._clock = clock
         self._lock = threading.RLock()
         self._states = {}
+        self._faceplate_completed = None
+        self.end_action = TimerEndAction(clock)
 
     def start(
-        self, source, seconds, total_seconds=None, label="",
+        self, source, seconds, total_seconds=None, label="", end_action='none',
     ):
         source = str(source or "free")
+        if not isinstance(end_action, str) or end_action not in VALID_ACTIONS or source != 'free' and end_action != 'none':
+            raise ValueError('Only a personal timer can request a power action')
         seconds = max(0.0, float(seconds))
         if seconds <= 0:
             self.stop(source)
             return
         now = self._clock()
         with self._lock:
+            self._faceplate_completed = None
             previous = self._states.get(source)
             total = max(seconds, float(total_seconds or 0.0))
             if previous is not None:
@@ -138,23 +145,72 @@ class CountdownProvider:
                 total_seconds=max(1.0, total),
                 ends_at=now + seconds,
                 started_at=started_at,
+                power_generation=self.end_action.arm(end_action, now+seconds) if source == 'free' else 0,
             )
 
     def stop(self, source=None):
         with self._lock:
+            if source is None or source == 'free':
+                self.end_action.cancel('timer-stopped')
+            if (self._faceplate_completed is not None
+                    and (source is None or self._faceplate_completed.source == str(source))):
+                self._faceplate_completed = None
             if source is None:
                 self._states.clear()
             else:
                 self._states.pop(str(source), None)
 
+    def personal_status(self):
+        """Free timer only, even when a Families deadline currently has priority."""
+        _, now = self._current()
+        with self._lock:
+            state = self._states.get('free')
+            if state is None or state.ends_at <= now:
+                self._states.pop('free', None)
+                return {'active': False, 'remaining_seconds': 0}
+            return {'active': True, 'remaining_seconds': math.ceil(state.ends_at-now)}
+
+    def claim_end_action(self):
+        self._current()
+        return self.end_action.claim()
+
+    def extend_personal(self, seconds):
+        _, now = self._current()
+        with self._lock:
+            state = self._states.get('free')
+            seconds = int(seconds)
+            if seconds <= 0 or seconds > 14400:
+                raise ValueError('Timer extension must be 1..14400 seconds')
+            if state is None or state.ends_at <= now:
+                self._states.pop('free', None)
+                return False
+            if state.ends_at-now+seconds > 14400:
+                raise RuntimeError('Le timer personnel ne peut pas dépasser quatre heures.')
+            state.ends_at += seconds
+            state.total_seconds += seconds
+            self.end_action.extend(state.power_generation, state.ends_at)
+            return True
+
     def _current(self, allow_parental=True):
         now = self._clock()
         with self._lock:
+            # Remember natural expiry separately from LED activity. Cancellation
+            # never invents TIME'S UP, and an expired preview cannot mask a timer.
+            priority = {"preview": 0, "parental": 1, "free": 2}
+            visible = [state for state in self._states.values()
+                       if allow_parental or state.source != "parental"]
+            previous = min(visible, key=lambda state: (
+                priority.get(state.source, 3), state.ends_at,
+            )) if visible else None
+            if previous is not None and previous.ends_at <= now:
+                self._faceplate_completed = previous
             expired = [
                 source for source, state in self._states.items()
                 if state.ends_at <= now
             ]
             for source in expired:
+                if source == 'free':
+                    self.end_action.expire(self._states[source].power_generation)
                 self._states.pop(source, None)
             candidates = [
                 state for state in self._states.values()
@@ -171,6 +227,24 @@ class CountdownProvider:
                 key=lambda item: (priority.get(item.source, 3), item.ends_at),
             )
             return state, now
+
+    def faceplate_snapshot(self, allow_parental=True):
+        """Bounded semantic snapshot, sharing the existing timer priority/clock.
+
+        Completion is available for 60 seconds to let a slow serial transfer
+        finish. The engine displays it eight seconds after the upload ACK.
+        """
+        state, now = self._current(allow_parental=allow_parental)
+        if state is not None:
+            return {"active": True, "source": state.source,
+                    "remaining_seconds": max(0, state.ends_at - now)}
+        with self._lock:
+            completed = self._faceplate_completed
+            if (completed is not None and 0 <= now - completed.ends_at < 60
+                    and (allow_parental or completed.source != "parental")):
+                return {"active": False, "source": completed.source,
+                        "completion_id": f"{completed.source}:{completed.ends_at:.6f}"}
+        return {"active": False}
 
     @staticmethod
     def _render_total(state, full_bar_seconds):

@@ -7,9 +7,11 @@ files, or network requests.
 from __future__ import annotations
 
 import colorsys
+import codecs
 import json
 import os
 import pwd
+import re
 import select
 import signal
 import shutil
@@ -19,15 +21,22 @@ import time
 from collections import deque
 
 from signalbar.models import LED_COUNT, ProviderOutput, normalize_frame
+from signalbar.shutdown import ShutdownBudget
+from signalbar.updates import _clean_system_command_environment
+from signalbar.screen_sync_trace import ScreenSyncTrace, TRACE_GST_DEBUG
 
 
 CAPTURE_WIDTH = 34
 CAPTURE_HEIGHT = 18
 BYTES_PER_PIXEL = 4
 FRAME_BYTES = CAPTURE_WIDTH * CAPTURE_HEIGHT * BYTES_PER_PIXEL
-CAPTURE_REVISION = "1.3.0-session-release-v7"
+CAPTURE_REVISION = "1.4.1-system-capture-v10"
 CAPTURE_PROCESS_MARKER = "client-name=GabeCubeAura-Screen-Sync"
 SESSION_RESTART_SETTLE_SECONDS = 2.0
+# Connecting/prerolling is different from losing an established stream. Do not
+# repeatedly disconnect a slow Gamescope producer before its first frame.
+FIRST_FRAME_TIMEOUT_SECONDS = 8.0
+FRAME_STALL_TIMEOUT_SECONDS = 1.5
 
 VALID_STYLES = {"panorama", "ambient"}
 VALID_REACTIVITY = {"calm", "balanced", "fast"}
@@ -228,11 +237,13 @@ class ScreenSyncProcessor:
 class ScreenCaptureService:
     """Supervise a low-resolution GStreamer consumer of Gamescope PipeWire."""
 
-    def __init__(self, clock=time.monotonic, popen=subprocess.Popen, run=subprocess.run):
+    def __init__(self, clock=time.monotonic, popen=subprocess.Popen, run=subprocess.run, trace=None):
         self._clock = clock
         self._popen = popen
         self._run_command = run
         self._lock = threading.RLock()
+        self._process_stop_lock = threading.Lock()
+        self._stderr_read_lock = threading.RLock()
         self._wake = threading.Event()
         self._stop = threading.Event()
         self._thread = None
@@ -257,6 +268,22 @@ class ScreenCaptureService:
         self._orphan_processes_cleaned = 0
         self._capture_sessions_released = 0
         self._last_release_error = ""
+        self._bytes_seen = 0
+        self._first_frame_at = None
+        self._attempt_started_at = None
+        self._producer_state = "unknown"
+        self._attempt_history = deque(maxlen=3)
+        self.trace = trace if trace is not None else ScreenSyncTrace(clock=clock)
+        self._attempt_number = 0
+        self._stderr_decoder = codecs.getincrementaldecoder("utf-8")("replace")
+        self._stderr_pending = ""
+        self._last_gst_failure = ""
+        self._trace_stages = set()
+        self._trace_graph = None
+        self._runtime_inspected = False
+        self._retry_paused = False
+        self._unhealthy_sessions = 0
+        self._paused_graph_check_at = 0.0
 
     @staticmethod
     def _runtime_dirs():
@@ -342,6 +369,88 @@ class ScreenCaptureService:
         return count
 
     @staticmethod
+    def capture_clients(dump, node_id):
+        """Describe only linked/targeted video consumers, never all processes.
+
+        A registered node targeting Gamescope can be stuck before a Link exists.
+        Report it as a candidate, not as proof of a conflicting active capture.
+        Audio nodes sharing the PipeWire server are deliberately excluded.
+        """
+        rows = [item for item in dump if isinstance(item, dict)]
+        by_id = {str(item.get("id")): item for item in rows}
+        producer = by_id.get(str(node_id), {})
+        serial = str(((producer.get("info") or {}).get("props") or {}).get("object.serial", ""))
+        targets = {"gamescope"}
+        if node_id is not None:
+            targets.add(str(node_id))
+        if serial:
+            targets.add(serial)
+        links = {}
+        for item in rows:
+            if item.get("type") != "PipeWire:Interface:Link":
+                continue
+            info = item.get("info") or {}
+            props = info.get("props") or {}
+            if node_id is not None and str(props.get("link.output.node", info.get("output-node-id"))) == str(node_id):
+                target = str(props.get("link.input.node", info.get("input-node-id")))
+                links.setdefault(target, set()).add(str(info.get("state", "unknown")))
+        result = []
+        for item in rows:
+            if item.get("type") != "PipeWire:Interface:Node" or item.get("id") == node_id:
+                continue
+            info = item.get("info") or {}; props = info.get("props") or {}
+            media = str(props.get("media.class", ""))
+            target = str(props.get("target.object", props.get("node.target", "")))
+            linked = str(item.get("id")) in links
+            targeted = target in targets and "audio" not in media.lower()
+            if not linked and not targeted:
+                continue
+            client = by_id.get(str(props.get("client.id")), {})
+            client_props = (client.get("info") or {}).get("props") or {}
+            name = str(props.get("application.name") or client_props.get("application.name") or "")
+            client_name = str(client_props.get("client.name", ""))
+            binary = os.path.basename(str(client_props.get("application.process.binary") or props.get("application.process.binary") or ""))
+            states = sorted(links.get(str(item.get("id")), set()))
+            result.append({"node_id": item.get("id"), "linked": linked,
+                "targeted": targeted, "link_states": states[:4],
+                "application": name[:80], "client": client_name[:80], "binary": binary[:80],
+                "gca_marker": client_name == "GabeCubeAura-Screen-Sync" or name == "GabeCubeAura-Screen-Sync"})
+        return result[:8]
+
+    def _trace_pipewire(self, dump, node_id):
+        producer = next((item for item in dump if item.get("id") == node_id), None) if node_id is not None else None
+        state = str((producer.get("info") or {}).get("state", "unknown")) if producer else "unknown"
+        if state not in {"suspended", "idle", "running", "error", "creating"}:
+            state = "unknown"
+        snapshot = {"producer_present": producer is not None, "producer_state": state,
+                    "consumers": self.capture_clients(dump, node_id),
+                    "links": self.count_consumers(dump, node_id) if node_id is not None else 0}
+        self._producer_state = state
+        if snapshot != self._trace_graph:
+            self.trace.record("pipewire-graph", attempt=self._attempt_number, **snapshot)
+            self._trace_graph = snapshot
+
+    def _inspect_runtime(self, gst, environment):
+        if self._runtime_inspected or self.trace.directory is None:
+            return
+        self._runtime_inspected = True
+        details = {}
+        for name, command in (("gstreamer", [gst, "--version"]),
+                ("pipewiresrc", [shutil.which("gst-inspect-1.0") or "gst-inspect-1.0", "pipewiresrc"])):
+            try:
+                result = self._run_command(command, capture_output=True, text=True,
+                    timeout=1.0, check=False, env=environment)
+                text = result.stdout or ""
+                match = re.search(r"(?:[Vv]ersion|GStreamer)\s+([0-9][0-9A-Za-z.\-]*)", text)
+                details[name] = match.group(1)[:48] if match else "unavailable"
+                if name == "pipewiresrc":
+                    details["keepalive_supported"] = "keepalive-time" in text
+                    details["always_copy_supported"] = "always-copy" in text
+            except Exception as error:
+                details[name] = type(error).__name__
+        self.trace.record("capture-runtime", **details)
+
+    @staticmethod
     def _runtime_owner(runtime_dir):
         """Return the user owning a /run/user/<uid> PipeWire session."""
         try:
@@ -376,7 +485,7 @@ class ScreenCaptureService:
         executable = shutil.which("pw-dump")
         if not executable:
             raise RuntimeError("pw-dump is not installed")
-        environment = dict(os.environ)
+        environment = _clean_system_command_environment()
         if runtime_dir:
             environment["XDG_RUNTIME_DIR"] = runtime_dir
         command, identity = self._command_for_runtime([executable], runtime_dir)
@@ -531,11 +640,12 @@ class ScreenCaptureService:
                 current = getattr(self._process, "pid", None)
         cleaned = 0
         targets = set(self._marked_capture_pids())
+        self.trace.record("stale-gca-captures", marked_processes=len(targets))
         for pid in targets:
             if pid == current:
                 continue
             try:
-                os.kill(pid, signal.SIGTERM)
+                os.kill(pid, signal.SIGINT)
                 cleaned += 1
             except (ProcessLookupError, PermissionError):
                 continue
@@ -555,17 +665,97 @@ class ScreenCaptureService:
                 if pid == current:
                     continue
                 try:
-                    os.kill(pid, signal.SIGKILL)
+                    os.kill(pid, signal.SIGTERM)
                 except (ProcessLookupError, PermissionError):
                     continue
+            if targets & remaining:
+                self._wait(0.25)
+                for pid in (targets & set(self._marked_capture_pids())) - {current}:
+                    try:
+                        os.kill(pid, signal.SIGKILL)
+                    except (ProcessLookupError, PermissionError):
+                        continue
         return cleaned
 
     @staticmethod
-    def _terminate_process(process):
-        """Stop the complete capture group, falling back for test/old clients."""
-        if process is None or process.poll() is not None:
-            return
+    def _graceful_capture_pids(process, proc_root="/proc"):
+        """SIGINT only our gst-launch child; never interrupt its runuser wrapper.
+
+        runuser translates an interrupt into SIGTERM for its child. Walk only
+        this subprocess's descendants and require the exact GCA marker before
+        targeting a wrapped GStreamer child. No global process scan or arguments
+        are exported to diagnostics.
+        """
         pid = getattr(process, "pid", None)
+        args = getattr(process, "args", ())
+        if pid is None or not isinstance(args, (tuple, list)) or not args:
+            return []
+        if os.path.basename(str(args[0])) == "gst-launch-1.0":
+            return [pid]
+        if os.path.basename(str(args[0])) != "runuser":
+            return []
+        found, pending, seen = [], [pid], set()
+        while pending and len(seen) < 16:
+            parent = pending.pop()
+            if parent in seen:
+                continue
+            seen.add(parent)
+            try:
+                with open(os.path.join(proc_root, str(parent), "task", str(parent), "children")) as handle:
+                    children = handle.read(256).split()[:8]
+            except OSError:
+                continue
+            for child in children:
+                if not child.isdigit():
+                    continue
+                try:
+                    with open(os.path.join(proc_root, child, "cmdline"), "rb") as handle:
+                        arguments = [part.decode("utf-8", "replace") for part in handle.read(8192).split(b"\0") if part]
+                except OSError:
+                    continue
+                if (arguments and os.path.basename(arguments[0]) == "gst-launch-1.0"
+                        and CAPTURE_PROCESS_MARKER in arguments):
+                    found.append(int(child))
+                else:
+                    pending.append(int(child))
+        return found
+
+    @staticmethod
+    def _terminate_process(process, timeout=2.0, drain=None):
+        """Graceful GStreamer NULL transition, then bounded group escalation."""
+        if process is None or process.poll() is not None:
+            return "already-exited"
+        budget = ShutdownBudget(timeout)
+        pid = getattr(process, "pid", None)
+        def wait_after_signal(seconds):
+            if drain is None:
+                return process.wait(timeout=budget.remaining(seconds))
+            deadline = time.monotonic() + budget.remaining(seconds)
+            while True:
+                drain(process)
+                exit_code = process.poll()
+                if exit_code is not None:
+                    return exit_code
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise subprocess.TimeoutExpired("capture-stop", seconds)
+                try:
+                    return process.wait(timeout=min(0.05, remaining))
+                except subprocess.TimeoutExpired:
+                    continue
+        interrupted = False
+        for target in ScreenCaptureService._graceful_capture_pids(process):
+            try:
+                os.kill(target, signal.SIGINT)
+                interrupted = True
+            except OSError:
+                continue
+        if interrupted:
+            try:
+                wait_after_signal(0.6)
+                return "sigint"
+            except subprocess.TimeoutExpired:
+                pass
         try:
             if pid is None:
                 raise OSError("process has no pid")
@@ -573,8 +763,8 @@ class ScreenCaptureService:
         except OSError:
             process.terminate()
         try:
-            process.wait(timeout=1.0)
-            return
+            wait_after_signal(0.6 if interrupted else 1.0)
+            return "sigterm"
         except subprocess.TimeoutExpired:
             pass
         try:
@@ -583,7 +773,36 @@ class ScreenCaptureService:
             os.killpg(pid, signal.SIGKILL)
         except OSError:
             process.kill()
-        process.wait(timeout=1.0)
+        try:
+            wait_after_signal(1.0)
+            return "sigkill"
+        except subprocess.TimeoutExpired:
+            return "pending"  # Supervisor retains responsibility for reaping.
+
+    def _drain_stopping_capture(self, process):
+        # A full pipe must not prevent GStreamer from completing NULL teardown.
+        # Discard image bytes only during stop, while retaining metadata logs.
+        try:
+            if process.stdout is not None:
+                os.set_blocking(process.stdout.fileno(), False)
+                os.read(process.stdout.fileno(), FRAME_BYTES * 8)
+        except (OSError, ValueError):
+            pass
+        self._read_stderr(process)
+
+    def _stop_capture_process(self, process, timeout=2.0):
+        # Engine.stop and the supervisor's finally can arrive together. A
+        # second SIGINT after gst-launch removes its handler would be abrupt.
+        if process is None:
+            return "already-exited"
+        budget = ShutdownBudget(timeout)
+        if not self._process_stop_lock.acquire(timeout=budget.remaining(2.0)):
+            return "pending"
+        try:
+            return self._terminate_process(process, timeout=budget.remaining(2.0),
+                                           drain=self._drain_stopping_capture)
+        finally:
+            self._process_stop_lock.release()
 
     def _release_failed_capture(self, process, error):
         """Close a failed client before waiting or selecting another source.
@@ -594,7 +813,20 @@ class ScreenCaptureService:
         """
         if process is None:
             return False
-        self._terminate_process(process)
+        # Record before killing the child: -SIGTERM would otherwise masquerade
+        # as its original exit status. Retain evidence across selector retries.
+        self._read_stderr(process)
+        exit_code = process.poll()
+        with self._lock:
+            failure = {
+                **self._attempt_status(),
+                "exit_code": exit_code,
+                "failure": self._failure_kind(error, exit_code),
+                "stderr_tail": list(self._stderr)[-4:],
+            }
+            self._attempt_history.append(failure)
+        self.trace.record("capture-failed", attempt=self._attempt_number, **failure)
+        self._finish_process(process, "capture-failed")
         with self._lock:
             if self._process is process:
                 self._process = None
@@ -605,6 +837,34 @@ class ScreenCaptureService:
             self._capture_sessions_released += 1
             self._last_release_error = str(error)[:300]
         return True
+
+    def _attempt_status(self):
+        # Caller holds the capture lock. No pixels or process arguments leave
+        # the capture service; reports contain only counters and bounded errors.
+        started = self._attempt_started_at
+        return {
+            "selector": self._capture_selector,
+            "producer_state": self._producer_state,
+            "elapsed_s": round(max(0.0, self._clock() - started), 3) if started is not None else 0.0,
+            "bytes_received": self._bytes_seen,
+            "frames_received": self._frames_seen,
+            "first_frame_after_s": round(self._first_frame_at - started, 3)
+                if self._first_frame_at is not None and started is not None else None,
+        }
+
+    def _failure_kind(self, error, exit_code):
+        text = (str(error) + " " + " ".join(self._stderr)).lower()
+        if "first gamescope frame timed out" in text:
+            return "first-frame-timeout"
+        if "stopped producing frames" in text:
+            return "frame-stall"
+        if "not-negotiated" in text or "could not link" in text:
+            return "negotiation"
+        if "no element" in text or "no property" in text:
+            return "unsupported-pipeline"
+        if "permission denied" in text or "not permitted" in text:
+            return "permission"
+        return "child-exit" if exit_code is not None else "capture-error"
 
     def set_active(self, active):
         active = bool(active)
@@ -618,6 +878,8 @@ class ScreenCaptureService:
             elif changed:
                 self._selector_mode = "target-object"
                 self._capture_selector = ""
+                self._retry_paused = False
+                self._unhealthy_sessions = 0
             # A game transition can request a stop while discovery or process
             # cleanup is still unwinding.  The provider calls this method on
             # every render tick, so recreate a dead supervisor even if the
@@ -631,17 +893,32 @@ class ScreenCaptureService:
                 )
                 self._thread.start()
         if changed:
+            self.trace.record("capture-request", active=active)
             self._wake.set()
 
-    def stop(self):
+    def request_retry(self):
+        """Explicit Preview can retry a paused source without killing a live one."""
+        with self._lock:
+            paused = self._retry_paused
+            self._retry_paused = False
+            self._unhealthy_sessions = 0
+            if paused:
+                self._selector_mode = "target-object"
+        self.trace.record("capture-retry-request", was_paused=paused)
+        self._wake.set()
+
+    def stop(self, timeout=None):
+        self.trace.record("capture-stop-request", reason="service-stop")
+        budget = ShutdownBudget(timeout)
         self._stop.set()
         self._wake.set()
         with self._lock:
             process = self._process
-        self._terminate_process(process)
+        strategy = self._stop_capture_process(process, timeout=budget.remaining(2.0))
+        self.trace.record("capture-stop-signal", strategy=strategy)
         thread = self._thread
         if thread and thread.is_alive():
-            thread.join(timeout=3.5)
+            thread.join(timeout=budget.remaining(3.5))
         with self._lock:
             self._active = False
             self._phase = "off"
@@ -674,17 +951,98 @@ class ScreenCaptureService:
                 "orphan_processes_cleaned": self._orphan_processes_cleaned,
                 "capture_sessions_released": self._capture_sessions_released,
                 "last_release_error": self._last_release_error,
+                "attempt": self._attempt_status(),
+                "recent_failures": [dict(item, stderr_tail=list(item["stderr_tail"]))
+                                    for item in self._attempt_history],
+                "retry_paused": self._retry_paused,
+                "unhealthy_sessions": self._unhealthy_sessions,
             }
 
     def _set_state(self, phase, error="", consumers=0):
         with self._lock:
+            changed = (phase, str(error)[:300]) != (self._phase, self._error)
             self._phase = phase
             self._error = str(error)[:300]
             self._conflicting_consumers = max(0, int(consumers))
+        if changed:
+            self.trace.record("capture-phase", phase=phase, error=str(error), consumers=consumers)
 
     def _wait(self, seconds):
         self._wake.wait(seconds)
         self._wake.clear()
+
+    def _read_stderr(self, process):
+        with self._stderr_read_lock:
+            self._drain_stderr(process)
+
+    def _drain_stderr(self, process):
+        # The child can exit before select() runs. Preserve its actual failure
+        # instead of reporting only that a selector failed.
+        # Preserve lines split across pipe reads; drain bounded bursts promptly
+        # so increased metadata logging cannot fill the child's stderr pipe.
+        try:
+            os.set_blocking(process.stderr.fileno(), False)
+        except (OSError, ValueError):
+            return
+        for _ in range(8):
+            try:
+                chunk = os.read(process.stderr.fileno(), 8192)
+            except (OSError, ValueError):
+                break
+            if not chunk:
+                break
+            self._stderr_pending += self._stderr_decoder.decode(chunk)
+            lines = self._stderr_pending.split("\n")
+            self._stderr_pending = lines.pop()
+            for line in lines:
+                self._trace_stderr_line(line)
+            if len(self._stderr_pending) > 4096:
+                self._trace_stderr_line(self._stderr_pending[:4096])
+                self._stderr_pending = ""
+        if process.poll() is not None and self._stderr_pending:
+            self._trace_stderr_line(self._stderr_pending)
+            self._stderr_pending = ""
+
+    def _trace_stderr_line(self, line):
+        line = line.strip()
+        if not line:
+            return
+        with self._lock:
+            self._stderr.append(line[-720:])
+            if not self._last_gst_failure and (re.search(r"\berror\b", line, re.IGNORECASE)
+                    or any(term in line.lower() for term in ("not-negotiated", "no element", "no property", "could not link"))):
+                self._last_gst_failure = line[-720:]
+        self.trace.record("gstreamer", important=False, attempt=self._attempt_number, message=line)
+        lower = line.lower()
+        stage = next((stage for needle, stage in (
+            ("connect capture", "connect-request"),
+            ("got stream state", "pipewire-state-" + lower.rsplit(" ", 1)[-1][:24]),
+            ("waiting for streaming", "waiting-streaming"),
+            ("waiting for negotiated", "waiting-negotiation"),
+            ("we got format", "negotiated-format"),
+            ("set format", "negotiated-format"),
+            ("have common caps", "common-caps"),
+            ("completed state change to null", "pipeline-null" if "pipeline" in lower else "element-null"),
+            ("error", "gstreamer-error"),
+        ) if needle in lower), None)
+        if stage and stage not in self._trace_stages:
+            self._trace_stages.add(stage)
+            self.trace.record("gstreamer-stage", attempt=self._attempt_number, stage=stage, message=line)
+
+    def _finish_process(self, process, reason):
+        if process is None:
+            return
+        self.trace.record("capture-stop-request", attempt=self._attempt_number, reason=reason,
+                          exit_code_before_stop=process.poll())
+        strategy = self._stop_capture_process(process)
+        self._read_stderr(process)
+        exit_code = process.poll()
+        self.trace.record("capture-stopped" if exit_code is not None else "capture-stop-pending",
+                          attempt=self._attempt_number, exit_code_after_stop=exit_code,
+                          stop_strategy=strategy, null_transition_seen="pipeline-null" in self._trace_stages)
+        if exit_code is not None:
+            for stream in (process.stdout, process.stderr):
+                stream.close()
 
     def _supervise(self):
         backoff = 0.5
@@ -695,6 +1053,19 @@ class ScreenCaptureService:
             if not active:
                 cleanup_armed = True
                 self._wait(0.25)
+                continue
+            if self._retry_paused:
+                # Observe the registry only. Do not reconnect a video consumer
+                # indefinitely when Gamescope may already be wedged.
+                now = self._clock()
+                interval = 0.5 if self.trace.previewing else 2.0
+                if self._runtime_dir_used and now - self._paused_graph_check_at >= interval:
+                    self._paused_graph_check_at = now
+                    try:
+                        self._trace_pipewire(self._pipewire_dump(self._runtime_dir_used), self._node_id)
+                    except Exception as error:
+                        self.trace.record("paused-registry-check-failed", error_type=type(error).__name__)
+                self._wait(0.5)
                 continue
             process = None
             captured_frame = False
@@ -710,6 +1081,7 @@ class ScreenCaptureService:
                 if cleanup_armed:
                     self._cleanup_orphan_captures()
                     cleanup_armed = False
+                self.trace.record("discovery-start", selector=selector_mode)
                 runtime_dir, node, dump = self._discover_gamescope_node()
                 if node is None:
                     node_id, node_name = None, "gamescope (direct name)"
@@ -725,12 +1097,28 @@ class ScreenCaptureService:
                 consumers = self.count_consumers(dump, node_id) if node_id is not None else 0
                 with self._lock:
                     self._node_id, self._node_name = node_id, node_name
+                    state = next((str((item.get("info") or {}).get("state", "unknown"))
+                                  for item in dump if item.get("id") == node_id), "unknown")
+                    self._producer_state = state if state in {
+                        "suspended", "idle", "running", "error", "creating"
+                    } else "unknown"
+                self._trace_pipewire(dump, node_id)
+                self.trace.record("discovery-result", node_id=node_id,
+                                  direct_name=node_id is None, identity=self._capture_identity)
                 if consumers:
                     self._set_state("conflict", "Another app is already capturing Gamescope", consumers)
                     self._wait(1.0)
                     continue
-                environment = dict(os.environ)
+                environment = _clean_system_command_environment()
                 environment["XDG_RUNTIME_DIR"] = runtime_dir
+                # Warnings plus source format negotiation, never per-frame
+                # traces. stderr is bounded and exported through sanitization.
+                detail_started = self.trace.detailed()
+                environment["GST_DEBUG"] = TRACE_GST_DEBUG if detail_started else "1"
+                environment["GST_DEBUG_NO_COLOR"] = "1"
+                environment.pop("GST_DEBUG_FILE", None)
+                environment.pop("GST_DEBUG_DUMP_DOT_DIR", None)
+                self._inspect_runtime(gst, environment)
                 command = self._capture_command(gst, node_id, selector_mode)
                 command, identity = self._command_for_runtime(command, runtime_dir)
                 with self._lock:
@@ -743,6 +1131,19 @@ class ScreenCaptureService:
                         if selector_mode == "target-object-compat"
                         else f"legacy node {node_id}"
                     )
+                    self._attempt_started_at = self._clock()
+                    self._bytes_seen = 0
+                    self._frames_seen = 0
+                    self._first_frame_at = None
+                    self._attempt_number += 1
+                    self._trace_stages.clear()
+                    self._stderr_pending = ""
+                    self._last_gst_failure = ""
+                    self._stderr_decoder.reset()
+                    self._trace_graph = None
+                self.trace.record("capture-launch", attempt=self._attempt_number,
+                    selector=self._capture_selector, identity=identity,
+                    gst_debug=TRACE_GST_DEBUG, frame_bytes=FRAME_BYTES)
                 process = self._popen(
                     command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                     stdin=subprocess.DEVNULL, env=environment, bufsize=0,
@@ -750,19 +1151,23 @@ class ScreenCaptureService:
                 )
                 with self._lock:
                     self._process = process
+                self.trace.record("capture-child-started", attempt=self._attempt_number)
                 os.set_blocking(process.stdout.fileno(), False)
                 os.set_blocking(process.stderr.fileno(), False)
                 buffer = bytearray()
                 last_frame = self._clock()
                 last_conflict_check = last_frame
+                last_progress = last_frame
                 with self._lock:
                     self._started_at = last_frame
                     self._frames_seen = 0
-                self._set_state("capturing")
+                self._set_state("waiting", "Waiting for the first Gamescope frame")
                 backoff = 0.5
                 while not self._stop.is_set():
                     with self._lock:
                         active = self._active
+                    if detail_started != self.trace.detailed():
+                        break
                     if not active or process.poll() is not None:
                         break
                     readable, _, _ = select.select(
@@ -771,6 +1176,11 @@ class ScreenCaptureService:
                     if process.stdout.fileno() in readable:
                         chunk = os.read(process.stdout.fileno(), FRAME_BYTES * 2)
                         if chunk:
+                            with self._lock:
+                                first_bytes = self._bytes_seen == 0
+                                self._bytes_seen += len(chunk)
+                            if first_bytes:
+                                self.trace.record("capture-first-bytes", attempt=self._attempt_number, bytes=len(chunk))
                             buffer.extend(chunk)
                             while len(buffer) >= FRAME_BYTES:
                                 frame = bytes(buffer[:FRAME_BYTES])
@@ -781,16 +1191,30 @@ class ScreenCaptureService:
                                     self._frame_at = last_frame
                                     self._sequence += 1
                                     self._frames_seen += 1
+                                    if self._first_frame_at is None:
+                                        self._first_frame_at = last_frame
+                                    self._phase = "capturing"
+                                    self._error = ""
+                                if not captured_frame:
+                                    self.trace.record("capture-first-frame", attempt=self._attempt_number,
+                                                      after_s=round(last_frame - self._attempt_started_at, 3))
                                 captured_frame = True
                     if process.stderr.fileno() in readable:
-                        message = os.read(process.stderr.fileno(), 2048).decode("utf-8", "replace").strip()
-                        if message:
-                            self._stderr.append(message[-240:])
+                        self._read_stderr(process)
                     now = self._clock()
-                    if now - last_frame > 1.5:
+                    if now - last_progress >= 1.0:
+                        with self._lock:
+                            progress = self._attempt_status()
+                        self.trace.record("capture-progress", attempt=self._attempt_number, **progress)
+                        last_progress = now
+                    if not captured_frame and now - last_frame > FIRST_FRAME_TIMEOUT_SECONDS:
+                        raise RuntimeError("First Gamescope frame timed out")
+                    if captured_frame and now - last_frame > FRAME_STALL_TIMEOUT_SECONDS:
                         raise RuntimeError("Gamescope capture stopped producing frames")
-                    if now - last_conflict_check >= 2.0:
+                    interval = 0.5 if self.trace.previewing else 2.0
+                    if now - last_conflict_check >= interval:
                         current = self._pipewire_dump(runtime_dir)
+                        self._trace_pipewire(current, node_id)
                         consumers = (
                             self.count_consumers(current, node_id)
                             if node_id is not None else 0
@@ -802,17 +1226,34 @@ class ScreenCaptureService:
                             )
                             break
                         last_conflict_check = now
-                if process.poll() not in (None, 0) and active:
-                    detail = self._stderr[-1] if self._stderr else "GStreamer capture stopped"
+                if process.poll() is not None and active and not self._stop.is_set():
+                    self._read_stderr(process)
+                    # Closing-state INFO messages must not replace the actual
+                    # negotiation/plugin error in the user-facing failure.
+                    detail = self._last_gst_failure or "GStreamer capture ended without a live stream"
                     raise RuntimeError(detail)
             except Exception as error:
+                self.trace.record("capture-exception", attempt=self._attempt_number,
+                                  error=str(error), error_type=type(error).__name__)
                 failed_before_frame = process is not None and not captured_frame
                 if process is not None:
+                    with self._lock:
+                        sustained = (self._first_frame_at is not None and self._frames_seen >= 10
+                                     and self._frame_at - self._first_frame_at >= 3.0)
+                        self._unhealthy_sessions = 0 if sustained else self._unhealthy_sessions + 1
                     # Release our PipeWire client first. Waiting before this
                     # point leaves a PAUSED pipeline attached to Gamescope and
                     # can make every following selector fail in the same way.
                     self._release_failed_capture(process, error)
                     process = None
+                    if self._unhealthy_sessions >= 3:
+                        self._selector_mode = "target-object"
+                        self._retry_paused = True
+                        self.trace.record("capture-retries-paused", attempts=self._attempt_number,
+                                          reason="repeated-short-or-empty-sessions")
+                        self._set_state("error", "Screen capture paused after repeated failures. Use Preview to retry.")
+                        self._wait(SESSION_RESTART_SETTLE_SECONDS)
+                        continue
                 if captured_frame:
                     # A previously healthy source disappearing means the
                     # Gamescope/PipeWire session is being rebuilt. Do not run
@@ -846,13 +1287,16 @@ class ScreenCaptureService:
                     continue
                 if (selector_mode in {"target-object-compat", "path"}
                         and failed_before_frame):
-                    # No selector is permanent across a PipeWire/Gamescope
-                    # restart. After exhausting the available fallbacks, begin
-                    # a fresh sequence so a newly created session can recover.
+                    # A complete failed selector cycle is enough evidence.
+                    # Repeated detach/reconnect can aggravate producer faults
+                    # and interfere with Steam Recording. Require a new route
+                    # activation or an explicit Preview before another cycle.
                     self._selector_mode = "target-object"
+                    self._retry_paused = True
+                    self.trace.record("capture-retries-paused", attempts=self._attempt_number)
                     self._set_state(
-                        "waiting",
-                        f"Gamescope unavailable; capture closed before rediscovery: {error}",
+                        "error",
+                        "Screen capture paused after repeated failures. Use Preview to retry.",
                     )
                     self._wait(max(SESSION_RESTART_SETTLE_SECONDS, backoff))
                     backoff = min(5.0, max(1.0, backoff * 2.0))
@@ -869,7 +1313,7 @@ class ScreenCaptureService:
                 self._wait(backoff)
                 backoff = min(5.0, backoff * 2.0)
             finally:
-                self._terminate_process(process)
+                self._finish_process(process, "inactive-or-stopped")
                 with self._lock:
                     if self._process is process:
                         self._process = None
@@ -897,9 +1341,10 @@ class ScreenSyncProvider:
         # replacement instead of leaving Screen Sync logically on but dead.
         self.capture.set_active(active)
 
-    def stop(self):
+    def stop(self, timeout=None):
         self._active = False
-        self.capture.stop()
+        if timeout is None: self.capture.stop()
+        else: self.capture.stop(timeout=timeout)
         self.processor.reset()
         self._frame = None
 

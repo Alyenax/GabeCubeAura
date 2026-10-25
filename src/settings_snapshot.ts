@@ -1,6 +1,6 @@
 import { CONTROLLER_VARIANTS } from "./controller_variants";
 import { EVENT_VARIANTS } from "./event_variants";
-import { WEATHER_VARIANTS } from "./weather_variants";
+import { WEATHER_CONFIGURATION_CONDITIONS, WEATHER_CONFIGURATION_VARIANTS, weatherVariantKey } from "./weather_variants";
 import type { Status } from "./types";
 
 export interface SettingsSnapshotSection {
@@ -18,8 +18,8 @@ const selectedLabel = (options: readonly { data: string; label: string }[], valu
 const artworkSource = { hero: "Library Hero", header: "Library Header", capsule: "Library Capsule" };
 const artworkRow = { auto: "Auto", center: "Centre", lower: "Lower", manual: "Manual" };
 const displayMode = {
-  artwork: "Artwork", performance: "Performance", customization: "Customization+", screen_sync: "Screen Sync", audio_sync: "Audio Sync", steam: "GabeCubeAura Off", blackout: "Blackout",
-  weather: "Weather", controller: "Controller status", events: "Signals only", disabled: "Disabled",
+  artwork: "Artwork", performance: "Performance", customization: "Customization+", screen_sync: "Screen Sync", audio_sync: "Audio Sync", steam: "Steam control", blackout: "Blackout", bar_off: "Light bar off", displays_off: "Light bar + Faceplate off",
+  weather: "Weather", controller: "Controller status", faceplate_extension: "Faceplate image extension", events: "Signals only", disabled: "Disabled",
 };
 const response = { responsive: "Responsive", balanced: "Balanced", smooth: "Smooth" };
 const palette = {
@@ -81,7 +81,7 @@ export function buildSettingsSnapshot(status: Status): SettingsSnapshotSection[]
       lines: [
         `Style ${status.screen_sync_style} · Reactivity ${status.screen_sync_reactivity} · Colours ${status.screen_sync_colour_intensity}`,
         `Brightness ${status.screen_sync_brightness}/255 · Black threshold ${status.screen_sync_black_threshold} · Ignore black bars ${onOff(status.screen_sync_ignore_black_bars)}`,
-        `Steam screensaver ${onOff(status.screen_sync_screensaver_enabled)} · Activation ${status.screen_sync.activation.reason || "waiting"}`,
+        `Steam screensaver ${status.screensaver_light_bar_mode === 'faceplate_extension' ? 'Faceplate extension' : status.screen_sync_screensaver_enabled ? 'Screen Sync' : 'None'} · Activation ${status.screen_sync.activation.reason || "waiting"}`,
       ],
     },
     {
@@ -90,7 +90,7 @@ export function buildSettingsSnapshot(status: Status): SettingsSnapshotSection[]
         `Home pattern ${status.audio_sync_home_style} · Palette ${status.audio_sync_home_palette}`,
         `In-game pattern ${status.audio_sync_game_style} · Palette ${status.audio_sync_game_palette}`,
         `Shared reactivity ${status.audio_sync_reactivity} · Brightness ${status.audio_sync_brightness}/255 · automatic level matching`,
-        `Hi-Fi Crest Lab ${onOff(status.audio_sync_hifi_lab_enabled)} · strength ${status.audio_sync_lab_crest_strength}% · edge reach ${status.audio_sync_lab_edge_reach}% · background ${status.audio_sync_lab_background}%`,
+        `Hi-Fi Crest · strength ${status.audio_sync_lab_crest_strength}% · edge reach ${status.audio_sync_lab_edge_reach}% · background ${status.audio_sync_lab_background}%`,
         `Home custom colours ${rgbHex(status.audio_sync_home_colour_low)} / ${rgbHex(status.audio_sync_home_colour_middle)} / ${rgbHex(status.audio_sync_home_colour_high)}`,
         `In-game custom colours ${rgbHex(status.audio_sync_game_colour_low)} / ${rgbHex(status.audio_sync_game_colour_middle)} / ${rgbHex(status.audio_sync_game_colour_high)}`,
       ],
@@ -139,8 +139,8 @@ export function buildSettingsSnapshot(status: Status): SettingsSnapshotSection[]
         `City ${status.weather_location ? `${status.weather_location.name}, ${status.weather_location.country}` : "none"} · Display ${status.weather_display}`,
         `SteamOS top bar ${onOff(status.weather_topbar_enabled)} · Icons ${status.weather_icon_style} · ${status.weather_temperature_unit === "fahrenheit" ? "Fahrenheit" : "Celsius"}`,
         `Weather LED brightness ${status.weather_brightness}% · Faint LED cutoff ${status.weather_shadow_cutoff} (linear RGB)`,
-        ...(["clear_day", "clear_night", "rain", "cloud", "cloud_night", "breaks", "breaks_night", "snow", "storm"] as const).map((condition) =>
-          `${condition.replace("_", " ")}: ${WEATHER_VARIANTS[condition][status[`weather_${condition}_variant`]]?.label ?? "unknown"}`),
+        ...WEATHER_CONFIGURATION_CONDITIONS.map(({data: condition}) =>
+          `${condition.replace("_", " ")}: ${WEATHER_CONFIGURATION_VARIANTS[condition][Number(status[weatherVariantKey(condition)])]?.label ?? "unknown"}`),
       ],
     },
     {

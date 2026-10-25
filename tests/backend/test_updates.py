@@ -20,6 +20,7 @@ from signalbar.updates import (
     UpdateManager,
     _version_order,
     _version_tuple,
+    read_bundle_contract,
     validate_and_stage_archive,
 )
 
@@ -45,6 +46,53 @@ def write_archive(path: Path, version="1.1.0"):
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory) / "GabeCubeAura"
         write_plugin(root, version)
+        with ZipFile(path, "w", ZIP_DEFLATED) as archive:
+            for item in sorted(root.rglob("*")):
+                if item.is_file():
+                    archive.write(item, Path("GabeCubeAura") / item.relative_to(root))
+
+
+def write_bundle_archive(path: Path, version="1.1.0"):
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory) / "GabeCubeAura"
+        write_plugin(root, version)
+        for component in ("faceplate-service", "pixel-studio"):
+            target = root / "components" / component
+            target.mkdir(parents=True)
+            (target / "component.json").write_text(json.dumps({
+                "id": component, "product": "GabeCubeAura", "version": version,
+            }), encoding="utf-8")
+            (target / ("server.py" if component == "faceplate-service" else "index.html")).write_text(
+                "service\n" if component == "faceplate-service" else "<title>Studio</title>\n",
+                encoding="utf-8",
+            )
+        components = []
+        for component, component_root in (
+            ("plugin", root),
+            ("faceplate-service", root / "components/faceplate-service"),
+            ("pixel-studio", root / "components/pixel-studio"),
+        ):
+            files = []
+            for item in sorted(component_root.rglob("*")):
+                if not item.is_file():
+                    continue
+                relative = item.relative_to(component_root)
+                if component == "plugin" and relative.parts[0] == "components":
+                    continue
+                payload = item.read_bytes()
+                files.append({
+                    "path": relative.as_posix(), "size": len(payload),
+                    "sha256": hashlib.sha256(payload).hexdigest(),
+                })
+            components.append({
+                "id": component, "version": version, "required": True,
+                "files": files,
+                "executables": ["server.py"] if component == "faceplate-service" else [],
+            })
+        (root / "update-manifest.json").write_text(json.dumps({
+            "schema": 1, "product": "GabeCubeAura", "version": version,
+            "components": components,
+        }), encoding="utf-8")
         with ZipFile(path, "w", ZIP_DEFLATED) as archive:
             for item in sorted(root.rglob("*")):
                 if item.is_file():
@@ -165,6 +213,14 @@ class FakeService:
         return not self.running
 
 
+class RefusesToStopService(FakeService):
+    def stop(self):
+        self.stops += 1
+
+    def wait_inactive(self, timeout=20):
+        return False
+
+
 def fake_exchange(first: Path, second: Path):
     temporary = first.parent / "GabeCubeAura.exchange-test"
     first.rename(temporary)
@@ -204,120 +260,10 @@ class UpdateTests(unittest.TestCase):
             with self.assertRaises(UpdateError, msg=invalid):
                 _version_tuple(invalid)
 
-    def test_private_device_flow_stores_only_bounded_tokens_outside_settings(self):
-        with tempfile.TemporaryDirectory() as directory:
-            clock = [1000]
-            responses = [
-                {
-                    "device_code": "device-code-123", "user_code": "ABCD-EFGH",
-                    "verification_uri": "https://github.com/login/device",
-                    "expires_in": 900, "interval": 5,
-                },
-                {"error": "authorization_pending"},
-                {
-                    "access_token": "ghu_" + "a" * 24,
-                    "expires_in": 28800,
-                    "refresh_token": "ghr_" + "b" * 24,
-                    "refresh_token_expires_in": 15897600,
-                    "token_type": "bearer",
-                },
-            ]
-            requests = []
 
-            def opener(request, timeout=10):
-                requests.append(request)
-                return FakeResponse(json.dumps(responses.pop(0)).encode())
 
-            path = Path(directory) / "runtime/updates/private-auth.json"
-            auth = GitHubDeviceAuth(
-                path, client_id="Iv1.fixtureclient123", repository_id=42,
-                opener=opener, clock=lambda: clock[0],
-            )
-            started = auth.start()
-            self.assertEqual(started["private_auth_state"], "pending")
-            self.assertEqual(started["private_user_code"], "ABCD-EFGH")
-            self.assertNotIn("device-code-123", json.dumps(started))
-            self.assertEqual(auth.poll()["private_auth_state"], "pending")
-            clock[0] += 5
-            connected = auth.poll()
-            self.assertEqual(connected["private_auth_state"], "connected")
-            self.assertEqual(auth.access_token(), "ghu_" + "a" * 24)
-            persisted = json.loads(path.read_text(encoding="utf-8"))
-            self.assertNotIn("user_code", persisted)
-            self.assertEqual(path.stat().st_mode & 0o777, 0o600)
-            self.assertIn("repository_id=42", requests[1].data.decode())
-            self.assertNotIn("client_secret", requests[1].data.decode())
-            auth.disconnect()
-            self.assertFalse(path.exists())
 
-    def test_private_release_client_accepts_only_lab_assets_through_api(self):
-        digest = "c" * 64
-        version = "1.3.2-lab.1"
-        archive = f"GabeCubeAura-v{version}.zip"
-        base = "https://api.github.com/repos/Alyenax/GabeCubeAura-Lab/releases/assets"
-        release = {
-            "tag_name": f"v{version}", "name": "Private lab", "body": "notes",
-            "html_url": f"https://github.com/Alyenax/GabeCubeAura-Lab/releases/tag/v{version}",
-            "draft": False, "prerelease": True,
-            "assets": [
-                {"name": archive, "url": f"{base}/101", "size": 100,
-                 "digest": f"sha256:{digest}"},
-                {"name": "SHA256SUMS", "url": f"{base}/102", "size": 100},
-            ],
-        }
-        requests = []
 
-        def opener(request, timeout=10):
-            requests.append(request)
-            if request.full_url.endswith("/102"):
-                return FakeResponse(f"{digest}  {archive}\n".encode())
-            return FakeResponse(json.dumps([release]).encode(), {"ETag": '"private"'})
-
-        token = "ghu_" + "a" * 24
-        client = GitHubReleaseClient(
-            opener=opener, api_url=PRIVATE_RELEASES_API_URL,
-            allow_prerelease=True, prerelease_kind="lab", include_stable=False,
-            owner="Alyenax", repository="GabeCubeAura-Lab", token=token,
-            private_assets=True,
-        )
-        result = client.latest("1.3.1")
-        self.assertEqual(result["version"], version)
-        self.assertEqual(result["archive_url"], f"{base}/101")
-        self.assertEqual(client.read_checksum(result, "1.3.1"), digest)
-        self.assertEqual(requests[0].full_url, PRIVATE_RELEASES_API_URL)
-        self.assertEqual(requests[0].get_header("Authorization"), f"Bearer {token}")
-        self.assertEqual(requests[1].get_header("Accept"), "application/octet-stream")
-
-    def test_private_channel_uses_authenticated_lab_client_and_disconnects_cleanly(self):
-        with tempfile.TemporaryDirectory() as directory:
-            base = Path(directory)
-            archive = base / "lab.zip"
-            write_archive(archive, "1.3.2-lab.1")
-            settings = SettingsStore(str(base / "settings/config.json"))
-            private_auth = FakePrivateAuth()
-            lab_client = FakeClient(archive, "1.3.2-lab.1")
-            manager = UpdateManager(
-                "1.3.1", settings, str(base / "runtime"),
-                str(base / "plugins/GabeCubeAura"), FakeLogger(),
-                private_auth=private_auth,
-            )
-
-            with patch("signalbar.updates.GitHubReleaseClient", return_value=lab_client) as factory:
-                status = manager.set_preferences(True, True, 60, "private")
-
-            self.assertEqual(status["channel"], "private")
-            self.assertEqual(status["phase"], "available")
-            self.assertEqual(status["available_version"], "1.3.2-lab.1")
-            self.assertEqual(private_auth.access_calls, 1)
-            self.assertEqual(factory.call_args.kwargs["token"], private_auth.token)
-            self.assertTrue(factory.call_args.kwargs["private_assets"])
-            self.assertEqual(factory.call_args.kwargs["prerelease_kind"], "lab")
-            self.assertFalse(factory.call_args.kwargs["include_stable"])
-
-            disconnected = manager.disconnect_private_authorization()
-            self.assertTrue(private_auth.disconnected)
-            self.assertEqual(disconnected["phase"], "authorization_required")
-            self.assertEqual(disconnected["available_version"], "")
 
     def test_github_client_accepts_only_expected_assets_and_prerelease_policy(self):
         digest = "a" * 64
@@ -404,6 +350,22 @@ class UpdateTests(unittest.TestCase):
                 beta, base / "beta-stage", "1.2.0-beta2",
             ).is_dir())
 
+    def test_bundle_archive_declares_and_hashes_plugin_service_and_studio(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            archive = base / "bundle.zip"
+            write_bundle_archive(archive)
+            root = validate_and_stage_archive(archive, base / "stage", "1.1.0")
+            contract = read_bundle_contract(root, "1.1.0")
+            self.assertFalse(contract["legacy_plugin_only"])
+            self.assertEqual([item["id"] for item in contract["components"]], [
+                "plugin", "faceplate-service", "pixel-studio",
+            ])
+            (root / "components/pixel-studio/index.html").write_text("tampered", encoding="utf-8")
+            with self.assertRaises(UpdateError) as caught:
+                read_bundle_contract(root, "1.1.0")
+            self.assertEqual(caught.exception.category, "bundle_checksum")
+
     def test_archive_rejects_traversal_symlink_and_duplicate_paths(self):
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory)
@@ -487,11 +449,11 @@ class UpdateTests(unittest.TestCase):
                 client=FakeClient(archive), clock=lambda: 1000,
             )
             self.assertEqual(
-                manager.set_preferences(True, True, 15, "stable")["next_check_at"], 1000,
+                manager.set_preferences(True, True, 60, "stable")["next_check_at"], 1000,
             )
             checked = manager.check()
-            self.assertEqual(checked["next_check_at"], 1900)
-            self.assertEqual(checked["check_interval_minutes"], 15)
+            self.assertEqual(checked["next_check_at"], 4600)
+            self.assertEqual(checked["check_interval_minutes"], 60)
 
     def test_helper_launch_removes_decky_runtime_libraries(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -579,6 +541,7 @@ class UpdateTests(unittest.TestCase):
             archive = base / "GabeCubeAura-v1.1.2.zip"
             write_archive(archive, "1.1.2")
             settings = SettingsStore(str(base / "settings/config.json"))
+            settings.update({"updates_auto_check": True})
             client = FakeClient(archive, "1.1.2")
             manager = UpdateManager(
                 "1.1.1", settings, str(base / "runtime"),
@@ -633,26 +596,6 @@ class UpdateTests(unittest.TestCase):
             health = json.loads((runtime / f"updates/health/{token}.json").read_text(encoding="utf-8"))
             self.assertEqual(health["version"], "1.1.0")
 
-    def test_update_lab_runs_all_fixed_scenarios_without_real_plugin_paths(self):
-        with tempfile.TemporaryDirectory() as directory:
-            base = Path(directory)
-            archive = base / "release.zip"
-            write_archive(archive)
-            manager = UpdateManager(
-                "1.0.99-test.1", SettingsStore(str(base / "settings.json")),
-                str(base / "runtime"), str(base / "real/GabeCubeAura"),
-                FakeLogger(), client=FakeClient(archive),
-            )
-            for scenario in ("valid-package", "checksum-mismatch", "rollback"):
-                result = manager.run_lab(scenario)
-                self.assertTrue(result["passed"], result)
-            report = json.loads(
-                (base / "runtime/updates/update-lab-report.json").read_text(encoding="utf-8")
-            )
-            self.assertEqual({item["scenario"] for item in report["results"]}, {
-                "valid-package", "checksum-mismatch", "rollback",
-            })
-            self.assertFalse((base / "real/GabeCubeAura").exists())
 
     def _transaction(self, base: Path):
         token = "b" * 32
@@ -699,6 +642,114 @@ class UpdateTests(unittest.TestCase):
                 str(base / "runtime"), str(Path(raw["active_dir"])), FakeLogger(),
             )
             self.assertFalse(rollback.parent.exists())
+
+    def test_bundle_transaction_updates_companions_with_the_plugin(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            raw = self._transaction(base)
+            raw["schema"] = 2
+            raw["components"] = ["plugin", "faceplate-service", "pixel-studio"]
+            raw["companion_root"] = str(base / "home/deck/.local/share/gabecubeaura/components")
+            staged = Path(raw["staged_dir"])
+            companions = Path(raw["companion_root"])
+            for component in ("faceplate-service", "pixel-studio"):
+                target = staged / "components" / component
+                target.mkdir(parents=True)
+                (target / "component.json").write_text(json.dumps({
+                    "id": component, "version": "1.1.0",
+                }), encoding="utf-8")
+                (target / "payload.txt").write_text("new", encoding="utf-8")
+            old_service = companions / "faceplate-service"
+            old_service.mkdir(parents=True)
+            (old_service / "component.json").write_text(json.dumps({
+                "id": "faceplate-service", "version": "1.0.0",
+            }), encoding="utf-8")
+            (old_service / "payload.txt").write_text("old", encoding="utf-8")
+            desktop = base / "home/deck/.local/share/applications/gabecubeaura-pixel-studio.desktop"
+            desktop.parent.mkdir(parents=True)
+            desktop.write_text("legacy standalone\n", encoding="utf-8")
+            result = run_transaction(
+                raw, service=FakeService(), health_waiter=lambda *args: True,
+                exchanger=fake_exchange,
+            )
+            self.assertEqual(result["result"], "updated")
+            self.assertEqual((companions / "faceplate-service/payload.txt").read_text(), "new")
+            self.assertEqual((companions / "pixel-studio/payload.txt").read_text(), "new")
+            self.assertFalse(desktop.exists())
+            backup = base / f"runtime/updates/rollback/{raw['token']}/components"
+            self.assertEqual((backup / "faceplate-service/payload.txt").read_text(), "old")
+
+    def test_bundle_health_failure_rolls_back_existing_and_new_companions(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            raw = self._transaction(base)
+            raw["schema"] = 2
+            raw["components"] = ["plugin", "faceplate-service", "pixel-studio"]
+            raw["companion_root"] = str(base / "home/deck/.local/share/gabecubeaura/components")
+            staged = Path(raw["staged_dir"])
+            companions = Path(raw["companion_root"])
+            for component in ("faceplate-service", "pixel-studio"):
+                target = staged / "components" / component
+                target.mkdir(parents=True)
+                (target / "component.json").write_text(json.dumps({
+                    "id": component, "version": "1.1.0",
+                }), encoding="utf-8")
+                (target / "payload.txt").write_text("new", encoding="utf-8")
+            previous = companions / "faceplate-service"
+            previous.mkdir(parents=True)
+            (previous / "component.json").write_text(json.dumps({
+                "id": "faceplate-service", "version": "1.0.0",
+            }), encoding="utf-8")
+            (previous / "payload.txt").write_text("old", encoding="utf-8")
+            desktop = base / "home/deck/.local/share/applications/gabecubeaura-pixel-studio.desktop"
+            desktop.parent.mkdir(parents=True)
+            desktop.write_text("legacy standalone\n", encoding="utf-8")
+            result = run_transaction(
+                raw, service=FakeService(), health_waiter=lambda *args: False,
+                exchanger=fake_exchange,
+            )
+            self.assertEqual(result["result"], "rolled_back")
+            self.assertEqual((previous / "payload.txt").read_text(), "old")
+            self.assertFalse((companions / "pixel-studio").exists())
+            self.assertEqual(desktop.read_text(encoding="utf-8"), "legacy standalone\n")
+
+    def test_bundle_stop_failure_keeps_existing_companions_untouched(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            raw = self._transaction(base)
+            raw["schema"] = 2
+            raw["components"] = ["plugin", "faceplate-service", "pixel-studio"]
+            raw["companion_root"] = str(
+                base / "home/deck/.local/share/gabecubeaura/components"
+            )
+            staged = Path(raw["staged_dir"])
+            companions = Path(raw["companion_root"])
+            for component in ("faceplate-service", "pixel-studio"):
+                target = staged / "components" / component
+                target.mkdir(parents=True)
+                (target / "component.json").write_text(json.dumps({
+                    "id": component, "version": "1.1.0",
+                }), encoding="utf-8")
+                (target / "payload.txt").write_text("new", encoding="utf-8")
+                active = companions / component
+                active.mkdir(parents=True)
+                (active / "component.json").write_text(json.dumps({
+                    "id": component, "version": "1.0.0",
+                }), encoding="utf-8")
+                (active / "payload.txt").write_text("old", encoding="utf-8")
+            result = run_transaction(
+                raw, service=RefusesToStopService(), health_waiter=lambda *args: True,
+                exchanger=fake_exchange,
+            )
+            # Old code is retained, but a refused service stop/recovery is not
+            # evidence of a successful recovery restart.
+            self.assertEqual(result["result"], "recovery_failed")
+            self.assertIn("Decky Loader did not stop", result["error"])
+            for component in ("faceplate-service", "pixel-studio"):
+                self.assertEqual((companions / component / "payload.txt").read_text(), "old")
+            self.assertIn(
+                'MARKER = "old"', (Path(raw["active_dir"]) / "main.py").read_text()
+            )
 
     def test_transaction_resumes_after_atomic_exchange_was_interrupted(self):
         with tempfile.TemporaryDirectory() as directory:

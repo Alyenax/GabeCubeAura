@@ -13,7 +13,7 @@ from signalbar.providers.controller import (
     ControllerProvider, DURATIONS, VARIANTS, controller_frame, controller_zones,
     effective_controller_colour_mode,
 )
-from signalbar.settings import SettingsStore
+from signalbar.settings import SettingsStore,DEFAULTS
 
 
 class Clock:
@@ -32,6 +32,62 @@ def controller(percent=74, identifier="one", charging=False):
 
 
 class ControllerTests(unittest.TestCase):
+    def test_black_connect_gauges_keep_logical_tip_and_status_at_all_phase_boundaries(self):
+        for variant in VARIANTS['connect']:
+            for percent in (0,10,30,74,100):
+                for mode in ('battery','players'):
+                    values=dict(DEFAULTS)
+                    values.update(controller_colour_preset='manual',controller_colour_mode=mode,
+                        controller_colour_normal=[0,0,0],controller_colour_medium=[0,0,0],controller_colour_low=[0,0,0])
+                    for player in range(4):values[f'controller_player_colour_{player+1}']=[0,0,0]
+                    for elapsed in (0,1.299,1.3,1.65,1.75,2.3,2.5,3.199,3.3):
+                        frame=controller_frame('connect',variant,elapsed,percent,values=values,player=3)
+                        self.assertEqual(17,len(frame))
+                        self.assertTrue(all(len(pixel)==3 and all(type(channel) is int and 0<=channel<=255 for channel in pixel) for pixel in frame))
+                    clock=Clock();provider=ControllerProvider(clock=clock)
+                    provider.preview('connect',values,variant);clock.advance(2.5)
+                    self.assertEqual(17,len(provider.event_output().frame))
+                    self.assertIsInstance(provider.status(values),dict)
+                    clock.advance(1);self.assertIsNone(provider.event_output().frame)
+
+    def test_faceplate_keeps_last_real_percentage_for_thirty_minutes_only(self):
+        clock = Clock()
+        provider = ControllerProvider(clock=clock)
+        values = SettingsStore("/nonexistent/signalbar-settings.json").all()
+        provider.update([controller(64, identifier="p1")], values)
+        provider.update([controller(None, identifier="p1")], values)
+        self.assertEqual(64, provider.faceplate_batteries()[0]["percent"])
+
+        clock.advance(30 * 60)
+        provider.update([controller(None, identifier="p1")], values)
+        self.assertEqual(64, provider.faceplate_batteries()[0]["percent"])
+
+        clock.advance(0.01)
+        provider.update([controller(None, identifier="p1")], values)
+        self.assertIsNone(provider.faceplate_batteries()[0]["percent"])
+
+    def test_faceplate_battery_memory_never_keeps_disconnected_seat_visible(self):
+        provider = ControllerProvider(clock=Clock())
+        values = SettingsStore("/nonexistent/signalbar-settings.json").all()
+        provider.update([controller(64, identifier="p1")], values)
+        provider.update([], values)
+        self.assertEqual([], provider.faceplate_batteries())
+
+    def test_faceplate_batteries_keep_player_order_and_unknown_seats(self):
+        provider = ControllerProvider(clock=Clock())
+        values = SettingsStore("/nonexistent/signalbar-settings.json").all()
+        provider.update([
+            controller(None, identifier="p1", charging=None),
+            controller(64, identifier="p2", charging=True),
+        ], values)
+        self.assertEqual(provider.faceplate_batteries(), [
+            {"percent": None, "charging": False},
+            {"percent": 64, "charging": True},
+        ])
+        self.assertEqual(provider.primary_battery(), {
+            "percent": None, "charging": False,
+        })
+
     def test_engine_controller_events_reach_renderer_on_home_and_in_game(self):
         class Hardware:
             device_path = "/fake/valve-leds"

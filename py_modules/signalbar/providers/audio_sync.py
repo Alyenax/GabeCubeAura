@@ -808,7 +808,7 @@ class AudioSyncProcessor:
             if time_s - pulse[0] <= 0.66
         ][-2:]
 
-    def _experimental_pattern(self, style, brightness, reactivity):
+    def _experimental_pattern(self, style, brightness, reactivity, prism_width=None, prism_exact_colours=False):
         time_s = self._hifi_time_s if self._hifi_time_s is not None else 0.0
         self._update_pattern_pulses(time_s, reactivity)
         selected = tuple(
@@ -920,20 +920,30 @@ class AudioSyncProcessor:
                     hue + self._pattern_hue_shift, lightness, saturation,
                 ))
             base = _mirrored_palette_frame(tuple(shifted))
-            spread = 0.20 + self._hifi_bed * 0.86
-            for index, colour in enumerate(base):
-                distance = abs(index - 8) / 8.0
-                edge = _clamp((spread - distance) / 0.22)
-                side = (
-                    self._hifi_levels["left"]
-                    if index < 8 else self._hifi_levels["right"]
-                )
-                frame.append(self._optical_scaled(
-                    colour, 0.035 + edge * (0.22 + side * 0.30), brightness,
-                ))
+            frame = self.slow_prism_halo(selected, self._hifi_bed,
+                self._hifi_levels["left"], self._hifi_levels["right"], brightness,
+                prism_width, prism_exact_colours, base)
 
         else:
             frame = [(0, 0, 0)] * LED_COUNT
+        return frame
+
+    @staticmethod
+    def slow_prism_halo(palette, bed, left, right, brightness=255,
+                        width=None, exact_colours=False, base=None, minimum_width=25):
+        """Shared optical geometry; a visual cue needs no audio FFT or capture."""
+        width_scale = 1.0 if width is None else _clamp(float(width)/100, minimum_width/100, 1)
+        spread = (0.20 + bed * 0.86) * width_scale
+        frame = []
+        for index, colour in enumerate(base if base is not None else _mirrored_palette_frame(palette)):
+            distance = abs(index - 8) / 8.0
+            if exact_colours:
+                colour = _lerp_colour(palette[2], palette[0], distance/width_scale)
+            edge = _clamp((spread - distance) / (0.22*width_scale))
+            side = left if index < 8 else right
+            frame.append(AudioSyncProcessor._optical_scaled(colour,
+                (0.035 + edge * (0.22 + side * 0.30))
+                if width is None or distance <= width_scale else 0, brightness))
         return frame
 
     def _smooth(self, levels, reactivity):
@@ -970,7 +980,8 @@ class AudioSyncProcessor:
     def process(self, raw, *, style="spectrum", brightness=160, sensitivity=100,
                 reactivity="balanced", palette="aurora", custom_colours=None,
                 screen_colours=None, artwork_colours=None, crest_strength=100,
-                edge_reach=100, background_level=100, timestamp_s=None):
+                edge_reach=100, background_level=100, timestamp_s=None,
+                prism_width=None, prism_exact_colours=False):
         style = style if style in VALID_STYLES else "hifi-crest"
         reactivity = reactivity if reactivity in VALID_REACTIVITY else "balanced"
         values = {
@@ -1000,7 +1011,7 @@ class AudioSyncProcessor:
             frame = (
                 adaptive_frame
                 if style == "hifi-crest"
-                else self._experimental_pattern(style, brightness, reactivity)
+                else self._experimental_pattern(style, brightness, reactivity, prism_width, prism_exact_colours)
             )
             self._left = self._hifi_levels["left"]
             self._right = self._hifi_levels["right"]
@@ -1168,7 +1179,7 @@ class AudioCaptureService:
         if changed:
             self._wake.set()
 
-    def stop(self):
+    def stop(self, timeout=2.5):
         self._stop.set()
         self._wake.set()
         with self._lock:
@@ -1177,7 +1188,7 @@ class AudioCaptureService:
             process.terminate()
         thread = self._thread
         if thread and thread.is_alive():
-            thread.join(timeout=2.5)
+            thread.join(timeout=max(0.0, float(timeout)))
         with self._lock:
             self._active = False
             self._phase = "off"
@@ -1388,10 +1399,11 @@ class AudioSyncProvider:
                 self._frame = None
         self.capture.set_active(active)
 
-    def stop(self, preserve_palette=False):
+    def stop(self, preserve_palette=False, timeout=None):
         self._preview_until = 0.0
         self._active = False
-        self.capture.stop()
+        if timeout is None: self.capture.stop()
+        else: self.capture.stop(timeout=timeout)
         self.processor.reset(preserve_palette=preserve_palette)
         self._frame = None
 

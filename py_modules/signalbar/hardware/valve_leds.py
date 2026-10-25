@@ -163,6 +163,8 @@ class ValveLedHardware:
         """Set the global gain without changing effect ownership or RGB data."""
         with self._io_lock:
             clean = max(0, min(255, int(value)))
+            if self.read_brightness_scale() == clean:
+                return True
             return self._write_control("brightness_scale", str(clean))
 
     def restore_brightness_scale_if(self, expected: int, saved: int) -> bool:

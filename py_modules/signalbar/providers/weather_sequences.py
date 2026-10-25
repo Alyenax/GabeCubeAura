@@ -140,44 +140,73 @@ def _moon(frame, variant, time):
             frame[index] = _moon_white_step(.35 + .65 * field, CLEAR_NIGHT_MOON_WHITES)[:]
 
 
-def _rain(frame, variant, time):
-    bluewater = variant == 0
-    background = [0,45,112] if bluewater else [66,68,70]
+def _bluewater_rain(frame, time):
+    """Restore the pre-Lab226 Bluewater signal, including its original contacts."""
     for index in range(LED_COUNT):
-        frame[index] = background[:]
+        frame[index] = [0, 45, 112]
 
-    def crest(origin,radius,width,power,colour):
+    def crest(origin, radius, width, power, colour):
         for index in range(LED_COUNT):
-            weight = math.exp(-1.35*((abs(index-origin)-radius)/width)**2)*power
+            weight = math.exp(-1.35 * ((abs(index-origin)-radius)/width)**2) * power
             if weight > .035:
-                add(frame,index,colour,weight)
+                add(frame, index, colour, weight)
 
-    for event_index,(position,at) in enumerate(RAIN_EVENTS[variant]):
+    for position, at in RAIN_EVENTS[0]:
         age = time-at
         if not -.07 <= age <= .5:
             continue
         if age < 0:
-            glow(frame,position,[21,100,126] if bluewater else [8,76,170],.43,smooth(-.07,0,age)*.32)
+            glow(frame, position, [21, 100, 126], .43, smooth(-.07, 0, age)*.32)
         if 0 <= age < .12:
-            # Pearl Rain keeps its white contact flash at half the previous level.
-            glow(frame,position,[219,192,138] if bluewater else [82,108,116],.49,
-                 (1-smooth(.02,.12,age))*.96)
-        for delay,duration,reach,width,power,colour in (
-            (.055,.335,1.9,.56,1,[40,119,133] if bluewater else [8,105,233]),
-            (.16,.34,1.35,.53,.54,[34,91,125] if bluewater else [4,74,183]),
+            glow(frame, position, [219, 192, 138], .49, (1-smooth(.02, .12, age))*.96)
+        for delay, duration, reach, width, power, colour in (
+            (.055, .335, 1.9, .56, 1, [40, 119, 133]),
+            (.16, .34, 1.35, .53, .54, [34, 91, 125]),
         ):
             progress = (age-delay)/duration
             if 0 < progress < 1:
                 radius = .25+reach*(1-(1-progress)**1.35)
                 envelope = math.sin(math.pi*progress)*(1-progress)**.32*power
+                crest(position, radius, width, envelope, colour)
+    return frame
+
+
+RAIN_PHASE_PALETTES = {'pearl-rain-day': {'base': [0, 37, 24], 'approach': [0, 112, 92], 'impact': [0, 244, 151], 'wave': [0, 156, 121], 'tail': [0, 91, 96]}, 'pearl-rain-night': {'base': [4, 3, 31], 'approach': [12, 37, 137], 'impact': [96, 0, 255], 'wave': [0, 105, 241], 'tail': [7, 43, 150]}}
+
+def _rain(frame, variant, time, is_day=True):
+    """Bluewater retains its original loop; Pearl uses its approved phase palettes."""
+    if variant == 0:
+        return _bluewater_rain(frame, time)
+    profile = RAIN_PHASE_PALETTES['pearl-rain' + ('-day' if is_day else '-night')]
+    frame=[list(profile['base']) for _ in range(17)]
+    def glow_mix(centre,colour,spread,power):
+        for index in range(17):
+            weight=math.exp(-((index-centre)/spread)**2*.85)*power
+            if weight>.01:frame[index]=mix(frame[index],colour,min(1,weight))
+    def crest(origin,radius,width,power,colour):
+        for index in range(17):
+            weight=math.exp(-1.35*((abs(index-origin)-radius)/width)**2)*power
+            if weight>.035:frame[index]=mix(frame[index],colour,min(1,weight))
+    for position,at in RAIN_EVENTS[variant]:
+        age=time-at
+        if not -.07<=age<=.5:continue
+        if age<0:
+            glow_mix(position,profile['approach'],.43,smooth(-.07,0,age)*.32)
+        if 0<=age<.12:
+            glow_mix(position,profile['impact'],.49,(1-smooth(.02,.12,age))*.96)
+        for delay,duration,reach,width,power,colour in (
+            (.055,.335,1.9,.56,1,profile['wave']),
+            (.16,.34,1.35,.53,.54,profile['tail'])):
+            progress=(age-delay)/duration
+            if 0<progress<1:
+                radius=.25+reach*(1-(1-progress)**1.35)
+                envelope=math.sin(math.pi*progress)*(1-progress)**.32*power
                 crest(position,radius,width,envelope,colour)
-        if not bluewater and .08 <= age < .31:
-            # One extra clearly blue pixel per impact, offset from the white
-            # contact point; alternate its side rather than making a garland.
-            accent = position+(2 if event_index%2 else -2)
-            strength = smooth(.08,.13,age)*(1-smooth(.24,.31,age))
-            if 0 <= accent < LED_COUNT:
-                frame[accent] = mix(frame[accent],[18,99,238],strength*.90)
+    # Overlapping cyan/violet can introduce a neutral component. Remove
+    # it at constant peak energy rather than adding white or raising gain.
+    for index,rgb in enumerate(frame):
+        low,peak=min(rgb),max(rgb)
+        frame[index]=[round((c-low)*peak/(peak-low)) for c in rgb] if peak>low else [0,0,0]
     return frame
 
 
@@ -492,7 +521,7 @@ def _storm(frame, variant, time):
         frame[index] = [level]*3 if level >= 30 else [0,0,0]
 
 
-def weather_sequence(condition, variant, time):
+def weather_sequence(condition, variant, time, *, is_day=True):
     """Return one logical RGB frame, before Weather-only brightness/cutoff."""
     frame = [[0,0,0] for _ in range(LED_COUNT)]
     time = max(0, time) % weather_loop_seconds(condition, variant)
@@ -501,7 +530,7 @@ def weather_sequence(condition, variant, time):
     elif condition == "clear_night":
         _moon(frame,variant,time)
     elif condition == "rain":
-        frame = _rain(frame,variant,time)
+        frame = _rain(frame,variant,time,is_day=is_day)
     elif condition == "cloud":
         _cloud(frame,variant,time)
     elif condition == "cloud_night":

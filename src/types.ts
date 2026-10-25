@@ -1,6 +1,6 @@
-export type Mode = "artwork" | "performance" | "customization" | "screen_sync" | "audio_sync" | "blackout" | "events" | "disabled";
-export type HomeDisplay = "steam" | "blackout" | "customization" | "performance" | "audio_sync" | "weather" | "controller";
-export type GameDisplay = "steam" | "blackout" | "customization" | "artwork" | "performance" | "screen_sync" | "audio_sync" | "weather" | "controller";
+export type Mode = "artwork" | "performance" | "customization" | "screen_sync" | "audio_sync" | "faceplate_extension" | "blackout" | "events" | "disabled";
+export type HomeDisplay = "steam" | "blackout" | "customization" | "performance" | "audio_sync" | "weather" | "controller" | "faceplate_extension";
+export type GameDisplay = "steam" | "blackout" | "bar_off" | "displays_off" | "customization" | "artwork" | "performance" | "screen_sync" | "audio_sync" | "weather" | "controller" | "faceplate_extension";
 export type DisplayPreset = "custom" | "lights-out" | "focus" | "essential" | "moderate" | "atmosphere" | "signals" | "immersive" | "immersive-plus" | "festive";
 export type ValveOwnershipPolicy = "cooperative" | "downloads" | "critical";
 export type ArtworkMode = "auto" | "center" | "lower" | "manual";
@@ -14,16 +14,32 @@ export type MixedDirection = "same" | "mirrored";
 export type TemperaturePalette = "thermal" | "classic" | "icefire" | "custom";
 export type CountdownColour = "cyan" | "green" | "amber" | "violet" | "white";
 export type RGB = [number, number, number];
+export type ScreenCaptureAttempt = {
+  selector: string;
+  producer_state: string;
+  elapsed_s: number;
+  bytes_received: number;
+  frames_received: number;
+  first_frame_after_s: number | null;
+};
 export type CompanionPriority = "stripmine" | "signalbar";
 export type WeatherCondition = "clear_day" | "clear_night" | "rain" | "cloud" | "cloud_night" | "breaks" | "breaks_night" | "snow" | "storm";
+export type WeatherConfigurationCondition = Exclude<WeatherCondition, "rain" | "snow" | "storm"> | "rain_day" | "rain_night" | "snow_day" | "snow_night" | "storm_day" | "storm_night";
+export type WeatherPreviewCondition = WeatherCondition | WeatherConfigurationCondition;
 export type WeatherIconStyle = "current" | "material-rounded" | "phosphor-duotone";
-export interface WeatherLocation { name: string; country: string; latitude: number; longitude: number }
+export type FaceplateSceneThemeKind = "weather" | "dashboard";
+export type FaceplateVisualTheme = "integrated" | "night-paper-v3" | "night-paper" | "sun-cut" | "winter-loom";
+export type FaceplateWeatherVisualTheme = "weather-artwork-v1" | "weather-artwork-v2";
+export type FaceplateDashboardVisualTheme = FaceplateWeatherVisualTheme;
+export interface WeatherLocation { name: string; country: string; country_code?: string; latitude: number; longitude: number }
 
 export type UpdatePhase = "idle" | "checking" | "up_to_date" | "available"
-  | "downloading" | "verifying" | "ready" | "installing" | "restart_pending"
+  | "downloading" | "verifying" | "ready" | "preparing_install" | "installing" | "restart_pending"
   | "updated" | "rolled_back" | "error" | "managed_by_decky" | "authorization_required";
 
 export interface UpdateStatus {
+  download_bytes?: number;
+  download_total_bytes?: number;
   phase: UpdatePhase;
   installed_version: string;
   available_version: string;
@@ -35,20 +51,58 @@ export interface UpdateStatus {
   prepared_digest: string;
   confirmation_token: string;
   rollback_version: string;
+  recovery_available?: boolean;
+  recovery_version?: string;
+  recovery_prepared?: boolean;
+  recovery_preserves_current_settings?: boolean;
+  recovery_error?: string;
   last_result: string;
   error_category: string;
   error: string;
   auto_check: boolean;
+  auto_install?: boolean;
+  auto_install_paused?: boolean;
   notifications: boolean;
-  check_interval_minutes: 15 | 60 | 180 | 360 | 720 | 1440;
+  check_interval_minutes: 60 | 180 | 360 | 720 | 1440;
   channel: "stable" | "beta" | "private";
   test_build: boolean;
+  private_tools?: boolean;
   private_auth_configured: boolean;
   private_auth_state: "disconnected" | "pending" | "connected" | "expired" | "error";
   private_user_code: string;
   private_verification_uri: string;
   private_auth_expires_at: number;
   private_repository: string;
+  bundle_components: Array<"plugin" | "faceplate-service" | "pixel-studio">;
+}
+
+export interface PixelStudioStatus {
+  schema: 1;
+  version: string;
+  standalone_enabled: false;
+  installed: boolean;
+  desktop_launcher: boolean;
+  service_running: boolean;
+  service_version: string;
+  url: string;
+  components: {
+    "faceplate-service": string;
+    "pixel-studio": string;
+  };
+  brightness: number;
+  error: string;
+  started?: boolean;
+}
+
+export interface DiagnosticStatus {
+  schema: 1;
+  private_tools?: boolean;
+  automatic_upload: boolean;
+  pending: boolean;
+  previous_session_unclean: boolean;
+  last_upload_at: number;
+  last_upload_url: string;
+  last_error: string;
 }
 
 export interface UpdateLabResult {
@@ -63,11 +117,23 @@ export interface UpdateLabResult {
   report_available: boolean;
 }
 
+export interface DashboardContent {
+  weather_position?: 'left' | 'center' | 'right';
+  game_row?: 'existing' | 'a' | 'b' | 'c' | 'd' | 'e';
+  show_weather: boolean;
+  show_bottom_row: boolean;
+  bottom_mode: 'next_hour' | 'today' | 'controllers';
+  battery_style: 'percent' | 'bar';
+  show_p2: boolean;
+  show_session: boolean;
+}
+
 export interface Status {
   version: string;
   available: boolean;
   active: boolean;
   owner: "Valve" | "GabeCubeAura";
+  display_power?: {bar_off: boolean; faceplate_off: boolean};
   provider: string;
   suspension_reason: string;
   error: string;
@@ -75,9 +141,13 @@ export interface Status {
   default_mode: HomeDisplay | GameDisplay;
   display_override: "inherit" | GameDisplay;
   signalbar_enabled: boolean;
+  steam_control_enabled?: boolean;
   onboarding_completed: boolean;
+  faceplate_setup_completed?: boolean;
   display_preset: DisplayPreset;
   display_preset_preview: {
+    owner?: string;
+    on_bar?: boolean;
     active: boolean;
     preset: string;
     remaining_s: number;
@@ -110,6 +180,9 @@ export interface Status {
     startup_recovered: boolean;
   };
   home_display: HomeDisplay;
+  faceplate_extension_mapping: "bottom" | "whole";
+  faceplate_extension_saturation: number;
+  faceplate_extension: { phase: "off" | "waiting" | "preparing" | "ready" | "holding" | "error"; source: string; stable: boolean; holding: boolean; colours: RGB[]; context: string; appid: number; faceplate_confirmed: boolean };
   game_display: GameDisplay;
   current_display: HomeDisplay | GameDisplay;
   performance_metric: PerformanceMetric;
@@ -151,6 +224,7 @@ export interface Status {
   screen_sync_black_threshold: number;
   screen_sync_ignore_black_bars: boolean;
   screen_sync_screensaver_enabled: boolean;
+  screensaver_light_bar_mode: "none" | "screen_sync" | "faceplate_extension";
   audio_sync_style: "hifi-crest" | "velvet-relay" | "negative-bloom" | "stereo-lanterns"
     | "constellation" | "slow-prism" | "spectrum" | "spatial" | "bass"
     | "audio-pulse";
@@ -179,6 +253,9 @@ export interface Status {
   countdown_full_bar_minutes: 0 | 60 | 120 | 180 | 240;
   countdown_dark_edge_compensation: number;
   free_timer_minutes: number;
+  personal_timer: {active:boolean;remaining_seconds:number};
+  free_timer_end_action: 'none'|'sleep'|'shutdown';
+  timer_end_action: {action:'none'|'sleep'|'shutdown';phase:'idle'|'armed'|'ready'|'executing'|'cancelled'|'skipped'|'requested'|'failed';reason:string};
   events_enabled: boolean;
   event_notifications_enabled: boolean;
   event_achievements_enabled: boolean;
@@ -233,6 +310,231 @@ export interface Status {
   };
   weather_brightness: number;
   weather_shadow_cutoff: number;
+  faceplate_lab_enabled: boolean;
+  faceplate_flash_protection_enabled?: boolean;
+  faceplate_continuous_home_return?: boolean;
+  faceplate_configuration_error?: string;
+  lab58_ux_enabled?: boolean;
+  ui_language?: "en" | "fr";
+  faceplate_brightness: number;
+  faceplate_rotate_180: boolean;
+  faceplate_artwork_style: "art" | "logo" | "logo_dim" | "logo_only";
+  faceplate_logo_position: "top" | "centre" | "bottom" | "bottom_rail";
+  faceplate_artwork_profiles: Record<string, {
+    style: "art" | "logo" | "logo_dim" | "logo_only";
+    position: "top" | "centre" | "bottom" | "bottom_rail";
+  }>;
+  faceplate_dashboard_home_appid: number;
+  faceplate_dashboard_home_source: "weather" | "artwork";
+  faceplate_dashboard_show_bottom_row?: boolean;
+  faceplate_dashboard_bottom_mode: "controllers" | "next_hour" | "today";
+  faceplate_dashboard_battery_style: "percent" | "bar";
+  faceplate_dashboard_show_p2: boolean;
+  faceplate_dashboard_clock_format: "24h" | "12h";
+  faceplate_dashboard_show_clock?: boolean;
+  faceplate_dashboard_clock_choice?: 'default-off' | 'explicit' | 'legacy-unreviewed';
+  faceplate_dashboard_show_weather: boolean;
+  faceplate_dashboard_clock_position: "left" | "center" | "right";
+  faceplate_dashboard_game_session: boolean;
+  faceplate_dashboard_contexts?: Partial<Record<'home' | 'game', Partial<DashboardContent>>>;
+  faceplate_playtime_enabled: boolean;
+  faceplate_player_city_row?: "count" | "controllers" | "session" | "achievements" | "total" | "dashboard";
+  faceplate_player_city_dashboard_row?: "next_hour" | "today" | "controllers" | "a" | "b" | "c" | "d" | "e";
+  faceplate_player_city_battery_style?: "percent" | "bar";
+  faceplate_artwork_dashboard_refresh: "economy" | "minute";
+  faceplate_power_mode: "auto" | "manual";
+  faceplate: {
+    enabled: boolean;
+    available: boolean;
+    recently_detected?: boolean;
+    last_detected_age_s?: number | null;
+    busy: boolean;
+    owners: string[];
+    port: string;
+    phase: "off" | "ready" | "powered-off" | "rendering" | "uploading" | "artwork" | "no-artwork" | "synchronized" | "phase-unknown" | "unsupported" | "error" | "sent-unconfirmed" | "deferred";
+    delivery?: {state: 'idle' | 'sending' | 'confirmed' | 'unconfirmed' | 'failed' | 'deferred'; scene: string; signature: string};
+    detail: string;
+    error: string;
+    brightness: number;
+    effective_brightness: number;
+    displayed_peak_load: number;
+    brightness_control?: {
+      requested_percent: number; target_percent: number; last_commanded_percent: number | null;
+      command_acknowledged: false; limit_reason: string; peak_rgb_load: number | null;
+      estimate_source?: string; mode?: 'manual'; power_budget: number | null;
+    };
+    rotated_180: boolean;
+    last_asset: string;
+    last_upload_ms: number;
+    last_start_ack_ms: number;
+    last_transfer: {
+      preflight_ms?: number;
+      begin_ms?: number;
+      chunks_ms?: number;
+      finalize_ms?: number;
+      total_ms?: number;
+      chunks?: number;
+      transfer_retries?: number;
+      already_stored?: boolean;
+      stored_activation_required?: boolean;
+      begin_status?: number | null;
+      end_status?: number | null;
+      configured_profile?: "baseline" | "vendor" | "auto";
+      active_profile?: "baseline" | "vendor" | "";
+      attempt_profiles?: string[];
+      end_timeout_seconds?: number;
+      cancelled?: boolean;
+      payload_complete?: boolean;
+      end_sent?: boolean;
+      sent_unconfirmed?: boolean;
+    };
+    native_clock?: {
+      state: string; activations_session: number; confirmed_session: number;
+      last_success_at: string | null; reason: string; device_identity: unknown;
+      error: string; flash_effect: "unverified";
+    };
+    last_synchronized: boolean;
+    flash_protection?: {
+      player_city?: {retry_after_seconds:number};
+      enabled: boolean; policy: string; capacity: number; refill_seconds: number; hour_limit: number;
+      attempts_last_hour: number; tokens: number; hardware_state: string; persistence_error: string;
+      ordinary_attempts_session?: number;
+      hard_limit_enabled?: boolean; day_limit?: number; day_reserved_returns?:number;
+      background_day_limit?:number; attempts_last_day?:number; background_attempts_last_day?:number;
+      history_state?:string; control_commands?:Record<string,number>;
+      session: { confirmed: number; reused: number; deferred: number; uncertain: number };
+      total: { confirmed: number; reused: number; deferred: number; uncertain: number };
+      recent: { at: number; outcome: string; scene: string; bytes: number }[];
+    };
+    writes_session: number;
+    automatic_artwork: boolean;
+    home_artwork_prepared?: boolean;
+    powered: boolean | null;
+    power_recovery: {
+      route_state?: string;
+      route_attempts?: number;
+      target: boolean | null;
+      ok: boolean;
+      attempts: number;
+      reason: string;
+      error: string;
+      suspended: boolean;
+      retry_pending: boolean;
+    };
+    steamgriddb: {
+      configured: boolean;
+      validation_state: "absent" | "detected_unverified" | "validated" | "rejected" | "offline";
+      validation_checked_at: number;
+      validated_at: number;
+      validation_code: string;
+      validation_detail: string;
+      preference: "animated" | "animated_any" | "static" | "hero_pan" | "both";
+      api_key_url: string;
+    };
+    writes_total: number;
+    upload_observability: {
+      journal_limit: number;
+      journal: Array<{
+        timestamp: number;
+        timestamp_utc: string;
+        reason: string;
+        scene: string;
+        sha256: string;
+        crc32: string;
+        size_bytes: number;
+        ack_ms: number;
+        duration_ms: number;
+        outcome: "written" | "identical" | "failed" | "unconfirmed";
+        wrote: boolean | null;
+        identical: boolean;
+        error?: string;
+      }>;
+      session: { attempts: number; writes: number; identical: number; failed: number; payload_bytes_written: number };
+      today_utc: { date_utc: string; attempts: number; writes: number; identical: number; failed: number; payload_bytes_written: number };
+      total: { attempts: number; writes: number; writes_measured: number; identical: number; failed: number; payload_bytes_written: number };
+      estimate: { method: string; confidence: string; assumed_flash_bytes: number; logical_flash_equivalents?: number; unmeasured_legacy_writes: number };
+    };
+    supported_weather: string[];
+    automation: {
+      enabled: boolean;
+      running: boolean;
+      busy: boolean;
+      queued: boolean;
+      generation: number;
+      completed_generation: number;
+      completed: number;
+      dropped: number;
+      last_scene: string;
+      last_error: string;
+      last_completed_at: number;
+      last_queue_age_ms: number;
+      ack_ema_ms: number;
+      handler_ema_ms: number;
+      active_generation: number;
+      active_scene?: string;
+      superseded_active: number;
+      rejected: number;
+      last_rejection: string;
+      last_result: {
+        fallback?: string;
+        frames?: number;
+        automatic_background?: boolean;
+        refresh_policy?: "economy" | "minute";
+        wrote?: boolean;
+        identical?: boolean;
+        synchronized?: boolean;
+        size_bytes?: number;
+        sent_unconfirmed?: boolean;
+        error?: string;
+      };
+      capabilities: {
+        long_gif_delays: boolean;
+        long_gif_delay_state: string;
+      };
+    };
+    player_city?: {
+      reason?: string;
+      sample?: {appid:number;state:string;players:number|null;sample_age_s:number|null;sampled_at?:number|null;error_code?:string};
+      displayed?: {appid:number;players:number;sampled_at:number;at:number}|null;
+      display_age_s?: number|null;
+      next_refresh_s?: number|null;
+      last_attempt?: {outcome:string}|null;
+    };
+    routing: {
+      schema: number;
+      preference_revision: number;
+      /** Last renderer reconciliation; saved choices may be newer while held. */
+      applied_preference_revision?: number;
+      /** Legacy global alias retained for pre-Lab-31 clients. */
+      visual_theme: FaceplateDashboardVisualTheme;
+      scene_themes: {
+        weather: FaceplateWeatherVisualTheme;
+        dashboard: FaceplateDashboardVisualTheme;
+      };
+      routes: {
+        home: "weather" | "dashboard" | "artwork" | "artwork-dashboard" | "native-clock";
+        game: "dashboard" | "artwork" | "artwork-dashboard" | "weather" | "player-city";
+      };
+      context: "home" | "game";
+      generation: number;
+      desired_scene: string;
+      desired_content_key: string;
+      prepared_scene?: string;
+      prepared_content_key?: string;
+      visible_on_panel?: "unknown";
+      effective_scene: string;
+      effective_content_key: string;
+      preparation: {
+        state: "idle" | "pending" | "preparing" | "ready" | "error" | "unconfirmed";
+        generation: number;
+        scene: string;
+        content_key: string;
+        reason: string;
+        error: string;
+      };
+      superseded: number;
+    };
+  };
   stripmine_integration_enabled: boolean;
   stripmine_detected: boolean;
   tw3_steamrgb_integration_enabled: boolean;
@@ -250,18 +552,25 @@ export interface Status {
   weather_clear_day_variant: number;
   weather_clear_night_variant: number;
   weather_rain_variant: number;
+  weather_rain_night_variant: number;
   weather_cloud_variant: number;
   weather_cloud_night_variant: number;
   weather_breaks_variant: number;
   weather_breaks_night_variant: number;
   weather_snow_variant: number;
+  weather_snow_night_variant: number;
   weather_storm_variant: number;
+  weather_storm_night_variant: number;
   weather: {
     location: WeatherLocation | null;
     display: Status["weather_display"];
     phase: "off" | "waiting" | "loading" | "ready" | "error";
     error: string;
     temperature_c: number | null;
+    cached_temperature_c: number | null;
+    faceplate_fallback_available: boolean;
+    faceplate_background_only: boolean;
+    faceplate_weather_state: "fresh" | "cached" | "background-only" | "unavailable";
     condition: WeatherCondition | null;
     is_day: boolean | null;
     weather_code: number | null;
@@ -269,6 +578,13 @@ export interface Status {
     sunrise_at: string;
     sunset_at: string;
     next_solar_transition_at: string;
+    precipitation_probability: number | null;
+    next_hour_temperature_c: number | null;
+    next_hour_condition: WeatherCondition | null;
+    next_hour_precipitation_probability: number | null;
+    morning_temperature_c: number | null;
+    afternoon_temperature_c: number | null;
+    today_condition: WeatherCondition | null;
     night_mode_enabled: boolean;
     night_mode_active: boolean;
     night_mode_brightness: number;
@@ -359,6 +675,13 @@ export interface Status {
     orphan_processes_cleaned: number;
     capture_sessions_released: number;
     last_release_error: string;
+    retry_paused?: boolean;
+    attempt?: ScreenCaptureAttempt;
+    recent_failures?: (ScreenCaptureAttempt & {
+      exit_code: number | null;
+      failure: string;
+      stderr_tail: string[];
+    })[];
     crop_top: number;
     crop_bottom: number;
     colors: RGB[];

@@ -1,0 +1,1434 @@
+{
+  "base": "1eeb1bb",
+  "quickSha256": "7d8f37947f428685a2459b7edaa5515904ee74457193b1da5ddbb074fa8c23b1",
+  "titleSha256": "c9cb373a2674a8832f2bfd177a47bfb1fa2977033d6123f58361a58157d27e30",
+  "controls": [
+    {
+      "owner": "CountdownPanel",
+      "tag": "ToggleField",
+      "label": "\"Remaining time on Faceplate\"",
+      "onChange": "{async (value) => setStatus(await setSetting(\"faceplate_playtime_enabled\", value))}"
+    },
+    {
+      "owner": "CountdownPanel",
+      "tag": "ToggleField",
+      "label": "\"Steam Families limit\"",
+      "onChange": "{async (value) => setStatus(await setSetting(\"parental_countdown_enabled\", value))}"
+    },
+    {
+      "owner": "CountdownPanel",
+      "tag": "DropdownItem",
+      "label": "\"Starting colour\"",
+      "rgOptions": "{COUNTDOWN_COLOUR_OPTIONS}",
+      "onChange": "{async (option) => setStatus(await setSetting(\"countdown_colour\", String(option.data)))}"
+    },
+    {
+      "owner": "CountdownPanel",
+      "tag": "DropdownItem",
+      "label": "\"Full bar scale\"",
+      "rgOptions": "{COUNTDOWN_SCALE_OPTIONS}",
+      "onChange": "{async (option) => setStatus(await setSetting(\"countdown_full_bar_minutes\", Number(option.data)))}"
+    },
+    {
+      "owner": "CountdownPanel",
+      "tag": "SliderField",
+      "label": "\"Free timer\"",
+      "min": "{1}",
+      "max": "{240}",
+      "step": "{1}",
+      "onChange": "{async (value) => setStatus(await setSetting(\"free_timer_minutes\", value))}"
+    },
+    {
+      "owner": "CountdownPanel",
+      "tag": "ButtonItem",
+      "label": "\"Personal limit\"",
+      "onClick": "{() => void startFreeTimer(status.free_timer_minutes).then(setStatus).catch(console.warn)}"
+    },
+    {
+      "owner": "CountdownPanel",
+      "tag": "ButtonItem",
+      "label": "\"Stop personal limit\"",
+      "onClick": "{() => void stopFreeTimer().then(setStatus).catch(console.warn)}"
+    },
+    {
+      "owner": "CountdownPanel",
+      "tag": "ButtonItem",
+      "label": "\"Test countdown and final alert\"",
+      "onClick": "{() => void previewCountdown().then(setStatus).catch(console.warn)}"
+    },
+    {
+      "owner": "EventsPanel",
+      "tag": "ToggleField",
+      "label": "\"Steam event animations\"",
+      "onChange": "{async (value) => setStatus(await setSetting(\"events_enabled\", value))}"
+    },
+    {
+      "owner": "EventsPanel",
+      "tag": "ToggleField",
+      "label": "{`Show ${label.toLowerCase()}`}",
+      "onChange": "{async (value) => setStatus(await setSetting(enabledKey, value))}"
+    },
+    {
+      "owner": "EventsPanel",
+      "tag": "DropdownItem",
+      "label": "\"Animation\"",
+      "rgOptions": "{[...options]}",
+      "onChange": "{async (option) => setStatus(await setSetting(variantKey, String(option.data)))}"
+    },
+    {
+      "owner": "EventsPanel",
+      "tag": "ButtonItem",
+      "label": "{`Preview ${label.toLowerCase()}`}",
+      "onClick": "{() => void preview(kind, selected).catch(console.warn)}"
+    },
+    {
+      "owner": "EventsPanel",
+      "tag": "ToggleField",
+      "label": "\"Recording · red start/stop\"",
+      "onChange": "{async (value) => setStatus(await setSetting(\"event_recording_enabled\", value))}"
+    },
+    {
+      "owner": "EventsPanel",
+      "tag": "ToggleField",
+      "label": "\"Isolate recording marker\"",
+      "onChange": "{async (value) => setStatus(await setSetting(\"recording_marker_isolation\", value))}"
+    },
+    {
+      "owner": "EventsPanel",
+      "tag": "ButtonItem",
+      "label": "{`Preview ${label}`}",
+      "onClick": "{() => void preview(kind).catch(console.warn)}"
+    },
+    {
+      "owner": "ControllersPanel",
+      "tag": "ToggleField",
+      "label": "\"Brief controller alerts\"",
+      "onChange": "{async (value) => setStatus(await setSetting(\"controller_alerts_enabled\", value))}"
+    },
+    {
+      "owner": "ControllersPanel",
+      "tag": "DropdownItem",
+      "label": "\"Where brief alerts play\"",
+      "rgOptions": "{CONTROLLER_ALERT_OPTIONS}",
+      "onChange": "{async (option) => setStatus(await setSetting(\"controller_alert_context\", String(option.data)))}"
+    },
+    {
+      "owner": "ControllersPanel",
+      "tag": "DropdownItem",
+      "label": "\"Charging behavior\"",
+      "rgOptions": "{CONTROLLER_CHARGING_OPTIONS}",
+      "onChange": "{async (option) => setStatus(await setSetting(\"controller_charging_mode\", String(option.data)))}"
+    },
+    {
+      "owner": "ControllersPanel",
+      "tag": "SliderField",
+      "label": "\"Low battery warning\"",
+      "min": "{5}",
+      "max": "{30}",
+      "step": "{5}",
+      "onChange": "{async (value) => setStatus(await setSetting(\"controller_low_threshold\", value))}"
+    },
+    {
+      "owner": "ControllersPanel",
+      "tag": "DropdownItem",
+      "label": "\"Colour preset\"",
+      "rgOptions": "{CONTROLLER_COLOUR_PRESET_OPTIONS}",
+      "onChange": "{async (option) => setStatus(await setSetting(\"controller_colour_preset\", String(option.data)))}"
+    },
+    {
+      "owner": "ControllersPanel",
+      "tag": "DropdownItem",
+      "label": "\"Colour meaning\"",
+      "rgOptions": "{CONTROLLER_COLOUR_MODE_OPTIONS}",
+      "onChange": "{async (option) => setStatus(await setSetting(\"controller_colour_mode\", String(option.data)))}"
+    },
+    {
+      "owner": "ControllersPanel",
+      "tag": "SliderField",
+      "label": "\"Controller brightness\"",
+      "min": "{10}",
+      "max": "{100}",
+      "step": "{5}",
+      "onChange": "{async (value) => setStatus(await setSetting(\"controller_gauge_brightness\", value))}"
+    },
+    {
+      "owner": "ControllersPanel",
+      "tag": "ColorChoice",
+      "label": "{label}",
+      "onClick": "{() => chooseSettingColor(key, label, status[key], setStatus)}"
+    },
+    {
+      "owner": "ControllersPanel",
+      "tag": "ColorChoice",
+      "label": "{label}",
+      "onClick": "{() => chooseSettingColor(key, label, status[key], setStatus)}"
+    },
+    {
+      "owner": "ControllersPanel",
+      "tag": "ColorChoice",
+      "label": "\"Connection / charging colour\"",
+      "onClick": "{() => chooseSettingColor(\"controller_colour_charging\", \"Connection / charging colour\", status.controller_colour_charging, setStatus)}"
+    },
+    {
+      "owner": "ControllersPanel",
+      "tag": "DropdownItem",
+      "label": "\"Controllers in preview\"",
+      "rgOptions": "{CONTROLLER_PREVIEW_COUNT_OPTIONS}",
+      "onChange": "{(option) => { const count = Number(option.data); setPreviewCount(count); setPreviewTarget((target) => Math.min(target, count - 1)); }}"
+    },
+    {
+      "owner": "ControllersPanel",
+      "tag": "DropdownItem",
+      "label": "\"Preview controller\"",
+      "rgOptions": "{CONTROLLER_PREVIEW_COUNT_OPTIONS.slice(0, previewCount).map((_, index) => ({ data: index, label: `Controller ${index + 1}` }))}",
+      "onChange": "{(option) => setPreviewTarget(Number(option.data))}"
+    },
+    {
+      "owner": "ControllersPanel",
+      "tag": "ToggleField",
+      "label": "{`Show ${title.toLowerCase()}`}",
+      "onChange": "{async (value) => setStatus(await setSetting(enabledKey, value))}"
+    },
+    {
+      "owner": "ControllersPanel",
+      "tag": "DropdownItem",
+      "label": "\"Visual style\"",
+      "rgOptions": "{[...options]}",
+      "onChange": "{async (option) => setStatus(await setSetting(variantKey, String(option.data)))}"
+    },
+    {
+      "owner": "ControllersPanel",
+      "tag": "ButtonItem",
+      "label": "{`Preview ${title.toLowerCase()}`}",
+      "onClick": "{() => void preview(kind, selected).catch(console.warn)}"
+    },
+    {
+      "owner": "FaceplateBrightnessSlider",
+      "tag": "SliderField",
+      "label": "\"Faceplate brightness\"",
+      "min": "{5}",
+      "max": "{100}",
+      "step": "{5}",
+      "onChange": "{change}"
+    },
+    {
+      "owner": "PixelStudioWeatherCatalog",
+      "tag": "DropdownItem",
+      "label": "\"Weather condition\"",
+      "rgOptions": "{WEATHER_CONDITIONS}",
+      "onChange": "{(option) => setCondition(option.data as WeatherCondition)}"
+    },
+    {
+      "owner": "PixelStudioWeatherCatalog",
+      "tag": "DropdownItem",
+      "label": "\"Animated scene\"",
+      "rgOptions": "{WEATHER_VARIANTS[condition].map((item, index) => ({ data: index, label: item.label, }))}",
+      "onChange": "{async (option) => setStatus(await setSetting(variantKey, Number(option.data)))}"
+    },
+    {
+      "owner": "PixelStudioWeatherCatalog",
+      "tag": "ButtonItem",
+      "label": "\"Preview Realistic on Faceplate\"",
+      "onClick": "{async () => { try { const played = await previewWeather(condition, variant, weatherVisualTheme); setMessage(played ? \"Realistic sent to the Faceplate.\" : \"Preview unavailable while the weather preview is blocked.\"); } catch (error) { setMessage(`Faceplate preview failed: ${String(error)}`); } }}"
+    },
+    {
+      "owner": "WeatherPanel",
+      "tag": "TextField",
+      "label": "\"City or postal code\"",
+      "onChange": "{(event) => setCityQuery(event.currentTarget.value)}"
+    },
+    {
+      "owner": "WeatherPanel",
+      "tag": "TextField",
+      "label": "\"Country (full name, optional)\"",
+      "onChange": "{(event) => setCountryQuery(event.currentTarget.value)}"
+    },
+    {
+      "owner": "WeatherPanel",
+      "tag": "ButtonItem",
+      "label": "\"Find city\"",
+      "onClick": "{() => void findCity()}"
+    },
+    {
+      "owner": "WeatherPanel",
+      "tag": "ButtonItem",
+      "label": "{`${city.name}, ${city.country}`}",
+      "onClick": "{() => void chooseCity(city)}"
+    },
+    {
+      "owner": "WeatherPanel",
+      "tag": "ButtonItem",
+      "label": "\"Remove city\"",
+      "onClick": "{() => void setSetting(\"weather_location\", null).then((next) => { setStatus(next); setMessage(\"City removed.\"); }).catch((error) => setMessage(String(error)))}"
+    },
+    {
+      "owner": "WeatherPanel",
+      "tag": "ToggleField",
+      "label": "\"SteamOS top-bar weather\"",
+      "onChange": "{async (enabled) => { try { setStatus(await setSetting(\"weather_topbar_enabled\", enabled)); setMessage(enabled ? status.weather_location ? \"Top-bar weather enabled. It may take a few seconds to appear.\" : \"Top-bar weather enabled. Choose a city when you want it to appear.\" : \"Top-bar weather disabled.\"); } catch (error) { setMessage(`Could not change top-bar weather: ${String(error)}`); } }}"
+    },
+    {
+      "owner": "WeatherPanel",
+      "tag": "DropdownItem",
+      "label": "\"Top-bar icon family\"",
+      "rgOptions": "{WEATHER_ICON_STYLE_OPTIONS}",
+      "onChange": "{async (option) => setStatus(await setSetting(\"weather_icon_style\", String(option.data)))}"
+    },
+    {
+      "owner": "WeatherPanel",
+      "tag": "DropdownItem",
+      "label": "\"Weather temperature unit\"",
+      "rgOptions": "{WEATHER_TEMPERATURE_UNITS}",
+      "onChange": "{async (option) => setStatus(await setSetting(\"weather_temperature_unit\", String(option.data)))}"
+    },
+    {
+      "owner": "WeatherPanel",
+      "tag": "DropdownItem",
+      "label": "\"Condition to configure\"",
+      "rgOptions": "{WEATHER_CONDITIONS}",
+      "onChange": "{(option) => setPreviewCondition(option.data as WeatherCondition)}"
+    },
+    {
+      "owner": "WeatherPanel",
+      "tag": "DropdownItem",
+      "label": "\"Animation\"",
+      "rgOptions": "{WEATHER_VARIANTS[previewCondition].map((item, index) => ({ data: index, label: item.label }))}",
+      "onChange": "{async (option) => setStatus(await setSetting(variantKey, Number(option.data)))}"
+    },
+    {
+      "owner": "WeatherPanel",
+      "tag": "ButtonItem",
+      "label": "\"Preview this animation\"",
+      "onClick": "{() => void playPreview()}"
+    },
+    {
+      "owner": "WeatherPanel",
+      "tag": "ToggleField",
+      "label": "\"Follow GabeCubeAura automatically\"",
+      "onChange": "{async (enabled) => setStatus(await setSetting(\"faceplate_lab_enabled\", enabled))}"
+    },
+    {
+      "owner": "WeatherPanel",
+      "tag": "SliderField",
+      "label": "\"Weather LED brightness\"",
+      "min": "{10}",
+      "max": "{100}",
+      "step": "{5}",
+      "onChange": "{async (value) => setStatus(await setSetting(\"weather_brightness\", value))}"
+    },
+    {
+      "owner": "WeatherPanel",
+      "tag": "SliderField",
+      "label": "\"Turn faint LEDs off\"",
+      "min": "{0}",
+      "max": "{60}",
+      "step": "{5}",
+      "onChange": "{async (value) => setStatus(await setSetting(\"weather_shadow_cutoff\", value))}"
+    },
+    {
+      "owner": "WeatherPanel",
+      "tag": "ButtonItem",
+      "label": "\"Preview night colours\"",
+      "onClick": "{() => void playPreview(\"clear_night\")}"
+    },
+    {
+      "owner": "WeatherPanel",
+      "tag": "ButtonItem",
+      "label": "\"Preview warm colours\"",
+      "onClick": "{() => void playPreview(\"clear_day\")}"
+    },
+    {
+      "owner": "CustomizationPanel",
+      "tag": "DropdownItem",
+      "label": "\"Pattern\"",
+      "rgOptions": "{CUSTOMIZATION_PATTERN_OPTIONS}",
+      "onChange": "{async (option) => setStatus(await setSetting(\"customization_pattern\", String(option.data)))}"
+    },
+    {
+      "owner": "CustomizationPanel",
+      "tag": "DropdownItem",
+      "label": "\"Palette\"",
+      "rgOptions": "{CUSTOMIZATION_COLOUR_OPTIONS}",
+      "onChange": "{async (option) => setStatus(await setSetting(\"customization_colour_count\", Number(option.data)))}"
+    },
+    {
+      "owner": "CustomizationPanel",
+      "tag": "PreciseColorEditor",
+      "label": "{`Colour ${index + 1}`}",
+      "onChange": "{(color) => void setSetting(key, color).then(setStatus).catch(console.warn)}"
+    },
+    {
+      "owner": "CustomizationPanel",
+      "tag": "SliderField",
+      "label": "\"Brightness\"",
+      "min": "{34}",
+      "max": "{255}",
+      "step": "{1}",
+      "onChange": "{async (value) => setStatus(await setSetting(\"customization_brightness\", value))}"
+    },
+    {
+      "owner": "CustomizationPanel",
+      "tag": "SliderField",
+      "label": "\"Speed\"",
+      "min": "{1}",
+      "max": "{100}",
+      "step": "{1}",
+      "onChange": "{async (value) => setStatus(await setSetting(\"customization_speed\", value))}"
+    },
+    {
+      "owner": "CustomizationPanel",
+      "tag": "DropdownItem",
+      "label": "\"Direction\"",
+      "rgOptions": "{CUSTOMIZATION_DIRECTION_OPTIONS}",
+      "onChange": "{async (option) => setStatus(await setSetting(\"customization_direction\", String(option.data)))}"
+    },
+    {
+      "owner": "CustomizationPanel",
+      "tag": "ButtonItem",
+      "label": "\"Preview Customization+\"",
+      "onClick": "{() => void preview().catch(console.warn)}"
+    },
+    {
+      "owner": "LightBarBrightness",
+      "tag": "SliderField",
+      "label": "\"Day brightness\"",
+      "min": "{1}",
+      "max": "{255}",
+      "step": "{1}",
+      "onChange": "{(value) => void preview(\"day\", \"light_bar_day_brightness\", value)}"
+    },
+    {
+      "owner": "LightBarBrightness",
+      "tag": "ToggleField",
+      "label": "\"Dim automatically after sunset\"",
+      "onChange": "{async (enabled) => setStatus(await setSetting(\"night_mode_enabled\", enabled))}"
+    },
+    {
+      "owner": "LightBarBrightness",
+      "tag": "SliderField",
+      "label": "\"Night brightness\"",
+      "min": "{10}",
+      "max": "{100}",
+      "step": "{5}",
+      "onChange": "{(value) => void preview(\"night\", \"night_mode_brightness\", value)}"
+    },
+    {
+      "owner": "LightBarBrightness",
+      "tag": "ButtonItem",
+      "label": "{status.weather_location ? \"Change city\" : \"Choose city\"}",
+      "onClick": "{() => { setChangingCity(!changingCity); setCityResults([]); setMessage(\"\"); }}"
+    },
+    {
+      "owner": "LightBarBrightness",
+      "tag": "TextField",
+      "label": "\"City or postal code\"",
+      "onChange": "{(event) => setCityQuery(event.currentTarget.value)}"
+    },
+    {
+      "owner": "LightBarBrightness",
+      "tag": "TextField",
+      "label": "\"Country (optional)\"",
+      "onChange": "{(event) => setCountryQuery(event.currentTarget.value)}"
+    },
+    {
+      "owner": "LightBarBrightness",
+      "tag": "ButtonItem",
+      "label": "\"Find city\"",
+      "onClick": "{() => void findCity()}"
+    },
+    {
+      "owner": "LightBarBrightness",
+      "tag": "ButtonItem",
+      "label": "{`${city.name}, ${city.country}`}",
+      "onClick": "{() => void chooseCity(city)}"
+    },
+    {
+      "owner": "ScreenSyncPanel",
+      "tag": "ToggleField",
+      "label": "\"Show live diagnostics\"",
+      "onChange": "{setShowLiveDiagnostics}"
+    },
+    {
+      "owner": "ScreenSyncPanel",
+      "tag": "ButtonItem",
+      "label": "\"Preview Screen Sync\"",
+      "onClick": "{() => void previewScreenSync().then(setStatus).catch(console.warn)}"
+    },
+    {
+      "owner": "ScreenSyncPanel",
+      "tag": "DropdownItem",
+      "label": "\"Style\"",
+      "rgOptions": "{SCREEN_SYNC_STYLE_OPTIONS}",
+      "onChange": "{async (option) => setStatus(await setSetting(\"screen_sync_style\", String(option.data)))}"
+    },
+    {
+      "owner": "ScreenSyncPanel",
+      "tag": "DropdownItem",
+      "label": "\"Reactivity\"",
+      "rgOptions": "{SCREEN_SYNC_REACTIVITY_OPTIONS}",
+      "onChange": "{async (option) => setStatus(await setSetting(\"screen_sync_reactivity\", String(option.data)))}"
+    },
+    {
+      "owner": "ScreenSyncPanel",
+      "tag": "DropdownItem",
+      "label": "\"Colour intensity\"",
+      "rgOptions": "{SCREEN_SYNC_COLOUR_OPTIONS}",
+      "onChange": "{async (option) => setStatus(await setSetting(\"screen_sync_colour_intensity\", String(option.data)))}"
+    },
+    {
+      "owner": "ScreenSyncPanel",
+      "tag": "SliderField",
+      "label": "\"Brightness\"",
+      "min": "{34}",
+      "max": "{255}",
+      "step": "{1}",
+      "onChange": "{async (value) => setStatus(await setSetting(\"screen_sync_brightness\", value))}"
+    },
+    {
+      "owner": "ScreenSyncPanel",
+      "tag": "ToggleField",
+      "label": "\"Ignore cinematic black bars\"",
+      "onChange": "{async (value) => setStatus(await setSetting(\"screen_sync_ignore_black_bars\", value))}"
+    },
+    {
+      "owner": "ScreenSyncPanel",
+      "tag": "SliderField",
+      "label": "\"Black threshold\"",
+      "min": "{0}",
+      "max": "{32}",
+      "step": "{1}",
+      "onChange": "{async (value) => setStatus(await setSetting(\"screen_sync_black_threshold\", value))}"
+    },
+    {
+      "owner": "HifiCrestLab",
+      "tag": "ToggleField",
+      "label": "\"Show live diagnostics\"",
+      "onChange": "{setShowQuickDiagnostics}"
+    },
+    {
+      "owner": "HifiCrestLab",
+      "tag": "SliderField",
+      "label": "\"Crest strength\"",
+      "min": "{0}",
+      "max": "{250}",
+      "step": "{5}",
+      "onChange": "{async (value) => setStatus(await setSetting(\"audio_sync_lab_crest_strength\", value))}"
+    },
+    {
+      "owner": "HifiCrestLab",
+      "tag": "SliderField",
+      "label": "\"Edge reach\"",
+      "min": "{50}",
+      "max": "{200}",
+      "step": "{5}",
+      "onChange": "{async (value) => setStatus(await setSetting(\"audio_sync_lab_edge_reach\", value))}"
+    },
+    {
+      "owner": "HifiCrestLab",
+      "tag": "SliderField",
+      "label": "\"Background level\"",
+      "min": "{0}",
+      "max": "{150}",
+      "step": "{5}",
+      "onChange": "{async (value) => setStatus(await setSetting(\"audio_sync_lab_background\", value))}"
+    },
+    {
+      "owner": "HifiCrestLab",
+      "tag": "ButtonItem",
+      "label": "\"Preview Audio Sync\"",
+      "onClick": "{() => void previewAudioSync().then(setStatus).catch(console.warn)}"
+    },
+    {
+      "owner": "AudioContextMapping",
+      "tag": "DropdownItem",
+      "label": "\"Pattern\"",
+      "rgOptions": "{AUDIO_SYNC_STYLE_OPTIONS}",
+      "onChange": "{async (option) => setStatus(await setSetting(styleKey, String(option.data)))}"
+    },
+    {
+      "owner": "AudioContextMapping",
+      "tag": "DropdownItem",
+      "label": "\"Palette\"",
+      "rgOptions": "{AUDIO_SYNC_PALETTE_OPTIONS}",
+      "onChange": "{async (option) => setStatus(await setSetting(paletteKey, String(option.data)))}"
+    },
+    {
+      "owner": "AudioContextMapping",
+      "tag": "PreciseColorEditor",
+      "label": "{[\"High frequencies · edges\", \"Middle frequencies · shoulders\", \"Low frequencies · centre\"][index]}",
+      "onChange": "{(color) => void setSetting(key, color).then(setStatus).catch(console.warn)}"
+    },
+    {
+      "owner": "AudioContextMapping",
+      "tag": "ButtonItem",
+      "label": "\"Apply recommended shared tuning\"",
+      "onClick": "{() => void setSetting(styleKey, style).then(setStatus).catch(console.warn)}"
+    },
+    {
+      "owner": "AudioSyncPanel",
+      "tag": "ToggleField",
+      "label": "\"Show live diagnostics\"",
+      "onChange": "{setShowLiveDiagnostics}"
+    },
+    {
+      "owner": "AudioSyncPanel",
+      "tag": "ButtonItem",
+      "label": "\"Preview Audio Sync\"",
+      "onClick": "{() => void previewAudioSync().then(setStatus).catch(console.warn)}"
+    },
+    {
+      "owner": "AudioSyncPanel",
+      "tag": "DropdownItem",
+      "label": "\"Reactivity\"",
+      "rgOptions": "{AUDIO_SYNC_REACTIVITY_OPTIONS}",
+      "onChange": "{async (option) => setStatus(await setSetting(\"audio_sync_reactivity\", String(option.data)))}"
+    },
+    {
+      "owner": "AudioSyncPanel",
+      "tag": "SliderField",
+      "label": "\"Brightness\"",
+      "min": "{34}",
+      "max": "{255}",
+      "step": "{1}",
+      "onChange": "{async (value) => setStatus(await setSetting(\"audio_sync_brightness\", value))}"
+    },
+    {
+      "owner": "CompatibilityPanel",
+      "tag": "ToggleField",
+      "label": "\"Show TW3-SteamRGB and StripMine controls\"",
+      "onChange": "{setShowCompatibilityControls}"
+    },
+    {
+      "owner": "CompatibilityPanel",
+      "tag": "ToggleField",
+      "label": "\"Yield to TW3-SteamRGB HUD\"",
+      "onChange": "{async (value) => setStatus(await setSetting(\"tw3_steamrgb_integration_enabled\", value))}"
+    },
+    {
+      "owner": "CompatibilityPanel",
+      "tag": "ToggleField",
+      "label": "\"Coordinate LED ownership\"",
+      "onChange": "{async (value) => setStatus(await setSetting(\"stripmine_integration_enabled\", value))}"
+    },
+    {
+      "owner": "CompatibilityPanel",
+      "tag": "DropdownItem",
+      "label": "{label}",
+      "rgOptions": "{COMPANION_PRIORITY_OPTIONS}",
+      "onChange": "{async (option) => setStatus(await setSetting(key, option.data as CompanionPriority))}"
+    },
+    {
+      "owner": "SettingsPageEnd",
+      "tag": "ButtonItem",
+      "label": "{`End of ${PAGE_END_LABELS[page]} settings`}",
+      "onClick": "{() => void getStatus().then(setStatus).catch(console.warn)}"
+    },
+    {
+      "owner": "FirstRunSetupRoute",
+      "tag": "ButtonItem",
+      "label": "\"Back\"",
+      "onClick": "{() => Navigation.NavigateBack()}"
+    },
+    {
+      "owner": "PixelStudioArtworkPanel",
+      "tag": "DropdownItem",
+      "label": "\"Your Faceplate library\"",
+      "rgOptions": "{library.map((item) => ({ data: `${item.appid}:${item.mode}`, label: `${item.name || `App ${item.appid}`} · ${item.mode}${item.active ? ` · ${translate(\"Active\")}` : \"\"}${item.dashboard_ready ? \"\" : ` · ${translate(\"Dashboard update needed\")}`}`, }))}",
+      "onChange": "{(option) => { setLibrarySelection(String(option.data)); restoreArtworkFocus(\"saved-artwork\"); }}"
+    },
+    {
+      "owner": "PixelStudioArtworkPanel",
+      "tag": "ButtonItem",
+      "label": "\"Use for this game\"",
+      "onClick": "{() => void useLibraryEntry(false)}"
+    },
+    {
+      "owner": "PixelStudioArtworkPanel",
+      "tag": "ButtonItem",
+      "label": "\"Use for Dashboard Home\"",
+      "onClick": "{() => void useLibraryEntry(true)}"
+    },
+    {
+      "owner": "PixelStudioArtworkPanel",
+      "tag": "ButtonItem",
+      "label": "\"Delete from library\"",
+      "onClick": "{confirmLibraryDelete}"
+    },
+    {
+      "owner": "PixelStudioArtworkPanel",
+      "tag": "ButtonItem",
+      "label": "\"Choose another game\"",
+      "onClick": "{() => { setChoosingGame(true); setGameQuery(\"\"); restoreArtworkFocus(\"game-search\"); }}"
+    },
+    {
+      "owner": "PixelStudioArtworkPanel",
+      "tag": "ButtonItem",
+      "label": "\"Choose a game\"",
+      "onClick": "{() => void loadGames()}"
+    },
+    {
+      "owner": "PixelStudioArtworkPanel",
+      "tag": "TextField",
+      "label": "\"Search your games\"",
+      "onChange": "{(event) => setGameQuery(event.currentTarget.value)}"
+    },
+    {
+      "owner": "PixelStudioArtworkPanel",
+      "tag": "ButtonItem",
+      "label": "{game.name}",
+      "onClick": "{() => chooseGame(game)}"
+    },
+    {
+      "owner": "PixelStudioArtworkPanel",
+      "tag": "DropdownItem",
+      "label": "\"What would you like?\"",
+      "rgOptions": "{FACEPLATE_ARTWORK_SEARCH_OPTIONS}",
+      "onChange": "{(option) => { setPreference(option.data as typeof preference); setResults([]); setResultIndex(0); setSelectedAsset(null); restoreArtworkFocus(\"artwork-type\"); }}"
+    },
+    {
+      "owner": "PixelStudioArtworkPanel",
+      "tag": "ButtonItem",
+      "label": "{results.length ? \"Show different artwork\" : \"Show artwork\"}",
+      "onClick": "{() => void search()}"
+    },
+    {
+      "owner": "PixelStudioArtworkPanel",
+      "tag": "ButtonItem",
+      "label": "{previewPlaying ? \"Pause animation\" : \"Play animation\"}",
+      "onClick": "{() => void togglePreview()}"
+    },
+    {
+      "owner": "PixelStudioArtworkPanel",
+      "tag": "ToggleField",
+      "label": "\"Adjust image\"",
+      "onChange": "{(value) => { setShowAdjustments(value); setCropEditing(value); restoreArtworkFocus(\"adjust-image\"); }}"
+    },
+    {
+      "owner": "PixelStudioArtworkPanel",
+      "tag": "DropdownItem",
+      "label": "\"Artwork layout\"",
+      "rgOptions": "{FACEPLATE_ARTWORK_STYLE_OPTIONS}",
+      "onChange": "{(option) => void setArtworkPresentation(\"style\", option.data as Status[\"faceplate_artwork_style\"]).catch(console.warn)}"
+    },
+    {
+      "owner": "PixelStudioArtworkPanel",
+      "tag": "DropdownItem",
+      "label": "\"Logo position\"",
+      "rgOptions": "{FACEPLATE_LOGO_POSITION_OPTIONS}",
+      "onChange": "{(option) => void setArtworkPresentation(\"position\", option.data as Status[\"faceplate_logo_position\"]).catch(console.warn)}"
+    },
+    {
+      "owner": "PixelStudioArtworkPanel",
+      "tag": "SliderField",
+      "label": "\"Horizontal crop\"",
+      "min": "{0}",
+      "max": "{100}",
+      "step": "{5}",
+      "onChange": "{(value) => { setCropX(value); setDraftPreviewKey(\"\"); }}"
+    },
+    {
+      "owner": "PixelStudioArtworkPanel",
+      "tag": "SliderField",
+      "label": "\"Vertical crop\"",
+      "min": "{0}",
+      "max": "{100}",
+      "step": "{5}",
+      "onChange": "{(value) => { setCropY(value); setDraftPreviewKey(\"\"); }}"
+    },
+    {
+      "owner": "PixelStudioArtworkPanel",
+      "tag": "SliderField",
+      "label": "\"Saturation\"",
+      "min": "{50}",
+      "max": "{180}",
+      "step": "{5}",
+      "onChange": "{(value) => { setSaturation(value); setDraftPreviewKey(\"\"); }}"
+    },
+    {
+      "owner": "PixelStudioArtworkPanel",
+      "tag": "SliderField",
+      "label": "\"Brightness\"",
+      "min": "{50}",
+      "max": "{150}",
+      "step": "{5}",
+      "onChange": "{(value) => { setBrightness(value); setDraftPreviewKey(\"\"); }}"
+    },
+    {
+      "owner": "PixelStudioArtworkPanel",
+      "tag": "DropdownItem",
+      "label": "\"Loop ending cleanup\"",
+      "rgOptions": "{FACEPLATE_LOOP_CLEANUP_OPTIONS}",
+      "onChange": "{(option) => { setLoopCleanup(option.data as typeof loopCleanup); setDraftPreviewKey(\"\"); restoreArtworkFocus(\"loop-cleanup\"); }}"
+    },
+    {
+      "owner": "PixelStudioArtworkPanel",
+      "tag": "DropdownItem",
+      "label": "\"Artwork Dashboard style\"",
+      "rgOptions": "{[ { data: \"none\", label: \"No filter · original colours\" }, { data: \"cinema\", label: \"Dark cinema\" }, { data: \"hero-cut\", label: \"Hero cut\" }, { data: \"palette-echo\", label: \"Palette echo\" }, ]}",
+      "onChange": "{(option) => { setDashboardTreatment(option.data as typeof dashboardTreatment); setDraftPreviewKey(\"\"); }}"
+    },
+    {
+      "owner": "PixelStudioArtworkPanel",
+      "tag": "DropdownItem",
+      "label": "\"Dashboard compression\"",
+      "rgOptions": "{[ { data: \"compatible\", label: \"Strong · Compatible\" }, { data: \"balanced\", label: \"Medium · Balanced detail\" }, { data: \"fine\", label: \"Light · Fine detail\" }, ]}",
+      "onChange": "{(option) => { setDashboardCompression(option.data as typeof dashboardCompression); setDraftPreviewKey(\"\"); }}"
+    },
+    {
+      "owner": "PixelStudioArtworkPanel",
+      "tag": "DropdownItem",
+      "label": "\"Apply to\"",
+      "rgOptions": "{[ { data: \"game\", label: \"Game · artwork only\" }, { data: \"game-dashboard\", label: \"Game · illustrated Dashboard\" }, { data: \"home\", label: \"Home · illustrated Dashboard\" }, { data: \"both\", label: \"Home + game · illustrated Dashboard\" }, ]}",
+      "onChange": "{(option) => { setDestination(option.data as typeof destination); setPreviewTarget(option.data === \"game\" ? \"artwork\" : \"dashboard\"); }}"
+    },
+    {
+      "owner": "PixelStudioArtworkPanel",
+      "tag": "DropdownItem",
+      "label": "\"Dashboard Home after preparation\"",
+      "rgOptions": "{FACEPLATE_DASHBOARD_SOURCE_OPTIONS}",
+      "onChange": "{(option) => setUseForDashboardHome(option.data === \"artwork\")}"
+    },
+    {
+      "owner": "PixelStudioArtworkPanel",
+      "tag": "ButtonItem",
+      "label": "{preparationMode === \"static\" ? \"Prepare preview\" : \"Prepare animation preview\"}",
+      "onClick": "{() => void prepare()}"
+    },
+    {
+      "owner": "PixelStudioArtworkPanel",
+      "tag": "ButtonItem",
+      "label": "\"Use this image\"",
+      "onClick": "{() => { if (busy || jobRunning || appliedDraftKey === `${draftPreviewKey}:${destination}`) return; prepareFocus.current = showAdjustments ? \"use-static\" : \"use-artwork\"; if (draftPreviewKey && job?.state === \"ready\" && job.mode && draftPreviewKey === job.prepared?.sha256) { void activatePrepared(selectedGame.appid, job.mode, job.prepared); } else void prepare(true); }}"
+    },
+    {
+      "owner": "PixelStudioArtworkPanel",
+      "tag": "ButtonItem",
+      "label": "{destination === \"game\" || destination === \"game-dashboard\" ? \"Apply to this game\" : destination === \"home\" ? \"Apply to Dashboard Home\" : \"Apply to both\"}",
+      "onClick": "{() => !busy && !jobRunning && appliedDraftKey !== `${draftPreviewKey}:${destination}` && job.mode && selectedGame && void activatePrepared(selectedGame.appid, job.mode, job.prepared)}"
+    },
+    {
+      "owner": "PixelStudioArtworkPanel",
+      "tag": "ButtonItem",
+      "label": "\"Cancel preparation\"",
+      "onClick": "{() => { activateWhenReady.current = null; void cancelFaceplateArtwork().then((next) => setArtworkState((previous) => ({ job: next, selected: previous?.selected ?? {}, prepared: previous?.prepared ?? {}, }))).finally(() => restoreArtworkFocus(\"use-artwork\")); }}"
+    },
+    {
+      "owner": "PixelStudioArtworkPanel",
+      "tag": "DropdownItem",
+      "label": "\"Preview\"",
+      "rgOptions": "{FACEPLATE_RESULT_PREVIEW_OPTIONS}",
+      "onChange": "{(option) => { setPreviewTarget(option.data as typeof previewTarget); restoreArtworkFocus(\"preview-target\"); }}"
+    },
+    {
+      "owner": "PixelStudioArtworkPanel",
+      "tag": "ButtonItem",
+      "label": "{previewTarget === \"artwork\" ? \"Preview Artwork in-game\" : previewTarget === \"dashboard\" ? \"Preview Artwork Dashboard\" : \"Preview Weather Dashboard\"}",
+      "onClick": "{() => { if (previewTarget === \"artwork\") { setNativePreviewBusy(true); void getFaceplateArtworkPreview(selectedGame.appid) .then((value) => { setNativePreview(value.data_uri); setMessage(value.error ? value.error : \"\"); }) .catch((error) => setMessage(`Preview failed: ${String(error)}`)) .finally(() => { setNativePreviewBusy(false); restoreArtworkFocus(\"result-preview\"); }); } else if (previewTarget === \"dashboard\") { setDashboardPreviewBusy(true); void getFaceplateArtworkDashboardPreview(selectedGame.appid, \"\", false, useForDashboardHome) .then((value) => { setDashboardPreview(value.data_uri); setMessage(\"\"); }) .catch((error) => setMessage(`Preview failed: ${String(error)}`)) .finally(() => { setDashboardPreviewBusy(false); restoreArtworkFocus(\"result-preview\"); }); } else { setDashboardPreviewBusy(true); void getFaceplateDashboardPreview(weatherDashboardCondition, weatherDashboardVariant, \"weather-artwork-v2\") .then((value) => { setWeatherDashboardPreview(value.data_uri); setMessage(value.error ? `Preview failed: ${value.error}` : \"\"); }) .catch((error) => setMessage(`Preview failed: ${String(error)}`)) .finally(() => { setDashboardPreviewBusy(false); restoreArtworkFocus(\"result-preview\"); }); } }}"
+    },
+    {
+      "owner": "Content",
+      "tag": "ToggleField",
+      "label": "\"Enable GabeCubeAura\"",
+      "onChange": "{async (value) => setStatus(await setSetting(\"signalbar_enabled\", value))}"
+    },
+    {
+      "owner": "Content",
+      "tag": "ButtonItem",
+      "label": "\"Guided setup\"",
+      "onClick": "{() => { Navigation.CloseSideMenus(); Navigation.Navigate(\"/gabecubeaura/setup\"); }}"
+    },
+    {
+      "owner": "Content",
+      "tag": "ToggleField",
+      "label": "\"Enable GabeCubeAura\"",
+      "onChange": "{async (value) => setStatus(await setSetting(\"signalbar_enabled\", value))}"
+    },
+    {
+      "owner": "Content",
+      "tag": "DropdownItem",
+      "label": "\"Lighting preset\"",
+      "rgOptions": "{DISPLAY_PRESET_OPTIONS}",
+      "onChange": "{(option) => void applyDisplayPreset(String(option.data))}"
+    },
+    {
+      "owner": "Content",
+      "tag": "DropdownItem",
+      "label": "\"Steam ownership\"",
+      "rgOptions": "{VALVE_OWNERSHIP_OPTIONS}",
+      "onChange": "{async (option) => setStatus(await setSetting(\"valve_ownership_policy\", String(option.data)))}"
+    },
+    {
+      "owner": "Content",
+      "tag": "DropdownItem",
+      "label": "\"Home display\"",
+      "rgOptions": "{HOME_DISPLAY_OPTIONS}",
+      "onChange": "{async (option) => setStatus(await setSetting(\"home_display\", String(option.data)))}"
+    },
+    {
+      "owner": "Content",
+      "tag": "DropdownItem",
+      "label": "\"In-game display\"",
+      "rgOptions": "{GAME_DISPLAY_OPTIONS}",
+      "onChange": "{async (option) => setStatus(await setSetting(\"game_display\", String(option.data)))}"
+    },
+    {
+      "owner": "Content",
+      "tag": "DropdownItem",
+      "label": "\"Faceplate image projection\"",
+      "rgOptions": "{[{ data: \"bottom\", label: \"Bottom edge\" }, { data: \"whole\", label: \"Whole image\" }]}",
+      "onChange": "{async (option) => setStatus(await setSetting(\"faceplate_extension_mapping\", String(option.data)))}"
+    },
+    {
+      "owner": "Content",
+      "tag": "SliderField",
+      "label": "\"Extension colour saturation\"",
+      "min": "{0}",
+      "max": "{250}",
+      "step": "{5}",
+      "onChange": "{async (value) => setStatus(await setSetting(\"faceplate_extension_saturation\", value))}"
+    },
+    {
+      "owner": "Content",
+      "tag": "DropdownItem",
+      "label": "{status.game.title || `AppID ${status.game.appid}`}",
+      "rgOptions": "{[{ data: \"inherit\", label: \"Use in-game default\" }, ...GAME_DISPLAY_OPTIONS]}",
+      "onChange": "{async (option) => setStatus(await setGameDisplay(status.game.appid, String(option.data)))}"
+    },
+    {
+      "owner": "Content",
+      "tag": "DropdownItem",
+      "label": "\"Steam image\"",
+      "rgOptions": "{ARTWORK_SOURCE_OPTIONS}",
+      "onChange": "{(option) => void changeArtworkSetting(\"source\", String(option.data))}"
+    },
+    {
+      "owner": "Content",
+      "tag": "DropdownItem",
+      "label": "\"Sample row\"",
+      "rgOptions": "{ARTWORK_OPTIONS}",
+      "onChange": "{(option) => void changeArtworkSetting(\"mode\", String(option.data))}"
+    },
+    {
+      "owner": "Content",
+      "tag": "SliderField",
+      "label": "\"Vertical position\"",
+      "min": "{15}",
+      "max": "{90}",
+      "step": "{1}",
+      "onChange": "{(value) => changeManualPosition(value / 100)}"
+    },
+    {
+      "owner": "Content",
+      "tag": "SliderField",
+      "label": "\"Artwork colour intensity\"",
+      "min": "{0}",
+      "max": "{200}",
+      "step": "{5}",
+      "onChange": "{changeArtworkVibrance}"
+    },
+    {
+      "owner": "Content",
+      "tag": "ButtonItem",
+      "label": "\"Open Faceplate Artwork Studio\"",
+      "onClick": "{() => { Navigation.CloseSideMenus(); Navigation.Navigate(\"/gabecubeaura/settings/pixel-artwork\"); }}"
+    },
+    {
+      "owner": "Content",
+      "tag": "ToggleField",
+      "label": "\"Animate from game artwork\"",
+      "onChange": "{async (value) => setStatus(await setSetting(\"launch_artwork_animation_enabled\", value))}"
+    },
+    {
+      "owner": "Content",
+      "tag": "DropdownItem",
+      "label": "\"Artwork image\"",
+      "rgOptions": "{ARTWORK_SOURCE_OPTIONS}",
+      "onChange": "{async (option) => { const next = await setSetting(\"launch_artwork_source\", String(option.data)); setStatus(next); if (next.game.appid > 0) await loadAndSampleArtwork(next.game.appid, next.launch_artwork_source, \"launch\"); }}"
+    },
+    {
+      "owner": "Content",
+      "tag": "DropdownItem",
+      "label": "\"Palette source\"",
+      "rgOptions": "{LAUNCH_PALETTE_MODE_OPTIONS}",
+      "onChange": "{async (option) => setStatus(await setLaunchArtworkSetting(status.game.appid, \"palette_mode\", String(option.data)))}"
+    },
+    {
+      "owner": "Content",
+      "tag": "DropdownItem",
+      "label": "\"Number of colours\"",
+      "rgOptions": "{LAUNCH_ARTWORK_COLOUR_OPTIONS}",
+      "onChange": "{async (option) => setStatus(await setSetting(\"launch_artwork_colour_count\", Number(option.data)))}"
+    },
+    {
+      "owner": "Content",
+      "tag": "PreciseColorEditor",
+      "label": "{`Launch colour ${index + 1}`}",
+      "onChange": "{(nextColor) => { const palettes = { \"2\": status.launch_artwork_custom_palettes[\"2\"].map((entry) => [...entry] as RGB) as [ RGB, RGB ], \"3\": status.launch_artwork_custom_palettes[\"3\"].map((entry) => [...entry] as RGB) as [ RGB, RGB, RGB ], }; palettes[String(status.launch_artwork_colour_count) as \"2\" | \"3\"][index] = nextColor; void setLaunchArtworkSetting(status.game.appid, \"custom_palettes\", palettes).then(setStatus).catch(console.warn); }}"
+    },
+    {
+      "owner": "Content",
+      "tag": "DropdownItem",
+      "label": "\"Pattern\"",
+      "rgOptions": "{LAUNCH_ARTWORK_PATTERN_OPTIONS}",
+      "onChange": "{async (option) => setStatus(await setSetting(\"launch_artwork_pattern\", String(option.data)))}"
+    },
+    {
+      "owner": "Content",
+      "tag": "SliderField",
+      "label": "\"Animation duration\"",
+      "min": "{3}",
+      "max": "{45}",
+      "step": "{1}",
+      "onChange": "{async (value) => setStatus(await setSetting(\"launch_artwork_duration_seconds\", value))}"
+    },
+    {
+      "owner": "Content",
+      "tag": "ButtonItem",
+      "label": "\"Preview launch animation\"",
+      "onClick": "{() => void runLaunchPreview()}"
+    },
+    {
+      "owner": "Content",
+      "tag": "ButtonItem",
+      "label": "\"Preview launch animation\"",
+      "onClick": "{() => void runLaunchPreview()}"
+    },
+    {
+      "owner": "Content",
+      "tag": "DropdownItem",
+      "label": "\"Meter\"",
+      "rgOptions": "{PERFORMANCE_OPTIONS}",
+      "onChange": "{async (option) => setStatus(await setSetting(\"performance_metric\", String(option.data)))}"
+    },
+    {
+      "owner": "Content",
+      "tag": "DropdownItem",
+      "label": "\"Meter response\"",
+      "rgOptions": "{SMOOTHING_OPTIONS}",
+      "onChange": "{async (option) => setStatus(await setSetting(\"performance_smoothing\", String(option.data)))}"
+    },
+    {
+      "owner": "Content",
+      "tag": "DropdownItem",
+      "label": "\"Fill direction\"",
+      "rgOptions": "{DIRECTION_OPTIONS}",
+      "onChange": "{async (option) => setStatus(await setSetting(\"mixed_direction\", String(option.data)))}"
+    },
+    {
+      "owner": "Content",
+      "tag": "DropdownItem",
+      "label": "\"Temperature colours\"",
+      "rgOptions": "{PALETTE_OPTIONS}",
+      "onChange": "{async (option) => setStatus(await setSetting(\"temperature_palette\", String(option.data)))}"
+    },
+    {
+      "owner": "Content",
+      "tag": "ColorChoice",
+      "label": "\"Cool colour\"",
+      "onClick": "{() => chooseTemperatureColor(\"temperature_custom_cool\", \"Cool colour\", status.temperature_custom_cool)}"
+    },
+    {
+      "owner": "Content",
+      "tag": "ColorChoice",
+      "label": "\"Middle colour\"",
+      "onClick": "{() => chooseTemperatureColor(\"temperature_custom_middle\", \"Middle colour\", status.temperature_custom_middle)}"
+    },
+    {
+      "owner": "Content",
+      "tag": "ColorChoice",
+      "label": "\"Hot colour\"",
+      "onClick": "{() => chooseTemperatureColor(\"temperature_custom_hot\", \"Hot colour\", status.temperature_custom_hot)}"
+    },
+    {
+      "owner": "Content",
+      "tag": "SliderField",
+      "label": "\"Cool temperature\"",
+      "min": "{30}",
+      "max": "{80}",
+      "step": "{1}",
+      "onChange": "{async (value) => setStatus(await setSetting(\"cool_temp_c\", value))}"
+    },
+    {
+      "owner": "Content",
+      "tag": "SliderField",
+      "label": "\"Hot temperature\"",
+      "min": "{60}",
+      "max": "{110}",
+      "step": "{1}",
+      "onChange": "{async (value) => setStatus(await setSetting(\"hot_temp_c\", value))}"
+    },
+    {
+      "owner": "Content",
+      "tag": "ToggleField",
+      "label": "\"Follow GabeCubeAura automatically\"",
+      "onChange": "{async (enabled) => setStatus(await setSetting(\"faceplate_lab_enabled\", enabled))}"
+    },
+    {
+      "owner": "Content",
+      "tag": "DropdownItem",
+      "label": "\"Faceplate at Home\"",
+      "rgOptions": "{FACEPLATE_HOME_OPTIONS}",
+      "onChange": "{async (option) => { await changeFaceplateRoute(option.data as \"weather\" | \"dashboard\" | \"native-clock\", status.faceplate.routing.routes.game); }}"
+    },
+    {
+      "owner": "Content",
+      "tag": "DropdownItem",
+      "label": "\"Dashboard at Home\"",
+      "rgOptions": "{FACEPLATE_DASHBOARD_SOURCE_OPTIONS}",
+      "onChange": "{async (option) => { const source = option.data as \"weather\" | \"artwork\"; if (source === \"artwork\" && status.faceplate_dashboard_home_appid <= 0) { setFaceplateRoutingMessage(\"No Artwork Dashboard is assigned yet. Open Faceplate Artwork Studio, choose a saved artwork, then select Use for Dashboard Home.\"); return; } try { setStatus(await setSetting(\"faceplate_dashboard_home_source\", source)); setFaceplateRoutingMessage(source === \"weather\" ? \"Weather Dashboard selected. Your Artwork Dashboard assignment is kept for later.\" : \"Artwork Dashboard selected.\"); } catch (error) { setFaceplateRoutingMessage(String(error).replace(/^Error:\\s*/, \"\")); } }}"
+    },
+    {
+      "owner": "Content",
+      "tag": "ButtonItem",
+      "label": "\"Choose an Artwork Dashboard\"",
+      "onClick": "{() => { Navigation.CloseSideMenus(); Navigation.Navigate(\"/gabecubeaura/settings/pixel-artwork\"); }}"
+    },
+    {
+      "owner": "Content",
+      "tag": "DropdownItem",
+      "label": "\"Faceplate in game\"",
+      "rgOptions": "{FACEPLATE_GAME_OPTIONS}",
+      "onChange": "{async (option) => await changeFaceplateRoute(status.faceplate.routing.routes.home, option.data as \"dashboard\" | \"artwork\" | \"artwork-dashboard\" | \"weather\")}"
+    },
+    {
+      "owner": "Content",
+      "tag": "ToggleField",
+      "label": "{status.ui_language === 'fr' ? 'Horloge du Dashboard Home' : 'Home Dashboard Clock'}",
+      "onChange": "{async (value) => setStatus(await setSetting('faceplate_dashboard_show_clock', value))}"
+    },
+    {
+      "owner": "Content",
+      "tag": "ButtonItem",
+      "label": "{status.ui_language === 'fr' ? 'Garder l’horloge activée' : 'Keep clock enabled'}",
+      "onClick": "{async () => setStatus(await setSetting('faceplate_dashboard_show_clock', true))}"
+    },
+    {
+      "owner": "Content",
+      "tag": "ButtonItem",
+      "label": "{status.ui_language === 'fr' ? 'Désactiver l’horloge' : 'Turn clock off'}",
+      "onClick": "{async () => setStatus(await setSetting('faceplate_dashboard_show_clock', false))}"
+    },
+    {
+      "owner": "Content",
+      "tag": "DropdownItem",
+      "label": "\"Dashboard clock\"",
+      "rgOptions": "{FACEPLATE_DASHBOARD_CLOCK_OPTIONS}",
+      "onChange": "{async (option) => setStatus(await setSetting(\"faceplate_dashboard_clock_format\", option.data))}"
+    },
+    {
+      "owner": "Content",
+      "tag": "ToggleField",
+      "label": "\"Dashboard weather notch\"",
+      "onChange": "{async (value) => setStatus(await setSetting(\"faceplate_dashboard_show_weather\", value))}"
+    },
+    {
+      "owner": "Content",
+      "tag": "DropdownItem",
+      "label": "\"Dashboard clock position\"",
+      "rgOptions": "{FACEPLATE_DASHBOARD_CLOCK_POSITION_OPTIONS}",
+      "onChange": "{async (option) => setStatus(await setSetting(\"faceplate_dashboard_clock_position\", option.data))}"
+    },
+    {
+      "owner": "Content",
+      "tag": "ToggleField",
+      "label": "\"In-game session and controllers\"",
+      "onChange": "{async (value) => setStatus(await setSetting(\"faceplate_dashboard_game_session\", value))}"
+    },
+    {
+      "owner": "Content",
+      "tag": "DropdownItem",
+      "label": "\"Dashboard bottom row\"",
+      "rgOptions": "{FACEPLATE_DASHBOARD_BOTTOM_OPTIONS}",
+      "onChange": "{async (option) => setStatus(await setSetting(\"faceplate_dashboard_bottom_mode\", option.data))}"
+    },
+    {
+      "owner": "Content",
+      "tag": "DropdownItem",
+      "label": "\"Battery display\"",
+      "rgOptions": "{FACEPLATE_DASHBOARD_BATTERY_OPTIONS}",
+      "onChange": "{async (option) => setStatus(await setSetting(\"faceplate_dashboard_battery_style\", option.data))}"
+    },
+    {
+      "owner": "Content",
+      "tag": "ToggleField",
+      "label": "\"Show P2 when connected\"",
+      "onChange": "{async (value) => setStatus(await setSetting(\"faceplate_dashboard_show_p2\", value))}"
+    },
+    {
+      "owner": "Content",
+      "tag": "ButtonItem",
+      "label": "\"Log in to SteamGridDB\"",
+      "onClick": "{() => openCopyCapableBrowser(STEAMGRIDDB_DIRECT_LOGIN_URL)}"
+    },
+    {
+      "owner": "Content",
+      "tag": "ButtonItem",
+      "label": "\"Open API keys in the system browser\"",
+      "onClick": "{() => openCopyCapableBrowser(STEAMGRIDDB_API_KEY_URL)}"
+    },
+    {
+      "owner": "Content",
+      "tag": "TextField",
+      "label": "\"Personal API key\"",
+      "onChange": "{(event) => setSteamGridDbKey(event.currentTarget.value)}"
+    },
+    {
+      "owner": "Content",
+      "tag": "ButtonItem",
+      "label": "{status.faceplate.steamgriddb.configured ? \"Replace SteamGridDB key\" : \"Save SteamGridDB key\"}",
+      "onClick": "{() => { setFaceplateActionBusy(true); void setSteamGridDBApiKey(steamGridDbKey.trim()).then((next) => { setStatus(next); setSteamGridDbKey(\"\"); }).catch(console.warn).finally(() => setFaceplateActionBusy(false)); }}"
+    },
+    {
+      "owner": "Content",
+      "tag": "ButtonItem",
+      "label": "\"Verify SteamGridDB key now\"",
+      "onClick": "{() => { setFaceplateActionBusy(true); void validateSteamGridDBApiKey().then(setStatus).catch(console.warn) .finally(() => setFaceplateActionBusy(false)); }}"
+    },
+    {
+      "owner": "Content",
+      "tag": "ButtonItem",
+      "label": "\"Forget SteamGridDB key\"",
+      "onClick": "{() => { setFaceplateActionBusy(true); void clearSteamGridDBApiKey().then(setStatus).catch(console.warn) .finally(() => setFaceplateActionBusy(false)); }}"
+    },
+    {
+      "owner": "Content",
+      "tag": "DropdownItem",
+      "label": "\"Sleep / shutdown power\"",
+      "rgOptions": "{FACEPLATE_POWER_OPTIONS}",
+      "onChange": "{async (option) => setStatus(await setSetting(\"faceplate_power_mode\", String(option.data)))}"
+    },
+    {
+      "owner": "Content",
+      "tag": "ButtonItem",
+      "label": "{status.faceplate.powered === false ? \"Turn faceplate on\" : \"Turn faceplate off\"}",
+      "onClick": "{() => { setFaceplateActionBusy(true); void setFaceplatePower(status.faceplate.powered === false).then(setStatus) .catch(console.warn).finally(() => setFaceplateActionBusy(false)); }}"
+    },
+    {
+      "owner": "Content",
+      "tag": "ButtonItem",
+      "label": "\"Check for updates\"",
+      "onClick": "{() => void runUpdateAction(checkForUpdates)}"
+    },
+    {
+      "owner": "Content",
+      "tag": "ButtonItem",
+      "label": "\"View release notes\"",
+      "onClick": "{() => Navigation.NavigateToExternalWeb(update.release_url)}"
+    },
+    {
+      "owner": "Content",
+      "tag": "ButtonItem",
+      "label": "\"Download update\"",
+      "onClick": "{() => void runUpdateAction(prepareUpdate)}"
+    },
+    {
+      "owner": "Content",
+      "tag": "ButtonItem",
+      "label": "\"Cancel preparation\"",
+      "onClick": "{() => void cancelUpdatePreparation().then(setUpdate)}"
+    },
+    {
+      "owner": "Content",
+      "tag": "ButtonItem",
+      "label": "{`${update.recovery_prepared ? \"Restore\" : \"Install\"} ${update.available_version}`}",
+      "onClick": "{() => confirmUpdateInstall()}"
+    },
+    {
+      "owner": "Content",
+      "tag": "ButtonItem",
+      "label": "\"Dismiss update error\"",
+      "onClick": "{() => void runUpdateAction(dismissUpdateError)}"
+    },
+    {
+      "owner": "Content",
+      "tag": "ButtonItem",
+      "label": "\"Connect GitHub\"",
+      "onClick": "{() => void runUpdateAction(startPrivateUpdateAuthorization)}"
+    },
+    {
+      "owner": "Content",
+      "tag": "ButtonItem",
+      "label": "\"Open GitHub device authorization\"",
+      "onClick": "{() => Navigation.NavigateToExternalWeb(update.private_verification_uri || \"https://github.com/login/device\")}"
+    },
+    {
+      "owner": "Content",
+      "tag": "ButtonItem",
+      "label": "\"I authorized this device\"",
+      "onClick": "{() => void runUpdateAction(pollPrivateUpdateAuthorization)}"
+    },
+    {
+      "owner": "Content",
+      "tag": "ButtonItem",
+      "label": "\"Disconnect Private Lab\"",
+      "onClick": "{() => void runUpdateAction(disconnectPrivateUpdateAuthorization)}"
+    },
+    {
+      "owner": "Content",
+      "tag": "ToggleField",
+      "label": "\"Automatically check for updates\"",
+      "onChange": "{(value) => void runUpdateAction(() => setUpdatePreferences(value, update.notifications, update.check_interval_minutes, update.channel))}"
+    },
+    {
+      "owner": "Content",
+      "tag": "DropdownItem",
+      "label": "\"Check interval\"",
+      "rgOptions": "{UPDATE_INTERVAL_OPTIONS}",
+      "onChange": "{(option) => void runUpdateAction(() => setUpdatePreferences(update.auto_check, update.notifications, Number(option.data), update.channel))}"
+    },
+    {
+      "owner": "Content",
+      "tag": "DropdownItem",
+      "label": "\"Update channel\"",
+      "rgOptions": "{UPDATE_CHANNEL_OPTIONS.filter(option => option.data !== \"private\" || update.private_tools)}",
+      "onChange": "{(option) => void runUpdateAction(() => setUpdatePreferences(update.auto_check, update.notifications, update.check_interval_minutes, String(option.data) as \"stable\" | \"beta\" | \"private\"))}"
+    },
+    {
+      "owner": "Content",
+      "tag": "ToggleField",
+      "label": "\"Notify me when an update is available\"",
+      "onChange": "{(value) => void runUpdateAction(() => setUpdatePreferences(update.auto_check, value, update.check_interval_minutes, update.channel))}"
+    },
+    {
+      "owner": "Content",
+      "tag": "ButtonItem",
+      "label": "\"Return to Lab 114\"",
+      "onClick": "{async () => { setUpdateBusy(true); try { const prepared = await prepareLab114Rollback(); setUpdate(prepared); confirmUpdateInstall(prepared); } catch { setUpdate(await getUpdateStatus()); } finally { setUpdateBusy(false); } }}"
+    },
+    {
+      "owner": "Content",
+      "tag": "ButtonItem",
+      "label": "\"Prepare previous version\"",
+      "onClick": "{() => void runUpdateAction(preparePreviousVersion)}"
+    },
+    {
+      "owner": "Content",
+      "tag": "ButtonItem",
+      "label": "\"Check again\"",
+      "onClick": "{() => void runUpdateAction(checkForUpdates)}"
+    },
+    {
+      "owner": "Content",
+      "tag": "ButtonItem",
+      "label": "\"Export a local diagnostic\"",
+      "onClick": "{async () => { setDiagnosticBusy(true); try { const result = await exportDiagnosticReport(); setConfigurationActionMessage(`Diagnostic saved to ${result.path}`); } catch (error) { setConfigurationActionMessage(`Could not export diagnostic: ${String(error)}`); } finally { setDiagnosticBusy(false); } }}"
+    },
+    {
+      "owner": "Content",
+      "tag": "ToggleField",
+      "label": "\"Send crash diagnostics automatically\"",
+      "onChange": "{async (enabled) => { setDiagnosticBusy(true); try { setDiagnostics(await setDiagnosticUpload(enabled)); } catch (error) { console.warn(\"[GabeCubeAura] diagnostic preference failed\", error); } finally { setDiagnosticBusy(false); } }}"
+    },
+    {
+      "owner": "Content",
+      "tag": "ButtonItem",
+      "label": "\"Send diagnostic report now\"",
+      "onClick": "{() => { setDiagnosticBusy(true); void sendDiagnosticReport().then(setDiagnostics).catch((error) => { console.warn(\"[GabeCubeAura] diagnostic upload failed\", error); }).finally(() => setDiagnosticBusy(false)); }}"
+    },
+    {
+      "owner": "Content",
+      "tag": "ButtonItem",
+      "label": "\"Open last private diagnostic\"",
+      "onClick": "{() => openSystemBrowser(diagnostics.last_upload_url)}"
+    },
+    {
+      "owner": "Content",
+      "tag": "ToggleField",
+      "label": "\"Steam control\"",
+      "onChange": "{async (enabled) => setStatus(await setSteamControl(enabled))}"
+    },
+    {
+      "owner": "Content",
+      "tag": "ToggleField",
+      "label": "\"Français / English\"",
+      "onChange": "{async (value) => { setLanguageBusy(true); setLanguageError(\"\"); try { setStatus(await setSetting(\"ui_language\", value ? \"fr\" : \"en\")); } catch (error) { setLanguageError(`Could not save the language: ${String(error)}`); } finally { setLanguageBusy(false); } }}"
+    },
+    {
+      "owner": "Content",
+      "tag": "ToggleField",
+      "label": "\"Show Hi-Fi Crest tuning\"",
+      "onChange": "{async (value) => setStatus(await setSetting(\"audio_sync_hifi_lab_enabled\", value))}"
+    },
+    {
+      "owner": "Content",
+      "tag": "ToggleField",
+      "label": "\"Show technical details\"",
+      "onChange": "{setShowDebug}"
+    },
+    {
+      "owner": "Content",
+      "tag": "ButtonItem",
+      "label": "\"Export configuration JSON\"",
+      "onClick": "{() => void exportConfiguration() .then((result) => { setConfigurationExportPath(result.path); setConfigurationExportError(\"\"); }) .catch((error) => { console.warn(\"[GabeCubeAura] configuration export failed\", error); setConfigurationExportError(error instanceof Error ? error.message : String(error)); })}"
+    },
+    {
+      "owner": "Content",
+      "tag": "ButtonItem",
+      "label": "\"Import configuration JSON\"",
+      "onClick": "{() => void chooseConfigurationFile()}"
+    },
+    {
+      "owner": "Content",
+      "tag": "ButtonItem",
+      "label": "\"Reset to defaults\"",
+      "onClick": "{confirmConfigurationReset}"
+    },
+    {
+      "owner": "Content",
+      "tag": "ToggleField",
+      "label": "\"Reverse physical LED order\"",
+      "onChange": "{async (value) => setStatus(await setSetting(\"reverse_led_order\", value))}"
+    },
+    {
+      "owner": "Content",
+      "tag": "SliderField",
+      "label": "\"Extra dark LEDs\"",
+      "min": "{0}",
+      "max": "{6}",
+      "step": "{1}",
+      "onChange": "{async (value) => setStatus(await setSetting(\"countdown_dark_edge_compensation\", value))}"
+    },
+    {
+      "owner": "Content",
+      "tag": "ButtonItem",
+      "label": "\"Valid package\"",
+      "onClick": "{() => void runUpdateLab(\"valid-package\")}"
+    },
+    {
+      "owner": "Content",
+      "tag": "ButtonItem",
+      "label": "\"Checksum mismatch\"",
+      "onClick": "{() => void runUpdateLab(\"checksum-mismatch\")}"
+    },
+    {
+      "owner": "Content",
+      "tag": "ButtonItem",
+      "label": "\"Rollback rehearsal\"",
+      "onClick": "{() => void runUpdateLab(\"rollback\")}"
+    },
+    {
+      "owner": "Content",
+      "tag": "ButtonItem",
+      "label": "\"Export test report\"",
+      "onClick": "{() => void exportUpdateTestReport().then((result) => setUpdateLabReportPath(result.path)).catch((error) => setUpdateLabReportPath(String(error)))}"
+    },
+    {
+      "owner": "SettingsGroup",
+      "tag": "ButtonItem",
+      "label": "{`Back to ${title}`}",
+      "onClick": "{() => openPage(null)}"
+    },
+    {
+      "owner": "SettingsGroup",
+      "tag": "ButtonItem",
+      "label": "{page === \"artwork\" ? \"Light bar artwork colours\" : PAGE_END_LABELS[page as Exclude<Page, \"quick\">]}",
+      "onClick": "{() => { lastPage.current = page; openPage(page); }}"
+    },
+    {
+      "owner": "LegacySettingsPage",
+      "tag": "ButtonItem",
+      "label": "\"Back to settings\"",
+      "onClick": "{() => Navigation.Navigate(\"/gabecubeaura/settings\")}"
+    }
+  ]
+}

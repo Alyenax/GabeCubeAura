@@ -1,8 +1,12 @@
 node_modules/
+node_modules
 .pnpm-store/
 dist/
+!licenses/decky-api-1.1.3/dist/
+!licenses/decky-api-1.1.3/dist/index.js
 out/
 __pycache__/
 *.pyc
 .DS_Store
 CHECKPOINT.md
+assets/gabe-asr-runtime/

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+import os
 import tempfile
 from pathlib import Path
 from types import SimpleNamespace
@@ -18,6 +19,7 @@ from signalbar.providers.screen_sync import (
     ScreenSyncProcessor,
     ScreenSyncProvider,
 )
+from signalbar.screen_sync_trace import TRACE_GST_DEBUG
 from signalbar.providers.events import RED
 from signalbar.settings import SettingsStore
 from signalbar.backend import Engine
@@ -149,7 +151,7 @@ class ScreenCaptureDiscoveryTests(unittest.TestCase):
             self.assertEqual(service._cleanup_orphan_captures(), 2)
         self.assertEqual(
             [call.args for call in kill.call_args_list],
-            [(101, 15), (102, 15)],
+            [(101, 2), (102, 2)],
         )
         self.assertEqual(service.status()["orphan_processes_cleaned"], 2)
 
@@ -172,7 +174,11 @@ class ScreenCaptureDiscoveryTests(unittest.TestCase):
 
         service = ScreenCaptureService(popen=popen)
         service._active = True
-        with patch("signalbar.providers.screen_sync.shutil.which",
+        polluted = {"LD_LIBRARY_PATH": "/decky/bundled", "LD_PRELOAD": "/decky/loader.so",
+                    "PYTHONHOME": "/decky/python", "PYTHONPATH": "/decky/modules",
+                    "GST_DEBUG_FILE": "/decky/global-debug.log"}
+        with patch.dict(os.environ, polluted), \
+                patch("signalbar.providers.screen_sync.shutil.which",
                    return_value="/usr/bin/gst-launch-1.0"), \
                 patch.object(service, "_cleanup_orphan_captures", return_value=0), \
                 patch.object(service, "_discover_gamescope_node",
@@ -184,6 +190,67 @@ class ScreenCaptureDiscoveryTests(unittest.TestCase):
         process.stdout.close()
         process.stderr.close()
         self.assertTrue(commands[0][1]["start_new_session"])
+        environment = commands[0][1]["env"]
+        self.assertEqual(environment["LD_LIBRARY_PATH"], "")
+        self.assertEqual(environment["XDG_RUNTIME_DIR"], "/run/user/1000")
+        self.assertEqual(environment["GST_DEBUG"], "1")
+        self.assertEqual(environment["GST_DEBUG_NO_COLOR"], "1")
+        self.assertNotIn("GST_DEBUG_FILE", environment)
+        for name in ("LD_PRELOAD", "PYTHONHOME", "PYTHONPATH"):
+            self.assertNotIn(name, environment)
+
+    def test_discovery_uses_system_libraries_and_selected_pipewire_session(self):
+        calls = []
+        def run(command, **kwargs):
+            calls.append((command, kwargs))
+            return SimpleNamespace(returncode=0, stdout="[]", stderr="")
+        service = ScreenCaptureService(run=run)
+        with patch.dict(os.environ, {"LD_LIBRARY_PATH": "/decky/bundled",
+                                     "LD_PRELOAD": "/decky/loader.so",
+                                     "PYTHONHOME": "/decky/python", "PYTHONPATH": "/decky/modules"}), \
+                patch("signalbar.providers.screen_sync.shutil.which", return_value="/usr/bin/pw-dump"), \
+                patch.object(service, "_command_for_runtime", side_effect=lambda cmd, _: (cmd, "deck")):
+            self.assertEqual(service._pipewire_dump("/run/user/1000"), [])
+        environment = calls[0][1]["env"]
+        self.assertEqual(environment["XDG_RUNTIME_DIR"], "/run/user/1000")
+        self.assertEqual(environment["LD_LIBRARY_PATH"], "")
+        for name in ("LD_PRELOAD", "PYTHONHOME", "PYTHONPATH"):
+            self.assertNotIn(name, environment)
+
+    def test_exited_child_retains_error_even_before_first_select(self):
+        with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
+            stderr.write(b"ERROR: no element pipewiresrc\n")
+            stderr.write(b"INFO GST_STATES pipeline closing normally\n" * 30); stderr.seek(0)
+            process = SimpleNamespace(stdout=stdout, stderr=stderr, poll=lambda: 1)
+            service = ScreenCaptureService(popen=lambda *_a, **_kw: process)
+            service._active = True
+            with patch("signalbar.providers.screen_sync.shutil.which", return_value="/usr/bin/gst-launch-1.0"), \
+                    patch.object(service, "_cleanup_orphan_captures", return_value=0), \
+                    patch.object(service, "_discover_gamescope_node", return_value=("/run/user/1000", (91, "gamescope"), [])), \
+                    patch.object(service, "_command_for_runtime", side_effect=lambda cmd, _: (cmd, "deck")), \
+                    patch.object(service, "_wait", side_effect=lambda _: service._stop.set()):
+                service._supervise()
+            self.assertIn("no element pipewiresrc", service.status()["last_release_error"])
+
+    def test_capture_does_not_claim_live_frames_before_first_image(self):
+        with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
+            process = SimpleNamespace(stdout=stdout, stderr=stderr, poll=lambda: None)
+            service = ScreenCaptureService(popen=lambda *_a, **_kw: process)
+            service._active = True
+            observations = []
+            def check_waiting(*_args):
+                observations.append(service.status())
+                service._stop.set()
+                return [], [], []
+            with patch("signalbar.providers.screen_sync.shutil.which", return_value="/usr/bin/gst-launch-1.0"), \
+                    patch.object(service, "_cleanup_orphan_captures", return_value=0), \
+                    patch.object(service, "_discover_gamescope_node", return_value=("/run/user/1000", (91, "gamescope"), [])), \
+                    patch.object(service, "_command_for_runtime", side_effect=lambda cmd, _: (cmd, "deck")), \
+                    patch("signalbar.providers.screen_sync.select.select", side_effect=check_waiting), \
+                    patch.object(service, "_terminate_process"):
+                service._supervise()
+            self.assertEqual(observations[0]["phase"], "waiting")
+            self.assertIsNone(observations[0]["frame_age_s"])
 
     def test_failed_capture_is_released_before_retry_wait(self):
         events = []
@@ -200,7 +267,7 @@ class ScreenCaptureDiscoveryTests(unittest.TestCase):
         service = ScreenCaptureService(popen=lambda *_args, **_kwargs: process)
         service._active = True
 
-        def terminate(target):
+        def terminate(target, **_kwargs):
             if target is None:
                 return
             self.assertIs(target, process)
@@ -239,16 +306,15 @@ class ScreenCaptureDiscoveryTests(unittest.TestCase):
             def poll(self):
                 return None
 
-        ticks = [0.0]
-
-        def clock():
-            ticks[0] += 0.4
-            return ticks[0]
+        clock = ManualClock(10)
 
         process = RunningProcess()
         service = ScreenCaptureService(clock=clock, popen=lambda *_args, **_kwargs: process)
         service._active = True
         waits = []
+        def advance_capture(*_args):
+            clock.advance(0.4)
+            return [process.stdout.fileno()], [], []
 
         def stop_after_wait(seconds):
             waits.append(seconds)
@@ -261,6 +327,7 @@ class ScreenCaptureDiscoveryTests(unittest.TestCase):
                              return_value=("/run/user/1000", (91, "gamescope"), [])), \
                 patch.object(service, "_command_for_runtime",
                              side_effect=lambda command, _runtime: (command, "deck (uid 1000)")), \
+                patch("signalbar.providers.screen_sync.select.select", side_effect=advance_capture), \
                 patch.object(service, "_terminate_process"), \
                 patch.object(service, "_wait", side_effect=stop_after_wait):
             service._supervise()
@@ -272,6 +339,11 @@ class ScreenCaptureDiscoveryTests(unittest.TestCase):
         self.assertEqual(service.status()["phase"], "waiting")
         self.assertEqual(service._selector_mode, "target-object")
         self.assertEqual(service.status()["capture_sessions_released"], 1)
+
+        failure = service.status()["recent_failures"][-1]
+        self.assertEqual(failure["failure"], "frame-stall")
+        self.assertEqual(failure["frames_received"], 1)
+        self.assertIsNotNone(failure["first_frame_after_s"])
 
     def test_compatibility_retry_survives_pipewire_disappearing_during_session_change(self):
         service = ScreenCaptureService()
@@ -293,6 +365,12 @@ class ScreenCaptureDiscoveryTests(unittest.TestCase):
         self.assertEqual(service._selector_mode, "target-object")
 
     def test_failed_named_selectors_reach_numeric_node_fallback(self):
+        self._check_exited_selectors(1)
+
+    def test_clean_eos_without_frames_reaches_numeric_node_fallback(self):
+        self._check_exited_selectors(0)
+
+    def _check_exited_selectors(self, returncode):
         commands = []
         processes = []
 
@@ -302,10 +380,14 @@ class ScreenCaptureDiscoveryTests(unittest.TestCase):
                 self.stderr = tempfile.TemporaryFile()
 
             def poll(self):
-                return 1
+                return returncode
 
         def popen(command, **_kwargs):
             commands.append(command)
+            # Bound the regression: a clean EOS used to respawn forever with
+            # no backoff and never advance to the numeric fallback.
+            if len(commands) > 3:
+                service._stop.set()
             process = ExitedProcess()
             processes.append(process)
             return process
@@ -674,7 +756,7 @@ class ScreenSyncProviderTests(unittest.TestCase):
             "weather:preview",
         )
 
-    def test_customization_fallback_keeps_recording_marker(self):
+    def test_recording_replaces_screen_sync_fallback_with_its_own_channel(self):
         none = ProviderOutput("none", None, "none")
         fallback = ProviderOutput("customization:steady", normalize_frame([(4, 8, 12)] * 17), "fallback")
         result = Arbiter().choose(
@@ -683,10 +765,11 @@ class ScreenSyncProviderTests(unittest.TestCase):
             screen_sync_fallback=fallback, recording_marker=True,
             recording_marker_isolation=True,
         )
-        self.assertTrue(result.provider.startswith("customization:steady+recording"))
+        self.assertEqual("recording+recording", result.provider)
         self.assertEqual(result.frame[8], RED)
         self.assertEqual(result.frame[7], (0, 0, 0))
         self.assertEqual(result.frame[9], (0, 0, 0))
+        self.assertEqual(result.frame[0], (0, 0, 0))
 
     def test_steam_system_priority_blocks_events_and_fallback(self):
         frame = ProviderOutput("event:notification", normalize_frame([(20, 30, 40)] * 17), "event")

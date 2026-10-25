@@ -276,9 +276,36 @@ class EventTests(unittest.TestCase):
         self.assertEqual(countdown_with_marker.provider, "countdown")
         self.assertEqual(countdown_with_marker.frame, timer.frame)
 
+    def test_recording_reclaims_audio_and_screen_sync_channels(self):
+        arbiter = Arbiter()
+        base = ProviderOutput("audio-sync", BASE, "immersive")
+        common = dict(
+            guard_allows=True, game=GameState(42, "Test"),
+            performance=base, artwork=base,
+            idle=ProviderOutput("idle", None, ""),
+            recording_marker=True,
+            screen_sync_base=ProviderOutput("screen-sync", BASE, "immersive"),
+            audio_sync_base=base,
+        )
+        for mode in ("audio_sync", "screen_sync"):
+            result = arbiter.choose(mode=mode, **common)
+            self.assertEqual("recording+recording", result.provider)
+            self.assertEqual(RED, result.frame[8])
+            self.assertEqual((0, 0, 0), result.frame[0])
+
+    def test_recording_stops_audio_capture_until_steam_finishes(self):
+        values = {
+            "signalbar_enabled": True,
+            "stripmine_priority_audio_sync": "signalbar",
+        }
+        self.assertFalse(Engine._audio_sync_should_run(
+            values, True, False, True, False, recording=True,
+        ))
+
     def test_engine_settings_game_exit_and_preview_are_safe(self):
         with tempfile.TemporaryDirectory() as folder:
             settings = SettingsStore(str(Path(folder) / "settings.json"))
+            settings.update({'faceplate_lab_enabled':False})
             engine = Engine(settings, str(Path(folder) / "artwork.json"))
             engine.set_game(42, "Test")
             engine.update_settings({"events_enabled": False})
@@ -297,6 +324,7 @@ class EventTests(unittest.TestCase):
     def test_engine_uses_saved_animation_and_preview_can_override_it(self):
         with tempfile.TemporaryDirectory() as folder:
             settings = SettingsStore(str(Path(folder) / "settings.json"))
+            settings.update({'faceplate_lab_enabled':False})
             settings.update({"events_enabled": True,
                              "event_notification_variant": "notification-ample"})
             engine = Engine(settings, str(Path(folder) / "artwork.json"))
@@ -311,6 +339,7 @@ class EventTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder, patch.dict(DURATIONS, {"notification": .3}):
             hardware = LoopHardware()
             settings = SettingsStore(str(Path(folder) / "settings.json"))
+            settings.update({'faceplate_lab_enabled':False})
             engine = Engine(settings, str(Path(folder) / "artwork.json"),
                             hardware_factory=lambda: hardware)
             engine.update_settings({"mode": "artwork", "events_enabled": True,
@@ -334,6 +363,7 @@ class EventTests(unittest.TestCase):
             hardware = LoopHardware()
             lease = RecordingLease()
             settings = SettingsStore(str(Path(folder) / "settings.json"))
+            settings.update({'faceplate_lab_enabled':False})
             settings.update({"mode": "events", "events_enabled": True,
                              "event_notification_variant": "notification-original",
                              "controller_battery_display": "off", "weather_display": "off"})
@@ -399,6 +429,7 @@ class EventTests(unittest.TestCase):
             lease = RecordingLease()
             claim = RecordingStripMineClaim()
             settings = SettingsStore(str(Path(folder) / "settings.json"))
+            settings.update({'faceplate_lab_enabled':False})
             settings.update({"guard_stable_s": .5})
             engine = Engine(settings, str(Path(folder) / "artwork.json"),
                             hardware_factory=lambda: hardware, event_lease=lease,
@@ -422,6 +453,7 @@ class EventTests(unittest.TestCase):
             hardware = LoopHardware()
             claim = OrderedStripMineClaim(hardware)
             settings = SettingsStore(str(Path(folder) / "settings.json"))
+            settings.update({'faceplate_lab_enabled':False})
             settings.update({"guard_stable_s": .5})
             engine = Engine(settings, str(Path(folder) / "artwork.json"),
                             hardware_factory=lambda: hardware, stripmine_claim=claim)
@@ -444,6 +476,7 @@ class EventTests(unittest.TestCase):
             hardware = LoopHardware()
             claim = RecordingStripMineClaim()
             settings = SettingsStore(str(Path(folder) / "settings.json"))
+            settings.update({'faceplate_lab_enabled':False})
             settings.update({"mode": "events", "controller_battery_display": "off",
                              "weather_display": "off", "guard_stable_s": .5})
             engine = Engine(settings, str(Path(folder) / "artwork.json"),
@@ -462,6 +495,7 @@ class EventTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             hardware = LoopHardware()
             settings = SettingsStore(str(Path(folder) / "settings.json"))
+            settings.update({'faceplate_lab_enabled':False})
             engine = Engine(settings, str(Path(folder) / "artwork.json"),
                             hardware_factory=lambda: hardware)
             engine.update_settings({"events_enabled": True,
@@ -506,8 +540,9 @@ class EventTests(unittest.TestCase):
 
     def test_engine_drops_events_during_critical_countdown_but_tracks_recording(self):
         with tempfile.TemporaryDirectory() as folder:
-            engine = Engine(SettingsStore(str(Path(folder) / "settings.json")),
-                            str(Path(folder) / "artwork.json"))
+            settings = SettingsStore(str(Path(folder) / "settings.json"))
+            settings.update({'faceplate_lab_enabled':False})
+            engine = Engine(settings, str(Path(folder) / "artwork.json"))
             engine.set_game(42, "Test")
             engine.update_settings({"events_enabled": True})
             engine.countdown.start("free", 240, label="Free timer")
@@ -522,14 +557,51 @@ class EventTests(unittest.TestCase):
 
     def test_recording_capture_state_survives_disabled_visual_events(self):
         with tempfile.TemporaryDirectory() as folder:
-            engine = Engine(SettingsStore(str(Path(folder) / "settings.json")),
-                            str(Path(folder) / "artwork.json"))
+            settings = SettingsStore(str(Path(folder) / "settings.json"))
+            settings.update({'faceplate_lab_enabled':False})
+            engine = Engine(settings, str(Path(folder) / "artwork.json"))
             engine.update_settings({"events_enabled": False, "event_recording_enabled": False})
             self.assertFalse(engine.trigger_event("record-start"))
             self.assertTrue(engine.events.recording)
             self.assertFalse(engine.events.status()["active"])
             self.assertFalse(engine.trigger_event("record-stop"))
             self.assertFalse(engine.events.recording)
+
+    def test_faceplate_rec_refreshes_only_on_real_state_transitions(self):
+        with tempfile.TemporaryDirectory() as folder:
+            settings = SettingsStore(str(Path(folder) / "settings.json"))
+            settings.update({
+                "faceplate_lab_enabled": True,
+                "events_enabled": False,
+                "event_recording_enabled": False,
+            })
+            engine = Engine(settings, str(Path(folder) / "artwork.json"))
+            engine.faceplate_preferences.update(home_scene="dashboard")
+            engine.report_runtime_diagnostic("heartbeat")
+            with patch.object(
+                    engine, "_reconcile_faceplate", return_value=1) as reconcile:
+                self.assertFalse(engine.trigger_event("record-start"))
+                self.assertFalse(engine.trigger_event("record-start"))
+                self.assertFalse(engine.trigger_event("record-stop"))
+                self.assertFalse(engine.trigger_event("record-stop"))
+            self.assertEqual(2, reconcile.call_count)
+            self.assertEqual(
+                [call.args[0] for call in reconcile.call_args_list],
+                ["steam-record-start", "steam-record-stop"],
+            )
+
+    def test_notifications_never_force_a_faceplate_flash_write(self):
+        with tempfile.TemporaryDirectory() as folder:
+            settings = SettingsStore(str(Path(folder) / "settings.json"))
+            settings.update({"faceplate_lab_enabled": True, "events_enabled": True})
+            engine = Engine(settings, str(Path(folder) / "artwork.json"))
+            engine.faceplate_preferences.update(home_scene="dashboard")
+            with patch.object(engine, "_reconcile_faceplate") as reconcile:
+                self.assertTrue(engine.trigger_event("notification"))
+            reconcile.assert_not_called()
+            snapshot = engine.faceplate_steam_state.snapshot()
+            self.assertEqual("notification", snapshot.recent_event)
+            self.assertNotIn("count", snapshot.render_payload(snapshot.recent_event))
 
 
 if __name__ == "__main__":

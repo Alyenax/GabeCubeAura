@@ -338,7 +338,10 @@ def controller_frame(kind, variant, elapsed, percent=74, second_percent=25, *, i
         else:
             frame = _gauge(percent, values=values, player=player)
             if percent is not None and percent > 0:
-                frame[max(index for index, pixel in enumerate(frame) if pixel != BLACK)] = WHITE
+                # Black is a valid gauge colour. Keep the white connection tip
+                # at the logical battery endpoint even when no fill is visible.
+                tip = min(LED_COUNT, max(1, round(percent * LED_COUNT / 100))) - 1
+                frame[tip] = WHITE
     elif kind == "low":
         if variant == "beacon":
             if t < 1.25:
@@ -413,6 +416,9 @@ def _normalise_controllers(raw):
     return result
 
 
+FACEPLATE_BATTERY_FALLBACK_SECONDS = 30 * 60
+
+
 class ControllerProvider:
     def __init__(self, clock=time.monotonic):
         self._clock = clock
@@ -426,13 +432,26 @@ class ControllerProvider:
         self._charging_since = {}
         self._charge_completed_at = {}
         self._last_update_at = None
+        # Steam sometimes keeps the controller in its roster while omitting
+        # battery_level for several polls.  This memory is Faceplate-only: it
+        # must not manufacture low-battery alerts or keep a disconnected seat
+        # visible.  A real percentage remains usable for at most 30 minutes.
+        self._faceplate_battery_memory = {}
         self._style = {}
         self._preview_count = 1
         self._preview_target = 0
+        self._preview_owner = ''
 
     def clear_transients(self):
         with self._lock:
             self._active = None
+
+    def stop_preview(self, owner):
+        """End a synthetic demo without dropping a newer real controller alert."""
+        with self._lock:
+            if (self._active is not None and self._active[3]
+                    and self._preview_owner == owner):
+                self._active = None
 
     def clear(self):
         with self._lock:
@@ -443,6 +462,38 @@ class ControllerProvider:
             self._active = None
             self._initialized = False
             self._last_update_at = None
+            self._faceplate_battery_memory.clear()
+
+    def primary_battery(self):
+        """Return only fresh P1 telemetry for slow Faceplate composition."""
+        batteries = self.faceplate_batteries(limit=1)
+        return batteries[0] if batteries else None
+
+    def faceplate_batteries(self, limit=2):
+        """Return fresh, ordered P1/P2 telemetry for the compact Dashboard.
+
+        This deliberately exposes no identifiers or controller names.  The
+        provider's insertion order already represents the stable player-seat
+        order used by the LED renderer.
+        """
+        with self._lock:
+            self._expire()
+            if not self._controllers:
+                return []
+            now = self._clock()
+            result = []
+            for item in list(self._controllers.values())[:max(1, min(2, int(limit)))]:
+                percent = _render_percent(item)
+                if percent is None:
+                    remembered = self._faceplate_battery_memory.get(item["id"])
+                    if (remembered is not None
+                            and now - remembered[1] <= FACEPLATE_BATTERY_FALLBACK_SECONDS):
+                        percent = remembered[0]
+                result.append({
+                    "percent": int(percent) if percent is not None else None,
+                    "charging": item.get("charging") is True,
+                })
+            return result
 
     def _expire(self):
         # The frontend renews this lease on every successful two-second query.
@@ -466,6 +517,7 @@ class ControllerProvider:
         if selected not in VARIANTS[kind]:
             return False
         self._active = (kind, selected, controller, preview)
+        self._preview_owner = ''
         self._started_at = self._clock()
         return True
 
@@ -476,6 +528,16 @@ class ControllerProvider:
             self._expire()
             self._style = dict(values)
             self._last_update_at = self._clock()
+            now = self._last_update_at
+            self._faceplate_battery_memory = {
+                identifier: remembered
+                for identifier, remembered in self._faceplate_battery_memory.items()
+                if now - remembered[1] <= FACEPLATE_BATTERY_FALLBACK_SECONDS
+            }
+            for identifier, item in fresh.items():
+                percent = _render_percent(item)
+                if percent is not None:
+                    self._faceplate_battery_memory[identifier] = (int(percent), now)
             previous = self._controllers
             # Steam may reorder its list between polls; do not swap player sides.
             fresh = {**{identifier: fresh[identifier] for identifier in previous if identifier in fresh},
@@ -537,7 +599,7 @@ class ControllerProvider:
                         started_kind = "charging"
         return started_kind
 
-    def preview(self, kind, values, variant="", count=1, target=0):
+    def preview(self, kind, values, variant="", count=1, target=0, *, owner=''):
         if kind not in VARIANTS:
             return False
         with self._lock:
@@ -556,7 +618,10 @@ class ControllerProvider:
             percent = 14 if kind == "low" else 38 if kind == "charging" else samples[self._preview_target]
             sample = {"id": "preview", "name": f"Controller {self._preview_target + 1}",
                       "percent": percent, "level": None, "charging": kind == "charging"}
-            return self._start(kind, sample, values, preview=True, variant=variant)
+            started = self._start(kind, sample, values, preview=True, variant=variant)
+            if started:
+                self._preview_owner = owner
+            return started
 
     def cancel_for_settings(self, values, game_running=False):
         with self._lock:

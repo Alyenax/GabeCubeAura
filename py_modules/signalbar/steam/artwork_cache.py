@@ -33,6 +33,42 @@ CUSTOM_GRID_SUFFIXES = {
 }
 
 
+def _animated_webp(path: Path):
+    """Recognise animated WebP without decoding or loading the file in RAM."""
+    if path.suffix.lower() != ".webp":
+        return False
+    try:
+        file_size = path.stat().st_size
+        with path.open("rb") as handle:
+            header = handle.read(12)
+            if len(header) != 12 or header[:4] != b"RIFF" or header[8:] != b"WEBP":
+                return False
+            offset = 12
+            for _ in range(64):
+                if offset + 8 > file_size:
+                    break
+                handle.seek(offset)
+                chunk_header = handle.read(8)
+                if len(chunk_header) != 8:
+                    break
+                kind = chunk_header[:4]
+                chunk_size = int.from_bytes(chunk_header[4:], "little")
+                data_offset = offset + 8
+                if chunk_size > file_size - data_offset:
+                    break
+                if kind in {b"ANIM", b"ANMF"}:
+                    return True
+                if kind == b"VP8X" and chunk_size:
+                    handle.seek(data_offset)
+                    flags = handle.read(1)
+                    if flags and flags[0] & 0x02:
+                        return True
+                offset = data_offset + chunk_size + (chunk_size & 1)
+    except OSError:
+        return False
+    return False
+
+
 def steam_roots():
     candidates = []
     for raw in (
@@ -114,7 +150,11 @@ def _grid_directories(root: Path):
 
 def _valid_image(path: Path):
     try:
-        return path.is_file() and 0 < path.stat().st_size <= MAX_BYTES
+        return (
+            path.is_file()
+            and 0 < path.stat().st_size <= MAX_BYTES
+            and not _animated_webp(path)
+        )
     except OSError:
         return False
 
@@ -162,7 +202,7 @@ def find_library_artwork(appid: int, source="hero"):
     return _find_artwork_details(appid, source)[0]
 
 
-def get_library_artwork(appid: int, source="hero"):
+def get_library_artwork(appid: int, source="hero", include_data=True):
     source = source if source in ARTWORK_SOURCES else "hero"
     path, actual_source, custom = _find_artwork_details(appid, source)
     if path is None:
@@ -173,8 +213,10 @@ def get_library_artwork(appid: int, source="hero"):
             "source_label": ARTWORK_SOURCES[source]["label"],
         }
     try:
-        raw = path.read_bytes()
         stat = path.stat()
+        with path.open("rb") as handle:
+            fingerprint_head = handle.read(4096)
+            raw = handle.read() if include_data else b""
     except OSError:
         return {
             "found": False,
@@ -186,9 +228,9 @@ def get_library_artwork(appid: int, source="hero"):
     if not mime.startswith("image/"):
         mime = "image/jpeg"
     fingerprint = hashlib.sha256(
-        f"{stat.st_size}:{stat.st_mtime_ns}:".encode("ascii") + raw[:4096]
+        f"{stat.st_size}:{stat.st_mtime_ns}:".encode("ascii") + fingerprint_head
     ).hexdigest()[:20]
-    return {
+    result = {
         "found": True,
         "appid": int(appid),
         "source": actual_source,
@@ -199,8 +241,11 @@ def get_library_artwork(appid: int, source="hero"):
         "mime": mime,
         "filename": path.name,
         "fingerprint": fingerprint,
-        "data_uri": f"data:{mime};base64,{base64.b64encode(raw).decode('ascii')}",
     }
+    if include_data:
+        raw = fingerprint_head + raw
+        result["data_uri"] = f"data:{mime};base64,{base64.b64encode(raw).decode('ascii')}"
+    return result
 
 
 def find_library_hero(appid: int):

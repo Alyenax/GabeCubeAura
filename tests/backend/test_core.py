@@ -153,6 +153,7 @@ class CoreTests(unittest.TestCase):
     def test_safety_only_requests_download_mode_suppression(self):
         with tempfile.TemporaryDirectory() as directory:
             store = SettingsStore(str(Path(directory) / "config.json"))
+            store.update({'faceplate_lab_enabled':False})
             engine = Engine(store, str(Path(directory) / "art.json"))
 
             store.update({"valve_ownership_policy": "critical"})
@@ -787,6 +788,7 @@ class PersistenceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             clock = ManualClock(100)
             store = SettingsStore(str(Path(directory) / "config.json"))
+            store.update({'faceplate_lab_enabled':False})
             engine = Engine(store, str(Path(directory) / "art.json"))
             engine.countdown = CountdownProvider(clock=clock)
 
@@ -928,6 +930,7 @@ class PersistenceTests(unittest.TestCase):
     def test_runtime_diagnostics_expose_family_callback_delay(self):
         with tempfile.TemporaryDirectory() as directory:
             store = SettingsStore(str(Path(directory) / "config.json"))
+            store.update({'faceplate_lab_enabled':False})
             engine = Engine(store, str(Path(directory) / "art.json"))
             engine.set_game(42, "Test")
             engine.report_runtime_diagnostic(
@@ -991,6 +994,11 @@ class PersistenceTests(unittest.TestCase):
                 payload = get_library_artwork(42, "header")
                 self.assertEqual(payload["source_label"], "Library Header")
 
+                metadata = get_library_artwork(42, "header", include_data=False)
+                self.assertTrue(metadata["found"])
+                self.assertNotIn("data_uri", metadata)
+                self.assertEqual(metadata["fingerprint"], payload["fingerprint"])
+
     def test_custom_grid_artwork_overrides_official_cache_for_active_account(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / "Steam"
@@ -1017,6 +1025,39 @@ class PersistenceTests(unittest.TestCase):
                 self.assertIn("Y3VzdG9t", payload["data_uri"])
                 (active_grid / "42_hero.png").unlink()
                 self.assertEqual(find_library_artwork(42, "hero"), cache / "library_hero.jpg")
+
+    def test_animated_custom_webp_is_not_sent_through_decky(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "Steam"
+            cache = root / "appcache/librarycache/42"
+            cache.mkdir(parents=True)
+            (cache / "library_hero.jpg").write_bytes(b"safe static fallback")
+            grid = root / "userdata/1234/config/grid"
+            grid.mkdir(parents=True)
+            vp8x = b"VP8X" + (10).to_bytes(4, "little") + b"\x02" + b"\x00" * 9
+            animated = b"RIFF" + (len(vp8x) + 4).to_bytes(4, "little") + b"WEBP" + vp8x
+            (grid / "42_hero.webp").write_bytes(animated)
+
+            with patch.dict("os.environ", {"SIGNALBAR_STEAM_ROOT": str(root)}):
+                payload = get_library_artwork(42, "hero")
+
+            self.assertTrue(payload["found"])
+            self.assertEqual(payload["filename"], "library_hero.jpg")
+            self.assertEqual(payload["source_label"], "Library Hero")
+
+    def test_animated_webp_without_static_fallback_is_unavailable(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "Steam"
+            grid = root / "userdata/1234/config/grid"
+            grid.mkdir(parents=True)
+            anim_chunk = b"ANIM" + (6).to_bytes(4, "little") + b"\x00" * 6
+            animated = b"RIFF" + (len(anim_chunk) + 4).to_bytes(4, "little") + b"WEBP" + anim_chunk
+            (grid / "42_hero.webp").write_bytes(animated)
+
+            with patch.dict("os.environ", {"SIGNALBAR_STEAM_ROOT": str(root)}):
+                payload = get_library_artwork(42, "hero")
+
+            self.assertFalse(payload["found"])
 
     def test_non_steam_shortcut_uses_custom_grid_and_falls_back_to_available_role(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -1336,6 +1377,7 @@ class PersistenceTests(unittest.TestCase):
     def test_thermal_handoff_restores_valve_and_stops_future_writes(self):
         with tempfile.TemporaryDirectory() as directory:
             store = SettingsStore(str(Path(directory) / "config.json"))
+            store.update({'faceplate_lab_enabled':False})
             engine = Engine(store, str(Path(directory) / "art.json"))
             clock = ManualClock(100)
             hardware = FakeHardware()

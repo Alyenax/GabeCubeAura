@@ -1,6 +1,6 @@
 # Licensing and reuse
 
-This page covers GCA source code and separately identified original Faceplate artwork. The 1.5.0 installation package has not been released.
+This page covers GCA source code and separately identified original Faceplate artwork. This notice accompanies the 1.5.0 installation package.
 
 GabeCubeAura code is licensed under **GNU GPL version 3 only (`GPL-3.0-only`)**, including the Faceplate engine, integration, frontend and original generator code. Applicable third-party notices and licences remain in force. The noncommercial terms below apply to separately identified original graphical resources, not to the code.
 
@@ -15,7 +15,7 @@ GabeCubeAura code is licensed under **GNU GPL version 3 only (`GPL-3.0-only`)**,
 
 Copyright 2026 Alyenax, for original owned material only.
 
-The complete [GPLv3 text](docs/media/public/GPL-3.0.txt) and [CC BY-NC-SA 4.0 text](docs/media/public/CC-BY-NC-SA-4.0.txt) accompany this documentation. The [complete file inventory](docs/media/public/faceplate-assets.json) identifies covered resource files by path, SHA-256, collection and attribution. This technical inventory does not claim rights over excluded third-party material.
+The complete [GPLv3 text](LICENSE) and [CC BY-NC-SA 4.0 text](licenses/CC-BY-NC-SA-4.0.txt) accompany this documentation. The [complete file inventory](licenses/faceplate-assets.json) identifies covered resource files by path, SHA-256, collection and attribution. This technical inventory does not claim rights over excluded third-party material.
 
 ## Original graphical resources
 
@@ -29,14 +29,14 @@ The graphical scope includes identified original images and animations in their 
 
 Third-party artwork is not transferred into CC BY-NC-SA by its appearance on a compatible screen or in a demonstration.
 
-A documentation GIF or image may combine original Faceplate artwork with excluded game artwork, logos, hardware depictions or other material. **No complete composite GIF is declared wholly CC BY-NC-SA by this page.** Only an identifiable original covered graphical contribution receives those terms. Other original non-Faceplate documentation illustrations retain their previously identified GPLv3 terms; independently owned elements retain their own rights. [Media scope](docs/media/public/LICENSING.md) and [credits](docs/media/public/CREDITS.md) describe the distinction. Credit is not a blanket redistribution authorization.
+A documentation GIF or image may combine original Faceplate artwork with excluded game artwork, logos, hardware depictions or other material. **No complete composite GIF is declared wholly CC BY-NC-SA by this page.** Only an identifiable original covered graphical contribution receives those terms. Other original non-Faceplate documentation illustrations retain their previously identified GPLv3 terms; independently owned elements retain their own rights. [Media scope](https://github.com/Alyenax/GabeCubeAura/blob/main/docs/media/public/LICENSING.md) and [credits](https://github.com/Alyenax/GabeCubeAura/blob/main/docs/media/public/CREDITS.md) describe the distinction. Credit is not a blanket redistribution authorization.
 
 ## Publication and earlier rights
 
-This documentation describes version 1.5.0. Its installation package has not been released; the current public software download remains 1.4.0. Documentation publication does not distribute the implementation or the installable artwork banks.
+This notice describes GabeCubeAura 1.5.0 and its identified bundled artwork.
 
 Valid historical grants and upstream licences remain in force. GCA is independent of Valve and JSAUX; their names identify compatible products and do not imply endorsement.
 
 ## Artwork inventory
 
-[Collection summary](docs/media/public/Faceplate-Artwork-Inventory.md) · [Complete file list with attribution and hashes](docs/media/public/faceplate-assets.json). The 197 entries are asset files, including variants and encoded representations, rather than 197 distinct designs.
+[Collection summary](licenses/Faceplate-Artwork-Inventory.md) · [Complete file list with attribution and hashes](licenses/faceplate-assets.json). The 197 entries are asset files, including variants and encoded representations, rather than 197 distinct designs.

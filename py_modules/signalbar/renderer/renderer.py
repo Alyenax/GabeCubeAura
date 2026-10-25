@@ -31,6 +31,7 @@ class Renderer:
         self._saved_brightness_scale: Optional[int] = None
         self._brightness_override_active = False
         self._brightness_recovery_path = brightness_recovery_path
+        self._recovery_payload = None
         self._startup_brightness_recovered = False
         self._recover_interrupted_brightness_override()
 
@@ -71,20 +72,22 @@ class Renderer:
     def _write_recovery(self, saved: int, *expected: int):
         if not self._brightness_recovery_path:
             return
+        payload = {"protocol": 2, "saved_brightness_scale": int(saved),
+                   "expected_brightness_scales": sorted({int(value) for value in expected})}
+        if payload == self._recovery_payload:
+            return
         path = os.path.abspath(self._brightness_recovery_path)
         folder = os.path.dirname(path)
         os.makedirs(folder, exist_ok=True)
         temporary = f"{path}.tmp"
         with open(temporary, "w", encoding="utf-8") as handle:
-            json.dump({
-                "protocol": 2,
-                "saved_brightness_scale": int(saved),
-                "expected_brightness_scales": sorted({int(value) for value in expected}),
-            }, handle, sort_keys=True)
+            json.dump(payload, handle, sort_keys=True)
             handle.write("\n")
         os.replace(temporary, path)
+        self._recovery_payload = payload
 
     def _clear_recovery(self):
+        self._recovery_payload = None
         if not self._brightness_recovery_path:
             return
         try:
@@ -151,11 +154,21 @@ class Renderer:
         setter = getattr(self.hardware, "set_brightness_scale", None)
         if reference is None or not callable(setter):
             return
+        current = self._read_brightness_scale()
+        if self._brightness_override_active and current == reference and self._applied_brightness_scale == reference:
+            return
+        if self._brightness_override_active and current is not None and current != self._applied_brightness_scale:
+            # Preserve the most recent external gain when reclaiming ownership.
+            self._saved_brightness_scale = current
+            if self._saved_state is not None:
+                self._saved_state = {**self._saved_state, "brightness_scale": str(current)}
+            self._write_recovery(current, reference)
         if not self._brightness_override_active:
-            current = self._read_brightness_scale()
             if current is None:
                 return
             self._saved_brightness_scale = current
+            if self._saved_state is not None:
+                self._saved_state = {**self._saved_state, "brightness_scale": str(current)}
             self._write_recovery(current, reference)
         elif self._applied_brightness_scale != reference and self._saved_brightness_scale is not None:
             # Either side of a sysfs transition can survive a sudden stop.

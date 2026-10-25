@@ -32,6 +32,7 @@ class FeedbackTests(unittest.TestCase):
     def test_home_and_game_displays_route_independently_with_game_overrides(self):
         with tempfile.TemporaryDirectory() as folder:
             store = SettingsStore(str(Path(folder) / "settings.json"))
+            store.update({'faceplate_lab_enabled':False})
             store.update({
                 "weather_location": {
                     "name": "Paris", "country": "France",
@@ -142,6 +143,7 @@ class FeedbackTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             path = str(Path(folder) / "settings.json")
             settings = SettingsStore(path)
+            settings.update({'faceplate_lab_enabled':False})
             settings.update({"game_display": "performance"})
             engine = Engine(settings, str(Path(folder) / "cache"))
             settings.update_display(42, "performance")

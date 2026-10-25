@@ -1,0 +1,531 @@
+{
+  "collection_revision": "weather-artwork-palette-v1-preserved-3",
+  "files": [
+    {
+      "path": "build_complete_weather_catalog.py",
+      "role": "collection-summary",
+      "sha256": "97191f8b38941f2227b4d6f44aa433d31975794091b6ae75071ae0ff3c4a69dc",
+      "size_bytes": 23260
+    },
+    {
+      "path": "build_palette.py",
+      "role": "original-builder",
+      "sha256": "1b5b4dc7e5e6f1280c05568073eea0e436f6178cd5462ba1935a8580fe5b0444",
+      "size_bytes": 21737
+    },
+    {
+      "path": "catalog/breaks/sun-fading-clouds/breaks-sun-fading-clouds-64x54.gif",
+      "role": "native-reference",
+      "sha256": "02a73a1736d3b938ebb6396c74e31ec206f5c2d374bf4481ae25089f59599ab7",
+      "size_bytes": 57473
+    },
+    {
+      "path": "catalog/breaks/sun-fading-clouds/breaks-sun-fading-clouds-matrix-preview.gif",
+      "role": "matrix-preview",
+      "sha256": "3aaf86fd905a04ef4ae12ff64c26d382668436fc1090588942292b93918fe30d",
+      "size_bytes": 585306
+    },
+    {
+      "path": "catalog/breaks/sun-through-clouds/breaks-sun-through-clouds-64x54.gif",
+      "role": "native-reference",
+      "sha256": "9a5e9374c948f4572c254651a2f31ad1191cc24ebc528a04a09efa88636a3db9",
+      "size_bytes": 57295
+    },
+    {
+      "path": "catalog/breaks/sun-through-clouds/breaks-sun-through-clouds-matrix-preview.gif",
+      "role": "matrix-preview",
+      "sha256": "771dda2ea5b60cfbc132325f470798599f9da1fe4a23f98217bf64a8ce6a8a15",
+      "size_bytes": 586108
+    },
+    {
+      "path": "catalog/breaks-night/moon-fading-clouds/breaks-night-moon-fading-clouds-64x54.gif",
+      "role": "native-reference",
+      "sha256": "f03e17f0e03890677f2ea44e3fa1165519604b095e956e623f7894b4131218b8",
+      "size_bytes": 54716
+    },
+    {
+      "path": "catalog/breaks-night/moon-fading-clouds/breaks-night-moon-fading-clouds-matrix-preview.gif",
+      "role": "matrix-preview",
+      "sha256": "5d1dc9e2eab4563d03dc0d2c067122c04616092cc92821fcb87c751861b13b91",
+      "size_bytes": 554283
+    },
+    {
+      "path": "catalog/breaks-night/moon-through-clouds/breaks-night-moon-through-clouds-64x54.gif",
+      "role": "native-reference",
+      "sha256": "d56dd7f987684b29b14ce51ebe3902fcd3810061d1757a518ee30fd59937c67e",
+      "size_bytes": 56266
+    },
+    {
+      "path": "catalog/breaks-night/moon-through-clouds/breaks-night-moon-through-clouds-matrix-preview.gif",
+      "role": "matrix-preview",
+      "sha256": "9bb1301b3ea4f6c56a13546213be225f87f03b9e2c2703e49983e51e32720b36",
+      "size_bytes": 558847
+    },
+    {
+      "path": "catalog/clear-day/solar-bloom/clear-day-solar-bloom-64x54.gif",
+      "role": "native-reference",
+      "sha256": "128a6e100a16b531a677647e0f112c31fada97086efe3bf4563917d90ca0a972",
+      "size_bytes": 39770
+    },
+    {
+      "path": "catalog/clear-day/solar-bloom/clear-day-solar-bloom-matrix-preview.gif",
+      "role": "matrix-preview",
+      "sha256": "7afcbc965e107a1592fcc0a56610007f4c8dd50d19a3bf44c72cfae6649739f1",
+      "size_bytes": 402601
+    },
+    {
+      "path": "catalog/clear-day/sun-glints/clear-day-sun-glints-64x54.gif",
+      "role": "native-reference",
+      "sha256": "2faa13ab5c3158435c177814df5ab47f9e64db055df426780dccc9410cf8671f",
+      "size_bytes": 66121
+    },
+    {
+      "path": "catalog/clear-day/sun-glints/clear-day-sun-glints-matrix-preview.gif",
+      "role": "matrix-preview",
+      "sha256": "e855c91870125a70db014e6447a5b5f16736cc1aafb636e78adf62ba6d3a93c1",
+      "size_bytes": 663065
+    },
+    {
+      "path": "catalog/clear-night/breathing-moon/clear-night-breathing-moon-64x54.gif",
+      "role": "native-reference",
+      "sha256": "bca4c5c45fed5175b3498fd415b28f0b5d21077706bef318a1f28b2d2e84c073",
+      "size_bytes": 38123
+    },
+    {
+      "path": "catalog/clear-night/breathing-moon/clear-night-breathing-moon-matrix-preview.gif",
+      "role": "matrix-preview",
+      "sha256": "03e7a1eac277021255b33406f5cced31808e7f43ac11005de5b569b03ae9452a",
+      "size_bytes": 372779
+    },
+    {
+      "path": "catalog/clear-night/lunar-bloom/clear-night-lunar-bloom-64x54.gif",
+      "role": "native-reference",
+      "sha256": "68364bc8f3db1545f0edeed6318307f4f4fa8312ddb95dea7cfa505b753dcae2",
+      "size_bytes": 48541
+    },
+    {
+      "path": "catalog/clear-night/lunar-bloom/clear-night-lunar-bloom-matrix-preview.gif",
+      "role": "matrix-preview",
+      "sha256": "4e76592868d3905a8b69371ae20a350a89384a08c1640aaa4f1c1884c11e416d",
+      "size_bytes": 486987
+    },
+    {
+      "path": "catalog/cloud/cross-and-gather/cloud-cross-and-gather-64x54.gif",
+      "role": "native-reference",
+      "sha256": "07e1a50f2370797eb5059b01fafcfb3121765c429c956986db2588f45b99cc86",
+      "size_bytes": 65594
+    },
+    {
+      "path": "catalog/cloud/cross-and-gather/cloud-cross-and-gather-matrix-preview.gif",
+      "role": "matrix-preview",
+      "sha256": "c921714f82d29ca84d159df503c855441c187cdab8e76b02fb3879daeb136ad8",
+      "size_bytes": 685365
+    },
+    {
+      "path": "catalog/cloud/passing-shadow/cloud-passing-shadow-64x54.gif",
+      "role": "native-reference",
+      "sha256": "c3350c0cbdbed106705dce6a2732c741cfba52842b245a948a00f35f7199a676",
+      "size_bytes": 71084
+    },
+    {
+      "path": "catalog/cloud/passing-shadow/cloud-passing-shadow-matrix-preview.gif",
+      "role": "matrix-preview",
+      "sha256": "c8aad63a41103e824777a63e8bb853b37e4c9a539bb7dbfb299da89a90c84c23",
+      "size_bytes": 730445
+    },
+    {
+      "path": "catalog/cloud/passing-shadows/cloud-passing-shadows-64x54.gif",
+      "role": "native-reference",
+      "sha256": "9a297ca564213e11b95e285bcd45e2b87acf334757417d2155eb29f6531fb56f",
+      "size_bytes": 69579
+    },
+    {
+      "path": "catalog/cloud/passing-shadows/cloud-passing-shadows-matrix-preview.gif",
+      "role": "matrix-preview",
+      "sha256": "042353aa7f259f9cbcde39db529d7d313ec52afabecca498568609154d833cfd",
+      "size_bytes": 719310
+    },
+    {
+      "path": "catalog/cloud/slow-convergence/cloud-slow-convergence-64x54.gif",
+      "role": "native-reference",
+      "sha256": "ace0997e0372eccbb1bd35880c06aa65b16d19b442096812389a2c7516037b96",
+      "size_bytes": 64988
+    },
+    {
+      "path": "catalog/cloud/slow-convergence/cloud-slow-convergence-matrix-preview.gif",
+      "role": "matrix-preview",
+      "sha256": "be414de9f6329d064f37a77a5eec2abef094b2ac63756c3b61a26f320e80678b",
+      "size_bytes": 701970
+    },
+    {
+      "path": "catalog/cloud-night/night-cross-and-gather/cloud-night-night-cross-and-gather-64x54.gif",
+      "role": "native-reference",
+      "sha256": "c762b6b425e6f9da67b6b1403d56356c6a49049a8c8a639886ffd569fc1b58ff",
+      "size_bytes": 59741
+    },
+    {
+      "path": "catalog/cloud-night/night-cross-and-gather/cloud-night-night-cross-and-gather-matrix-preview.gif",
+      "role": "matrix-preview",
+      "sha256": "1c15dea9cade764d407d5142c7ab81beb96c17c67a81e3e678b56961a11afa25",
+      "size_bytes": 590963
+    },
+    {
+      "path": "catalog/cloud-night/night-passing-shadow/cloud-night-night-passing-shadow-64x54.gif",
+      "role": "native-reference",
+      "sha256": "83cfbd76fa326fb10b802de9dd2965f08b88e577bdc84d432c42c49019a282c5",
+      "size_bytes": 67722
+    },
+    {
+      "path": "catalog/cloud-night/night-passing-shadow/cloud-night-night-passing-shadow-matrix-preview.gif",
+      "role": "matrix-preview",
+      "sha256": "85cf3b249fed65186ed7274835209872ec1b8c68b3c5c7395c9c4580abe48925",
+      "size_bytes": 639932
+    },
+    {
+      "path": "catalog/cloud-night/night-passing-shadows/cloud-night-night-passing-shadows-64x54.gif",
+      "role": "native-reference",
+      "sha256": "2944262a77eff94d9f05715a8f776ca2bd1821e231952f7184d0641adb32dee1",
+      "size_bytes": 65174
+    },
+    {
+      "path": "catalog/cloud-night/night-passing-shadows/cloud-night-night-passing-shadows-matrix-preview.gif",
+      "role": "matrix-preview",
+      "sha256": "4480a3782ae7c1ba9f81f679783744094385c6a5e6ed1bdf782cd6ead0f68684",
+      "size_bytes": 619293
+    },
+    {
+      "path": "catalog/cloud-night/night-slow-convergence/cloud-night-night-slow-convergence-64x54.gif",
+      "role": "native-reference",
+      "sha256": "de6085dd41cd21d83f3478070ed6a41087051bda2f477dd22a9f517321aef1d2",
+      "size_bytes": 62884
+    },
+    {
+      "path": "catalog/cloud-night/night-slow-convergence/cloud-night-night-slow-convergence-matrix-preview.gif",
+      "role": "matrix-preview",
+      "sha256": "cb885b62df75afb557ca234a1203cb62b6012e919de7c282e4efa27dc1728205",
+      "size_bytes": 596673
+    },
+    {
+      "path": "catalog/rain/bluewater/rain-bluewater-64x54.gif",
+      "role": "native-reference",
+      "sha256": "bcfc2e416071a1ced71da3da2e4a1f9e21563a93e418e96e7f4bc3ad4316d79d",
+      "size_bytes": 87619
+    },
+    {
+      "path": "catalog/rain/bluewater/rain-bluewater-matrix-preview.gif",
+      "role": "matrix-preview",
+      "sha256": "eda38fbadf6da8de416efc8bb3986547d15d5d20964715160c098a2ce48c8a65",
+      "size_bytes": 827362
+    },
+    {
+      "path": "catalog/rain/pearl-rain/rain-pearl-rain-64x54.gif",
+      "role": "native-reference",
+      "sha256": "ac49bcf02dbed63cc175590fffeb02053cf5ab00a21158778fbd334c31adf054",
+      "size_bytes": 90694
+    },
+    {
+      "path": "catalog/rain/pearl-rain/rain-pearl-rain-matrix-preview.gif",
+      "role": "matrix-preview",
+      "sha256": "7b3348f3bfe730f3aaa0b63c6a0cbdaad0519b9a6189b9daa95142bda3fc565a",
+      "size_bytes": 949439
+    },
+    {
+      "path": "catalog/snow/melting-snowfall/snow-melting-snowfall-64x54.gif",
+      "role": "native-reference",
+      "sha256": "182ded3a26afd74de26a217e7ddc2625c00dd04a6e01f455184cd1e3896eb7dd",
+      "size_bytes": 90049
+    },
+    {
+      "path": "catalog/snow/melting-snowfall/snow-melting-snowfall-matrix-preview.gif",
+      "role": "matrix-preview",
+      "sha256": "e40268dc8e36b5194569e482419b2f55a4996a741fd75a583b1cd232dc5f3b05",
+      "size_bytes": 909072
+    },
+    {
+      "path": "catalog/snow/snow-takes-hold/snow-snow-takes-hold-64x54.gif",
+      "role": "native-reference",
+      "sha256": "7fd44856384a236f383ac33633a392124d508e53f9d019dd797250f1ce34f4f9",
+      "size_bytes": 91180
+    },
+    {
+      "path": "catalog/snow/snow-takes-hold/snow-snow-takes-hold-matrix-preview.gif",
+      "role": "matrix-preview",
+      "sha256": "dfa23c0aae2de9ddcf335ebe6b94b827070949bb02f7264c8d9febc4c7baaa43",
+      "size_bytes": 916732
+    },
+    {
+      "path": "catalog/storm/pulse-and-echoes/storm-pulse-and-echoes-64x54.gif",
+      "role": "native-reference",
+      "sha256": "ead3e39390a43d9f809aacabb5f20182c8c3b306a7e62c9b611f6617e6229df9",
+      "size_bytes": 87478
+    },
+    {
+      "path": "catalog/storm/pulse-and-echoes/storm-pulse-and-echoes-matrix-preview.gif",
+      "role": "matrix-preview",
+      "sha256": "19bccd2b46d3ee2523a380c7386d2b0ade224a4e08de1a0776d5e66798723277",
+      "size_bytes": 926251
+    },
+    {
+      "path": "catalog/storm/storm-break/storm-storm-break-64x54.gif",
+      "role": "native-reference",
+      "sha256": "3dec0cd26f00c0bf0cd2c8b53ca8911913075f73c7e85fa1ae35176ff7580569",
+      "size_bytes": 87708
+    },
+    {
+      "path": "catalog/storm/storm-break/storm-storm-break-matrix-preview.gif",
+      "role": "matrix-preview",
+      "sha256": "e66b2d7f72bf642e5ea98cc7166a6da7ed67e27e9e3c3bb326b8a7e3d19239ad",
+      "size_bytes": 917702
+    },
+    {
+      "path": "dawn-fog/dawn-fog-64x54.gif",
+      "role": "native-reference",
+      "sha256": "1412d9b93545acc2c2e1f2b9c8ee155963f8e1391ecef5f1d9d9690ed1d49355",
+      "size_bytes": 82534
+    },
+    {
+      "path": "dawn-fog/dawn-fog-matrix-preview.gif",
+      "role": "matrix-preview",
+      "sha256": "cc1b89055ff728fde952e7fce988ee1d9751747146d916d50d3d968a27f23b8c",
+      "size_bytes": 3262667
+    },
+    {
+      "path": "dawn-fog/source-original.png",
+      "role": "source",
+      "sha256": "feb47fa7d1db345b4041aefa9ac7e19698a06cc2c8e1f6221f16cee6c1c87541",
+      "size_bytes": 1759934
+    },
+    {
+      "path": "day-clear/day-clear-64x54.gif",
+      "role": "native-reference",
+      "sha256": "0c21ee9a3065138838f4bd838839aaee2cc69f8c228a8d77f557729d3bbea63f",
+      "size_bytes": 68742
+    },
+    {
+      "path": "day-clear/day-clear-matrix-preview.gif",
+      "role": "matrix-preview",
+      "sha256": "3682b84454a7561a99f96ec3f50e2c6ed942343a036d603df90c7c391a4107ef",
+      "size_bytes": 2923874
+    },
+    {
+      "path": "day-clear/source-original.png",
+      "role": "source",
+      "sha256": "d3fd91e145a370a8f480cc0595a9e8c4b123696c33554813a5345cc4cfd7de48",
+      "size_bytes": 2367187
+    },
+    {
+      "path": "day-rain/day-rain-64x54.gif",
+      "role": "native-reference",
+      "sha256": "ec5bdd05d2d426e9efca507af8942409cd594939af99c35a11364ae00e26d4a4",
+      "size_bytes": 96513
+    },
+    {
+      "path": "day-rain/day-rain-matrix-preview.gif",
+      "role": "matrix-preview",
+      "sha256": "213215d90f2032f71e27f51679d26eb26605a4062211d027553d32307f9ae1ec",
+      "size_bytes": 3937045
+    },
+    {
+      "path": "day-rain/source-original.png",
+      "role": "source",
+      "sha256": "bf2a87483e5e94132ff3d1bb4594c88a6c56281e76df1fcf1664b19c0ed76951",
+      "size_bytes": 2963106
+    },
+    {
+      "path": "day-storm/day-storm-64x54.gif",
+      "role": "native-reference",
+      "sha256": "88137135fef0e36876d4b99b7236e18e7861d5c0afa1bc07d460048e18e50126",
+      "size_bytes": 91748
+    },
+    {
+      "path": "day-storm/day-storm-matrix-preview.gif",
+      "role": "matrix-preview",
+      "sha256": "c100942d6ad50b71597f8b364310a69354233647f21c7b6162a612c272737b26",
+      "size_bytes": 3758014
+    },
+    {
+      "path": "day-storm/source-original.png",
+      "role": "source",
+      "sha256": "b8049d175671bb5cb984233863f75fb1f882316edeec6e3d249d54521a10e18b",
+      "size_bytes": 2636158
+    },
+    {
+      "path": "dusk-wind/dusk-wind-64x54.gif",
+      "role": "native-reference",
+      "sha256": "f0d191f1973e99ccfb43e3f0ec80e82a3cd1b4786d94d3101feca1af8ec14ed8",
+      "size_bytes": 84748
+    },
+    {
+      "path": "dusk-wind/dusk-wind-matrix-preview.gif",
+      "role": "matrix-preview",
+      "sha256": "fca5772a6a6bad8bbbf555362bf58d2d8bf6556a001d18368904512cc986da39",
+      "size_bytes": 3417987
+    },
+    {
+      "path": "dusk-wind/source-original.png",
+      "role": "source",
+      "sha256": "623f497e77ae6393bc4ee1c1cb7e5e9079c94fb09bcef06a72cf02545fa2fca4",
+      "size_bytes": 2098067
+    },
+    {
+      "path": "night-clear/night-clear-64x54.gif",
+      "role": "native-reference",
+      "sha256": "f2d7d38a79e973c054022c09665af5e683d4eb63dd4bd4f3f84f458ab27b8dac",
+      "size_bytes": 75636
+    },
+    {
+      "path": "night-clear/night-clear-matrix-preview.gif",
+      "role": "matrix-preview",
+      "sha256": "dd04cd7dc1587c03d5f99b2e9a32ab08c313f8b81d09130a8813c801fbd19eed",
+      "size_bytes": 3044838
+    },
+    {
+      "path": "night-clear/source-original.png",
+      "role": "source",
+      "sha256": "1755e6b3b795abcde5994164764d9868b49283cf1b20cc557d8fb80414ffcca9",
+      "size_bytes": 2016148
+    },
+    {
+      "path": "night-rain/night-rain-64x54.gif",
+      "role": "native-reference",
+      "sha256": "bcfc2e416071a1ced71da3da2e4a1f9e21563a93e418e96e7f4bc3ad4316d79d",
+      "size_bytes": 87619
+    },
+    {
+      "path": "night-rain/night-rain-matrix-preview.gif",
+      "role": "matrix-preview",
+      "sha256": "f71d84fb9c49c1a5f169ac02f44a3d3ce1dfd349e155c48aeb003b2a0a990964",
+      "size_bytes": 2227890
+    },
+    {
+      "path": "night-rain/source-original.png",
+      "role": "source",
+      "sha256": "791f22fb2ade5477e92f6d34d4f829d4162d8adff78b976f17cbc275f4bfb10a",
+      "size_bytes": 2264739
+    },
+    {
+      "path": "night-snow/night-snow-64x54.gif",
+      "role": "native-reference",
+      "sha256": "d52772ea7d19738138ea26d6d903fd097faed60f5cf56795552c4b0dfb483f11",
+      "size_bytes": 92228
+    },
+    {
+      "path": "night-snow/night-snow-matrix-preview.gif",
+      "role": "matrix-preview",
+      "sha256": "8d74c456df21cba0da95c41ac28377b14e6060570023677caa4e0d253adc5b09",
+      "size_bytes": 3677127
+    },
+    {
+      "path": "night-snow/source-original.png",
+      "role": "source",
+      "sha256": "dbcf083790bc7552cc345de67a3c93d1ba787d3483bac8dc391bec35841dc623",
+      "size_bytes": 2078165
+    },
+    {
+      "path": "palette-manifest.json",
+      "role": "original-manifest",
+      "sha256": "e5e3317ab5292bda0b4ad39cadad0916607090128057e145e95af023c7be06dd",
+      "size_bytes": 15373
+    },
+    {
+      "path": "sources/breaks-day.png",
+      "role": "collection-summary",
+      "sha256": "f490b14df5a63fcb17da6b43e880220c82debe0bd0e9a5d8dd47eafa4006fc05",
+      "size_bytes": 2632533
+    },
+    {
+      "path": "sources/breaks-night.png",
+      "role": "collection-summary",
+      "sha256": "0b0ae6255e9ab22920db747fef1e5292e2ce98c1e38abda89ddeb313897eb95b",
+      "size_bytes": 2429157
+    },
+    {
+      "path": "sources/clear-day.png",
+      "role": "collection-summary",
+      "sha256": "d3fd91e145a370a8f480cc0595a9e8c4b123696c33554813a5345cc4cfd7de48",
+      "size_bytes": 2367187
+    },
+    {
+      "path": "sources/clear-night.png",
+      "role": "collection-summary",
+      "sha256": "1755e6b3b795abcde5994164764d9868b49283cf1b20cc557d8fb80414ffcca9",
+      "size_bytes": 2016148
+    },
+    {
+      "path": "sources/cloud-day.png",
+      "role": "collection-summary",
+      "sha256": "359dc1b3e4acf6f3a74a405990454f206f9e4990a432c854f46ba3b083737055",
+      "size_bytes": 2260416
+    },
+    {
+      "path": "sources/cloud-night.png",
+      "role": "collection-summary",
+      "sha256": "cb0021c274f6a1491bc360af9a67b36123757b5206e70683932bf3da6bb08727",
+      "size_bytes": 1804452
+    },
+    {
+      "path": "sources/rain-day.png",
+      "role": "collection-summary",
+      "sha256": "bf2a87483e5e94132ff3d1bb4594c88a6c56281e76df1fcf1664b19c0ed76951",
+      "size_bytes": 2963106
+    },
+    {
+      "path": "sources/rain-night.png",
+      "role": "collection-summary",
+      "sha256": "791f22fb2ade5477e92f6d34d4f829d4162d8adff78b976f17cbc275f4bfb10a",
+      "size_bytes": 2264739
+    },
+    {
+      "path": "sources/snow.png",
+      "role": "collection-summary",
+      "sha256": "dbcf083790bc7552cc345de67a3c93d1ba787d3483bac8dc391bec35841dc623",
+      "size_bytes": 2078165
+    },
+    {
+      "path": "sources/storm.png",
+      "role": "collection-summary",
+      "sha256": "b8049d175671bb5cb984233863f75fb1f882316edeec6e3d249d54521a10e18b",
+      "size_bytes": 2636158
+    },
+    {
+      "path": "weather-artwork-complete-catalog-board.png",
+      "role": "collection-summary",
+      "sha256": "c1215d8858f125e42ef461f5f90daab2c93f33e5b9454a048bbfa93b9d9885fe",
+      "size_bytes": 1339241
+    },
+    {
+      "path": "weather-artwork-complete-catalog-showcase.gif",
+      "role": "collection-summary",
+      "sha256": "6007b6c856e41bbcfec45396ed66e65cd8f96ae3d8e45e15076313629855b532",
+      "size_bytes": 5370295
+    },
+    {
+      "path": "weather-artwork-palette-board.png",
+      "role": "collection-summary",
+      "sha256": "6c2a57cb36bc2e57f891806e22f0947643b345f343f4f0426922a1255c715992",
+      "size_bytes": 1220910
+    },
+    {
+      "path": "weather-artwork-palette-showcase.gif",
+      "role": "collection-summary",
+      "sha256": "d512278b21cdaa45a0f4914e001b2dd9fc01c3c985fe2b2c4ddab1f531bc059a",
+      "size_bytes": 6709205
+    }
+  ],
+  "immutable_reference": {
+    "preset_id": "night-rain",
+    "sha256": "bcfc2e416071a1ced71da3da2e4a1f9e21563a93e418e96e7f4bc3ad4316d79d"
+  },
+  "motion_model": "systemic-scene-integrated-v2",
+  "preserved_legacy_catalogues": [
+    "../integrated-runtime",
+    "../premium-palettes",
+    "../v2-collections",
+    "../v3-night-paper"
+  ],
+  "provenance": "User-created for GabeCubeAura",
+  "runtime_catalog": "../../../../assets/faceplate/weather-artwork-v1/catalog.json",
+  "runtime_collection_revision": "weather-artwork-v1-runtime-3",
+  "schema": 1,
+  "status": "preserved-source-candidate-pending-physical-validation"
+}

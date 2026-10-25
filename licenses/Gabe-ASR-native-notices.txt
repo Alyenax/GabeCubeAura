@@ -1,0 +1,53 @@
+Native whisper.cpp session server dependencies
+Pinned source: https://github.com/ggml-org/whisper.cpp/tree/f24588a272ae8e23280d9c220536437164e6ed28
+whisper.cpp/ggml's complete MIT license is in assets/gabe-asr-runtime/WHISPER_LICENSE.txt.
+
+cpp-httplib (examples/server/httplib.h):
+Copyright (c) 2025 Yuji Hirose. All rights reserved.
+JSON for Modern C++ 3.11.2 (examples/json.hpp):
+Copyright (c) 2013-2022 Niels Lohmann.
+stb_vorbis 1.22 (examples/stb_vorbis.c), MIT alternative selected:
+Copyright (c) 2017 Sean Barrett.
+
+The following MIT terms apply to each of those three components:
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+
+miniaudio (examples/miniaudio.h): Copyright 2025 David Reid.
+MIT No Attribution alternative selected, as supplied by the upstream header:
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
+of the Software, and to permit persons to whom the Software is furnished to do
+so.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+The static GCC runtime is used under the GCC Runtime Library Exception 3.1:
+https://www.gnu.org/licenses/gcc-exception-3.1.html
+No Vulkan loader or SteamOS driver is bundled. Corresponding native source,
+build recipes and project-local server patch are retained in this repository.

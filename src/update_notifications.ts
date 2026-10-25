@@ -3,6 +3,7 @@ import { toaster } from "@decky/api";
 
 import { acknowledgeUpdateNotification, getStatus, getUpdateStatus } from "./api";
 import { shouldNotifyUpdate } from "./update_logic";
+import { setUILanguage, translate } from "./i18n";
 
 class UpdateNotificationMonitor {
   private alive = false;
@@ -27,10 +28,11 @@ class UpdateNotificationMonitor {
     this.checking = true;
     try {
       const [update, status] = await Promise.all([getUpdateStatus(), getStatus()]);
+      setUILanguage(status.ui_language);
       if (!this.alive || !shouldNotifyUpdate(update, status.game.appid)) return;
       toaster.toast({
-        title: `GabeCubeAura ${update.available_version} is available`,
-        body: "Open Updates to see what changed and install it.",
+        title: translate(`GabeCubeAura ${update.available_version} is available`),
+        body: translate("Open Updates to see what changed and install it."),
         duration: 7000,
         showToast: true,
         playSound: false,

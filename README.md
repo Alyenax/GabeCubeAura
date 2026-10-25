@@ -12,9 +12,9 @@ development on Ko-fi. Thank you! ❤️
 
 [![Support GabeCubeAura on Ko-fi](docs/media/public/support-kofi.svg)](https://ko-fi.com/alyenax)
 
-**Documentation for GabeCubeAura 1.5.0.** Its plugin package has not been released yet. The latest public download remains **1.4.0**; the Faceplate features below describe 1.5.0.
+**GabeCubeAura 1.5.0** — native light-bar controls and optional JSAUX Faceplate support.
 
-[Download current public version · 1.4.0](https://github.com/Alyenax/GabeCubeAura/releases/download/v1.4.0/GabeCubeAura-v1.4.0.zip)
+[Download 1.5.0](https://github.com/Alyenax/GabeCubeAura/releases/download/v1.5.0/GabeCubeAura-v1.5.0.zip)
 · [1.5.0 overview](https://github.com/Alyenax/GabeCubeAura/wiki/Release-1.5.0)
 · [User guide](https://github.com/Alyenax/GabeCubeAura/wiki)
 · [Changelog](https://github.com/Alyenax/GabeCubeAura/blob/main/CHANGELOG.md)
@@ -116,7 +116,7 @@ collections with the Faceplate. Both are separate plugins; see the
 
 ## Install and get started
 
-The download above is **1.4.0**, which supports the native light bar. The 1.5.0 package with Faceplate support will follow. Keep the downloaded ZIP zipped for Decky installation.
+Keep the downloaded ZIP zipped for Decky installation.
 
 1. Install [Decky Loader](https://decky.xyz/) on your Steam Machine.
 2. Download the plugin ZIP without extracting it.

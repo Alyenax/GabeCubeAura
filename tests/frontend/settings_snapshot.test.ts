@@ -59,7 +59,7 @@ const sampleStatus = {
     weather_display: "off", weather_location: null, weather_topbar_enabled: false,
     weather_icon_style: "current",
     weather_brightness: 65, weather_shadow_cutoff: 25,
-    weather_clear_day_variant: 0, weather_clear_night_variant: 0, weather_rain_variant: 0,
+    weather_clear_day_variant: 0, weather_clear_night_variant: 0, weather_rain_variant: 0, weather_rain_night_variant: 0,
     weather_cloud_variant: 0, weather_cloud_night_variant: 0, weather_breaks_variant: 0, weather_breaks_night_variant: 0, weather_snow_variant: 0, weather_storm_variant: 0,
     reverse_led_order: true, countdown_dark_edge_compensation: 2,
     debug: { led_path: "/private/device/path" },
@@ -97,18 +97,25 @@ test("snapshot shows Home defaults without inventing a game-specific profile", (
   assert.match(snapshot[2].lines[1], /^This game: none/);
 });
 
-test("snapshot names the GabeCubeAura Off display route", () => {
+test("snapshot distinguishes Steam control from actual Off display routes", () => {
   const status = { ...sampleStatus,
     game: { appid: 42, title: "StripMine" },
     game_display: "steam", current_display: "steam", mode: "events", display_override: "inherit",
   } as Status;
   const snapshot = buildSettingsSnapshot(status);
-  assert.ok(snapshot[0].lines[0].includes("GabeCubeAura Off"));
+  assert.ok(snapshot[0].lines[0].includes("Steam control"));
 });
 
 test("weather snapshot lists retained loops without removed temperature controls", () => {
   const snapshot = buildSettingsSnapshot({ ...sampleStatus, weather_rain_variant: 1 });
   const weather = snapshot.find((section) => section.title === "Weather");
-  assert.ok(weather?.lines.some((line) => line.includes("rain: Pearl rain")));
+  assert.ok(weather?.lines.some((line) => line.includes("rain day: Pearl rain")));
   assert.ok(!weather?.lines.some((line) => /Temperature|halos/i.test(line)));
+});
+
+test('settings snapshot distinguishes independently saved day and night rain choices',()=>{
+  const snapshot=buildSettingsSnapshot({...sampleStatus,weather_rain_variant:0,weather_rain_night_variant:1});
+  const weather=snapshot.find(section=>section.title==='Weather');
+  assert.ok(weather?.lines.includes('rain day: Bluewater'));
+  assert.ok(weather?.lines.includes('rain night: Pearl rain'));
 });

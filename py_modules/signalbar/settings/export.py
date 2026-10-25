@@ -6,6 +6,8 @@ from copy import deepcopy
 from datetime import datetime, timezone
 import json
 import os
+import hashlib
+import tempfile
 from pathlib import Path
 
 
@@ -29,9 +31,14 @@ def configuration_export_path(settings_directory: str, user_home: str | None = N
     return settings / EXPORT_FILENAME
 
 
-def build_configuration_export(settings, version: str, current_game=None, generated_at=None):
+def build_configuration_export(settings, version: str, current_game=None, generated_at=None, *, sources=None):
     """Build a stable, controller-ID-free document from persisted choices."""
-    values = deepcopy(settings.all())
+    # A temporary ambience is an audition, not a new saved baseline.
+    values = deepcopy(settings.base_all() if hasattr(settings, 'base_all') else settings.all())
+    from .baseline import settings_baseline, add_sources
+    baseline=settings_baseline(values)
+    if sources is not None:
+        add_sources(baseline,sources)
     display_profiles = values.pop("display_profiles", {})
     artwork_profiles = values.pop("artwork_profiles", {})
     launch_artwork_profiles = values.pop("launch_artwork_profiles", {})
@@ -60,6 +67,7 @@ def build_configuration_export(settings, version: str, current_game=None, genera
         "schema_version": 1,
         "gabecubeaura_version": version,
         "exported_at": timestamp,
+        "calibration_reference": baseline,
         "configuration": {
             "global": values,
             "profiles": {
@@ -109,28 +117,26 @@ def read_configuration_import(path: str):
     return global_values, display, artwork, launch_artwork
 
 
-def write_configuration_export(settings, path: Path, version: str, current_game=None):
+def write_configuration_export(settings, path: Path, version: str, current_game=None, *, sources=None):
     """Atomically write the export and return UI-ready metadata."""
+    payload=build_configuration_export(settings,version,current_game,sources=sources)
+    return write_configuration_payload(payload,path)
+
+
+def configuration_bytes(payload):
+    from .baseline import reject_credentials
+    reject_credentials(payload)
+    data=(json.dumps(payload,indent=2,sort_keys=True,ensure_ascii=False)+'\n').encode('utf-8')
+    if len(data)>MAX_IMPORT_BYTES:
+        raise ValueError('Configuration exceeds the 1 MB limit; nothing was truncated')
+    return data
+
+
+def write_configuration_payload(payload,path,*,mode=0o644,include_data=False):
+    from signalbar.safe_export import write_private_bytes
     target = Path(path)
-    parent_existed = target.parent.exists()
-    target.parent.mkdir(parents=True, exist_ok=True)
-    if not parent_existed and hasattr(os, "geteuid") and os.geteuid() == 0:
-        owner = target.parent.parent.stat()
-        os.chown(target.parent, owner.st_uid, owner.st_gid)
-    payload = build_configuration_export(settings, version, current_game)
-    temporary = target.with_name(f".{target.name}.tmp")
-    try:
-        with temporary.open("w", encoding="utf-8") as handle:
-            json.dump(payload, handle, indent=2, sort_keys=True)
-            handle.write("\n")
-        os.chmod(temporary, 0o644)
-        os.replace(temporary, target)
-        if hasattr(os, "geteuid") and os.geteuid() == 0:
-            owner = target.parent.stat()
-            os.chown(target, owner.st_uid, owner.st_gid)
-    finally:
-        try:
-            temporary.unlink()
-        except FileNotFoundError:
-            pass
-    return {"path": str(target), "exported_at": payload["exported_at"]}
+    data = configuration_bytes(payload)
+    write_private_bytes(target, data)
+    receipt = {'path': str(target), 'exported_at': payload['exported_at'],
+               'digest': hashlib.sha256(data).hexdigest()}
+    return (receipt, data) if include_data else receipt

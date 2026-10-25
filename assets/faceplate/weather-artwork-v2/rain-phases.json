@@ -1,0 +1,48 @@
+{
+  "entries": [
+    {
+      "background_pack": "rain-bluewater-day.rgbz",
+      "background_pack_sha256": "e9315e8aaaab1683fd04117b9b7fcfbacb1c9451098048c7c805a34cfcfb6eab",
+      "background_peak_load": 0.454295,
+      "background_raw_sha256": "80a485fd7655bd3425ea00daaf5206c35226166130793fcf1616594dbb062b90",
+      "frame_count": 24,
+      "frame_duration_cs": 10,
+      "id": "rain:0",
+      "phase": "day"
+    },
+    {
+      "background_pack": "rain-bluewater.rgbz",
+      "background_pack_sha256": "cf0a4ab101a4a3dcfcba9aa31210dd5a4153e3c37a2e4632f1b81546a4682d7e",
+      "background_peak_load": 0.240712,
+      "background_raw_sha256": "fdd31a123d327f0896c04015bd4decd7b552b09d5a1e2a66572321eea756cc28",
+      "frame_count": 24,
+      "frame_duration_cs": 10,
+      "id": "rain:0",
+      "phase": "night"
+    },
+    {
+      "background_pack": "rain-pearl-rain.rgbz",
+      "background_pack_sha256": "f9a674386913863a2a74c8cb4968639dd9132164be334d36384984b59e2203f2",
+      "background_peak_load": 0.453847,
+      "background_raw_sha256": "e645122598f09890426ade1e8c69511aba2ba5d5a69485a991624afe059b3b4b",
+      "frame_count": 24,
+      "frame_duration_cs": 10,
+      "id": "rain:1",
+      "phase": "day"
+    },
+    {
+      "background_pack": "rain-pearl-rain-night.rgbz",
+      "background_pack_sha256": "2aa3497a1b44dd32222254da8c3f9e6a242de19dcbe6a20354fe163dbef67008",
+      "background_peak_load": 0.209624,
+      "background_raw_sha256": "e701ef6fd557cc9bacdb7abc6df31cfb0f9d47d6d613759c6e094f159a6d8b7c",
+      "frame_count": 24,
+      "frame_duration_cs": 10,
+      "id": "rain:1",
+      "phase": "night"
+    }
+  ],
+  "frame_count": 24,
+  "frame_duration_cs": 10,
+  "revision": "weather-rain-phases-1",
+  "schema": 1
+}

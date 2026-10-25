@@ -1,0 +1,42 @@
+{
+  "schema": 1,
+  "note": "Exact installed Decky/react-icons source and notice copies; Tabler text snapshot pinned separately, not a claim about icon source revision.",
+  "files": [
+    {
+      "path": "licenses/decky-api-1.1.3/LICENSE",
+      "sha256": "38965778962143b687faff3a5b69ef22dd228e0ca4f5a3752893e016ede87c6a"
+    },
+    {
+      "path": "licenses/decky-api-1.1.3/dist/index.js",
+      "sha256": "9fdcc09e2a9596e05a71dd2ac758f1d0d9c69a18ff74a04862eac150312f3f17"
+    },
+    {
+      "path": "licenses/decky-api-1.1.3/package.json",
+      "sha256": "8be297dad38eefd6e80b3a6b3f5083e875a7dd1261f866c91efbf4e380867aa1"
+    },
+    {
+      "path": "licenses/decky-api-1.1.3/src/index.ts",
+      "sha256": "3193df7a9d563e1a7d65c3acd162e3b7357e47eb36862f2c1f3fc57134ed156d"
+    },
+    {
+      "path": "licenses/decky-api-1.1.3/src/types.d.ts",
+      "sha256": "77c2831b47a9b2ba944e4b97466f18dd92c03a9c0c1ead4818129a5153629103"
+    },
+    {
+      "path": "licenses/decky-api-1.1.3/src/types.ts",
+      "sha256": "93e5ecece4cde0d92bc2d2e77efcc5d4d9b1091211586aec83ce44d484daa51f"
+    },
+    {
+      "path": "licenses/Decky-UI-LGPL-2.1.txt",
+      "sha256": "38965778962143b687faff3a5b69ef22dd228e0ca4f5a3752893e016ede87c6a"
+    },
+    {
+      "path": "licenses/React-Icons-LICENSE.txt",
+      "sha256": "a0c1e5484fb4c79e2a683834253864e640e1ca57cb57b807bd5bddb72bbbf74f"
+    },
+    {
+      "path": "licenses/Tabler-Icons-MIT.txt",
+      "sha256": "b740a1d46122672da62833e97f7e7c8a13fa85cbc7445b584b297cc00dde93db"
+    }
+  ]
+}

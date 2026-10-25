@@ -185,6 +185,17 @@ class ArtworkProvider:
             self._save()
             self._current = {**entry, "frame": frame, "appid": int(appid)}
 
+    def reset_cache(self):
+        with self._lock:
+            previous = self._cache
+            self._cache = {}
+            try:
+                self._save()
+            except Exception:
+                self._cache = previous
+                raise
+            self._current = None
+
     def clear(self):
         with self._lock:
             self._current = None

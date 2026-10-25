@@ -70,7 +70,7 @@ be set separately from the light bar.
 </tr>
 <tr>
 <td align="center" valign="top">Static or animated artwork<br>saved for each game.</td>
-<td align="center" valign="top">Eight layouts: artwork, game data,<br>weather and countdown.</td>
+<td align="center" valign="top">Eight layouts: game data,<br>weather and countdown.</td>
 <td align="center" valign="top">From village to city,<br>with day, night and weather.</td>
 </tr>
 <tr>

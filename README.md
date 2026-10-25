@@ -15,7 +15,6 @@ development on Ko-fi. Thank you! ❤️
 **GabeCubeAura 1.5.0** — native light-bar controls and optional JSAUX Faceplate support.
 
 [Download 1.5.0](https://github.com/Alyenax/GabeCubeAura/releases/download/v1.5.0/GabeCubeAura-v1.5.0.zip)
-· [1.5.0 overview](https://github.com/Alyenax/GabeCubeAura/wiki/Release-1.5.0)
 · [User guide](https://github.com/Alyenax/GabeCubeAura/wiki)
 · [Changelog](https://github.com/Alyenax/GabeCubeAura/blob/main/CHANGELOG.md)
 · [What's new in 1.5.0](https://github.com/Alyenax/GabeCubeAura/wiki/Release-1.5.0)

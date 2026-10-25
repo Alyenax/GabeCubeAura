@@ -1,796 +1,126 @@
 # GabeCubeAura
 
-Make your Steam Machine's 17-pixel light bar useful and a little more
-expressive. Choose a complete lighting experience, preview it on the physical
-bar, then set one brightness level for every display. Optional sunset dimming
-uses a city you select manually, while CPU/GPU thermal protection can return
-complete control to Valve immediately.
+GabeCubeAura is a Decky Loader plugin for the Steam Machine's light bar and
+optional JSAUX Pixel Matrix Faceplate. Configure game artwork colours,
+controller battery indicators, CPU/GPU meters, weather, custom effects and
+audio or screen synchronisation.
 
-[Download GabeCubeAura 1.4.0](https://github.com/Alyenax/GabeCubeAura/releases/download/v1.4.0/GabeCubeAura-v1.4.0.zip)
-· [Release notes](https://github.com/Alyenax/GabeCubeAura/releases/tag/v1.4.0)
+Created and maintained by **Alyenax**.
 
-[Try the interactive GabeCubeAura preview before installing](https://alyenax.github.io/gabecubeaura-concept/)
+[![Support GabeCubeAura on Ko-fi](docs/media/public/support-kofi.svg)](https://ko-fi.com/alyenax)
 
+You can support development on [Ko-fi](https://ko-fi.com/alyenax). The plugin and its public releases remain
+available to everyone.
 
-If GabeCubeAura makes your Steam Machine a little better, you can support its
-development on Ko-fi. Thank you! ❤️
+**Documentation for GabeCubeAura 1.5.0.** Its plugin package has not been released yet. The latest public download remains **1.4.0**; the Faceplate features below describe 1.5.0.
 
-[![Support GabeCubeAura on Ko-fi](docs/media/support-kofi.svg)](https://ko-fi.com/alyenax)
+[Download current public version · 1.4.0](https://github.com/Alyenax/GabeCubeAura/releases/download/v1.4.0/GabeCubeAura-v1.4.0.zip)
+· [1.5.0 overview](https://github.com/Alyenax/GabeCubeAura/wiki/Release-1.5.0)
+· [User guide](https://github.com/Alyenax/GabeCubeAura/wiki)
+· [Changelog](https://github.com/Alyenax/GabeCubeAura/blob/main/CHANGELOG.md)
+· [What's new in 1.5.0](https://github.com/Alyenax/GabeCubeAura/wiki/Release-1.5.0)
 
-<details>
-<summary><strong>In development</strong></summary>
+## Artwork
 
-A look at what's being developed: animated game artwork, useful dashboards
-for the **JSAUX Pixel Matrix Faceplate**, and a local voice assistant with a
-choice of **GabeCube Companion** or **Gabe Assistant**. These experimental
-features are **not included in the current public release** and may change.
+![Artwork mode with Deep Rock Galactic artwork and a matching light-bar palette](docs/media/public/artwork-mode-steam-machine.png)
 
-<table>
-<tr><th>Game artwork</th><th>Weather & dashboards</th><th>GabeCube Companion</th></tr>
-<tr>
-<td align="center"><img src="docs/media/development/session.gif" width="230" alt="Animated Stray dashboard on a simulated Steam Machine with a 64 by 54 dot matrix and diffused light bar"></td>
-<td align="center"><img src="docs/media/development/weather-dashboard.gif" width="230" alt="Animated weather dashboard with current rain, 12 degrees Celsius, and a next-hour forecast row"></td>
-<td align="center"><img src="docs/media/development/gabecube-companion-voice.gif" width="230" alt="Hey Cube, launch The Witcher 3, a complete Companion turn and spoken confirmation: Everything is ready. Except, perhaps, you. Large readable captions remain after the dashboard returns."></td>
-</tr>
-<tr>
-<td>Your games, prepared for the 64 × 54 matrix.</td>
-<td>Time, weather and one useful information row.</td>
-<td>A speaking Companion with a dry sense of humour, or Gabe's expressive face. Both use the same local voice commands.</td>
-</tr>
-</table>
+Sample your current game's artwork to set the 17 light-bar colours. Choose its Hero,
+Header or Capsule image, then let GabeCubeAura find a suitable row or select
+one yourself. Your choice is remembered for each game.
 
-**Automatic power-off:** with Auto power mode enabled, putting your Steam
-Machine to sleep or shutting it down also turns off the Faceplate screen,
-even if its USB connection remains powered.
+Local Steam artwork comes first, including your custom images and non-Steam
+shortcuts. With a Faceplate, you can also prepare static or animated artwork
+for its 64 × 54 matrix and reuse it when the game starts.
 
-<details>
-<summary><strong>A simpler interface</strong> · Quick controls, organised settings · draft preview</summary>
+## Light bar, without a Faceplate
 
-Open GabeCubeAura in Decky to see what is running and reach the right controls.
-The quick panel keeps everyday actions together; the gear opens full settings.
+The light bar works on its own. Start with these everyday displays and Steam signals.
 
-**[Try the interactive interface preview](https://alyenax.github.io/gabecubeaura-concept/interface-preview/)**
+| Performance | Controller batteries | Weather | Light events |
+| :---: | :---: | :---: | :---: |
+| <img src="docs/media/public/strip-performance.gif" width="240" alt="Steam Machine without a Faceplate, showing changing CPU and GPU activity on its light bar"><br>Follow available CPU and GPU load and temperature readings. | <img src="docs/media/public/strip-controllers.gif" width="240" alt="Steam Machine without a Faceplate, showing controller battery gauges and charging on its light bar"><br>See battery levels and charging when your controllers report them. | <img src="docs/media/public/strip-weather.gif" width="240" alt="Steam Machine without a Faceplate, showing animated weather on its light bar"><br>Display weather conditions for your selected city. | <img src="docs/media/public/strip-light-events.gif" width="240" alt="One animation showing Steam notification, achievement, screenshot, recording start and recording stop light signals"><br>Steam notifications, achievements, screenshots and recording signals in one animation. |
 
-Switch between Home and in-game examples, open the settings groups, then choose
-**The Witcher 3, Deep Rock Galactic or Balatro**. The artwork and its 17-colour
-bar preview change together. Images are bundled and colours are sampled locally;
-no Steam account, artwork API key or hardware connection is needed.
+For a more personal setup, match the light bar to the picture or audio, choose your own effects, or keep track of remaining time. The countdown works with a personal timer or a supported Steam Families limit when available.
 
-<p align="center"><a href="https://alyenax.github.io/gabecubeaura-concept/interface-preview/"><img src="docs/media/development/interface-artwork-en.png" width="440" alt="Draft reconstruction of the English Decky quick panel during The Witcher 3, with game-specific display selection, CPU/GPU example readings, the game artwork and its sampled 17-colour palette. Click to open the interactive preview."></a></p>
+| Screen Sync | Audio Sync · Slow Prism | Customization+ | Countdown |
+| :---: | :---: | :---: | :---: |
+| <img src="docs/media/public/strip-screen-sync-pip.gif" width="240" alt="Animated source video in a picture-in-picture inset, with the same images driving the light bar's Screen Sync colours"><br>See the video source in PiP and its matching light-bar colours. | <img src="docs/media/public/strip-audio-sync.gif" width="240" alt="Audio Sync Slow Prism expanding and contracting on the light bar in response to example playback"><br>Slow Prism reacts to playback with a changing illuminated width. Silent preview. | <img src="docs/media/public/strip-customization-gallery.gif" width="240" alt="Five Customization+ colour and movement examples on the Steam Machine light bar"><br>Choose your own colours and animated effects. | <img src="docs/media/public/strip-countdown.gif" width="240" alt="Light bar showing 24 of 30 minutes remaining in an illustrative countdown"><br>See remaining time for a personal timer or an available Steam Families limit. |
 
-- **Control** shows whether GabeCubeAura or Steam is in charge. The main switch
-  turns the displays off without deleting saved choices. During a game, its
-  display can be overridden without changing other games.
-- **Light bar** shows the active display, its colours and available CPU/GPU
-  readings. **Displays and brightness** opens the bar's settings.
-- **JSAUX matrix** provides display status, artwork and faceplate settings.
-  This block hides after ten minutes without a Faceplate detection. Pending
-  transfers are not presented as confirmed.
+Choose different displays for Home, games and individual titles. One global
+light-bar brightness setting applies across those choices, with optional
+sunset dimming for a city you select.
 
-<details>
-<summary>See Faceplate controls and the settings organisation</summary>
+## With a JSAUX Pixel Matrix Faceplate
 
-<p align="center"><img src="docs/media/development/interface-panel-en.png" width="440" alt="Draft English Decky quick panel at Home, showing separate Control, Light bar and JSAUX matrix sections with Faceplate status and actions."></p>
+The optional Faceplate adds a second display. Its content and brightness can
+be set separately from the light bar.
 
-<p align="center"><img src="docs/media/development/interface-settings-en.png" width="760" alt="Draft English settings navigation: Light bar, Faceplate displays, Faceplate artwork, Signals and automation, Weather, Updates and Advanced. Signals and automation groups the voice assistant, ambience profiles, light events, controllers, game launches and Playtime."></p>
-
-- **Light bar** and **Faceplate displays** keep the two displays independent.
-- **Faceplate artwork** contains the visual library and preparation workflow.
-- **Signals and automation** groups the voice assistant, ambience profiles,
-  light events, controllers, game-launch effects and Playtime.
-- **Weather**, **Updates** and **Advanced** have their own sections.
-
-To set up a character, follow **gear → Signals and automation → Voice assistant**.
-Choose GabeCube Companion or Gabe Assistant, select your language, then install
-the modules you need. Activation, microphone, appearance and voice controls
-expand when needed; detailed troubleshooting stays in Advanced.
-
-</details>
-
-*Draft reconstruction, not a SteamOS screenshot. Readings and device states are
-simulated; colours are sampled from bundled artwork. Native Steam typography,
-controls, focus and spacing still need comparison with a real Steam Machine
-capture. These development features are not all available in the public stable
-release. Preview inputs do not change Steam or plugin settings.*
-
-</details>
-
-<details>
-<summary><strong>Artwork & Pixel Studio</strong> · Choose, prepare, preview and reuse</summary>
-
-Choose an installed game and browse static or animated SteamGridDB artwork
-using your own API key. Crop and adjust the image, prepare it in the background,
-then preview it before applying. Saved artwork is reused when the game starts.
-
-| Stray | The Witcher 3 |
-| :---: | :---: |
-| <img src="docs/media/development/stray-artwork.gif" width="256" alt="Animated Stray artwork without an overlay on the shared dot-matrix model"> | <img src="docs/media/development/witcher3-dashboard.gif" width="256" alt="Animated The Witcher 3 artwork with its dashboard overlay on the same dot-matrix model"> |
-| **Detroit: Become Human · Chloe** | **Resident Evil 2** |
-| <img src="docs/media/development/detroit-artwork.gif" width="256" alt="Real animated portrait of Chloe, cropped to show only the android woman without the cover logo, on the same dot-matrix model"> | <img src="docs/media/development/resident-evil-2-dashboard.gif" width="256" alt="Resident Evil 2 animated artwork dashboard on the same dot-matrix model"> |
-
-- Square, portrait and wide sources, including animated grids and heroes.
-- Crop, saturation, artwork brightness, compression and optional loop cleanup.
-- Wide static artwork can pan out and return without jumping back to the start.
-- A saved visual can be used as in-game Artwork or a Dashboard background.
-
-Pixel Studio is integrated into GabeCubeAura. Preparation is explicit; game
-launches reuse prepared media instead of starting another conversion.
-
-</details>
-
-<details>
-<summary><strong>Dashboards & Realistic Weather</strong> · Your artwork or the weather, with one clear bottom row</summary>
-
-Keep the animated background. Add a discreet clock, a weather icon and
-temperature, then choose one useful bottom row. Home and in-game content can
-be selected independently; Weather and Artwork Dashboard backgrounds remain
-separate choices.
-
-| Weather scene | Weather Dashboard |
-| :---: | :---: |
-| <img src="docs/media/development/weather.gif" width="256" alt="Realistic animated rain scene on the shared dot-matrix model"> | <img src="docs/media/development/weather-dashboard.gif" width="256" alt="The same animated rain scene with a clock, current weather and a next-hour forecast row"> |
-
-The Weather Dashboard example shows **rain · 12°C** now, then
-**+1H · rain · 13°C · 80%** below. Its light bar plays **Bluewater**: a
-continuous blue band with brief droplet pulses and spreading echoes.
-These are illustrative values, not a live forecast. The background keeps
-its animation beneath the information overlay.
-
-| Session & P1 | P1 & P2 | Next hour |
+| Animated artwork | Dashboard · The Witcher 3 | Steam Players City |
 | :---: | :---: | :---: |
-| <img src="docs/media/development/session.gif" width="192" alt="Artwork dashboard with session duration and P1 battery demonstration"> | <img src="docs/media/development/two-pads.gif" width="192" alt="Artwork dashboard with P2 battery at the left and P1 at the right"> | <img src="docs/media/development/next-hour.gif" width="192" alt="Artwork dashboard with plus one hour, weather icon, temperature and precipitation probability"> |
-| **Today** | **Personal timer** | **Last minute** |
-| <img src="docs/media/development/today.gif" width="192" alt="Artwork dashboard with forecast icon, blue morning temperature and orange afternoon temperature separated by a spaced slash"> | <img src="docs/media/development/timer.gif" width="192" alt="Artwork dashboard with the remaining personal timer"> | <img src="docs/media/development/last-minute.gif" width="192" alt="Artwork dashboard in the final minute of a personal timer"> |
+| <img src="docs/media/public/faceplate-artwork.gif" width="240" alt="Simulated JSAUX Faceplate playing animated game artwork with a matching light bar"><br>Prepare an image or animation once and assign it to a game. | <img src="docs/media/public/faceplate-dashboard-witcher-showcase.gif" width="240" alt="Geralt artwork cycling through eight Faceplate layouts: game logo, session, achievements, batteries, weather and timer"><br>Eight layouts in one animation: artwork, logo, game information, weather and timer. | <img src="docs/media/public/faceplate-city-showcase.gif" width="240" alt="Steam Players City growing from a village to a large city, then showing night, rain, snow and a thunderstorm"><br>From village to city, with day, night and changing weather in one animation. |
+| **Weather** | **Personal timer** | **TV + Faceplate · optional DAS** |
+| <img src="docs/media/public/faceplate-weather-pearl-rain-day.gif" width="240" alt="Pearl Rain weather animation on the Faceplate with coordinated light-bar colours"><br>Bring the selected city's weather to the Faceplate and light bar. | <img src="docs/media/public/faceplate-countdown-resident-evil.gif" width="240" alt="Resident Evil 2 artwork with a personal countdown on the Faceplate and light bar"><br>Keep an active countdown visible over game artwork. | <img src="docs/media/public/das-tv-faceplate.gif" width="240" alt="Animated game artwork on a television with different artwork for the same game on the Faceplate"><br>Use different artwork for the same game on TV and Faceplate. Requires the separate Decky Animated Screensaver plugin. |
 
-- **Controllers:** P1 battery as a percentage or gauge, with optional P2.
-- **Performance:** available CPU/GPU load values in the information row.
-- **Next hour:** `+1H`, forecast icon, temperature and precipitation probability.
-- **Today:** forecast icon, blue morning temperature / orange afternoon temperature.
-- **Playtime:** session duration or an active countdown.
+Choose a weather scene, Artwork Dashboard or other supported display for
+Home and games. Dashboard rows can show controller batteries,
+session time, recorded playtime or achievement progress when data is available.
+Steam Players City turns the running game's player count into an animated city.
 
-Realistic weather scenes cover day/night skies, clouds, rain, snow and storms.
-A manually selected city supplies current conditions and forecasts through
-Open-Meteo, with **°C or °F** and no weather API key. The light bar provides
-its own one-dimensional interpretation of the conditions.
+**Decky Vocal Assistant (DVA)** can add optional voice-assistant visuals through
+GCA, while **Decky Animated Screensaver (DAS)** can share prepared screensaver
+collections with the Faceplate. Both are separate plugins; see the
+[integration guide](https://github.com/Alyenax/GabeCubeAura/wiki/Integrations).
 
-</details>
+*The animated device previews are software illustrations with example readings.*
 
-<details>
-<summary><strong>Performance, controllers & playtime</strong> · Readable information and immediate light cues</summary>
+## Compatibility
 
-The Faceplate can show details while the light bar gives a quick visual cue.
-Content can be selected independently for Home, in-game and individual games.
+- Designed for the official Steam Machine's **17-pixel light bar** and
+  **Decky Loader on SteamOS**.
+- Faceplate features require the **JSAUX Pixel Matrix Faceplate**. It is optional.
+- CPU/GPU sensors and controller batteries depend on the hardware and data
+  exposed by SteamOS. Missing readings stay unknown.
+- Screen Sync requires a working Gamescope PipeWire capture source and its
+  system tools. GabeCubeAura reports missing components.
+- Steam callbacks may change between Steam updates. Compatibility with every
+  controller and connection type has not been verified.
 
-| CPU / GPU | Controller battery | Playtime countdown |
-| :---: | :---: | :---: |
-| <img src="docs/media/development/performance.gif" width="220" alt="Native CPU GPU renderer on the shared dot-matrix model with slowly changing demonstration readings"> | <img src="docs/media/development/two-pads.gif" width="220" alt="P1 and P2 battery values on the shared dot-matrix dashboard model"> | <img src="docs/media/development/timer.gif" width="220" alt="Personal countdown on the shared dot-matrix model and diffused light bar"> |
+## Install and get started
 
-CPU/GPU readings and controller charge depend on available device data;
-unknown values are not invented. Playtime supports personal countdowns,
-session information and supported Steam Families limits.
+The download above is **1.4.0**, which supports the native light bar. The 1.5.0 package with Faceplate support will follow. Keep the downloaded ZIP zipped for Decky installation.
 
-Brightness remains separate from content selection. Faceplate power can be
-controlled from Decky, with an optional automatic sleep/shutdown policy.
+1. Install [Decky Loader](https://decky.xyz/) on your Steam Machine.
+2. Download the plugin ZIP without extracting it.
+3. Open **Decky → Settings → Developer → Install Plugin from ZIP File** and
+   choose the downloaded file. Enable Developer mode if that section is hidden.
+4. Open GabeCubeAura and complete guided setup: choose an experience, set
+   brightness, review your choices and confirm.
 
-</details>
+## Guides and support
 
-<details>
-<summary><strong>Voice assistant · GabeCube Companion</strong> · Useful commands. A little attitude.</summary>
+Start with the [user guide](https://github.com/Alyenax/GabeCubeAura/wiki) for installation, first setup,
+light-bar displays, Faceplate artwork, dashboards and optional integrations.
+It also covers update choices, backups, reset, privacy and troubleshooting.
 
-<a name="gabecube-companion"></a>
+Report a problem through [GitHub Issues](https://github.com/Alyenax/GabeCubeAura/issues).
+Include your plugin version, SteamOS version, connected hardware and the steps
+that reproduce it. Never post API keys or access tokens.
 
-Choose **GabeCube Companion** or **Gabe Assistant** in
-**Settings → Signals and automation → Voice assistant**. Both share the same
-local commands, microphone, French/English language and activation options.
-Existing users keep their chosen settings and Gabe's face. Switching character
-does not enable hands-free listening or change your display routes or brightness.
+For what has changed, read the [changelog](https://github.com/Alyenax/GabeCubeAura/blob/main/CHANGELOG.md). If you would like to
+support the next steps, [buy me a coffee on Ko-fi](https://ko-fi.com/alyenax).
 
-<p align="center"><img src="docs/media/development/gabecube-companion-voice.gif" width="560" alt="Silent illustrated voice exchange: Hey Cube. Launch The Witcher 3. Starting the game. Everything is ready. Except, perhaps, you. The Cube completes its native success rotation, its pink light-bar mouth follows prepared speech, and the game dashboard returns while the final caption stays readable."></p>
+## Privacy and independence
 
-**You:** “Hey Cube. Launch The Witcher 3.”<br>
-**Companion:** “Starting the game.”<br>
-**After launch:** “Everything is ready. Except, perhaps, you.”
+Artwork sampling and screen processing run locally. Optional weather uses
+Open-Meteo and a city you select; online Faceplate artwork uses your own
+SteamGridDB API key. See the guide for optional integrations and network requests.
 
-The 19-second preview follows the call, request, confirmation and return to
-the game Dashboard. Large captions sit outside the matrix; the dry final line
-stays visible after the Dashboard returns, rather than holding up the display.
-The silent GIF illustrates the exchange, not real recognition or USB latency.
+GabeCubeAura is an independent community project by Alyenax. It is **not
+affiliated with, endorsed by or sponsored by Valve or JSAUX**. Steam and Steam
+Machine are Valve trademarks; JSAUX and the associated product names belong
+to their respective owners. Game artwork belongs to its creators and rights
+holders; see the [preview credits](https://github.com/Alyenax/GabeCubeAura/blob/main/docs/media/public/CREDITS.md).
 
-The Companion's six beveled, raised faces follow the Portal 2 cube: a small
-matte heart, an ivory centre disc and a pale-pink luminous ring. The complete
-interactive appearance is short, while success makes one complete 3D turn.
-Choose its original electronic or softer spoken voice in French or English,
-with optional musical cues. Its pink Slow Prism mouth follows its own played
-audio, not the game or microphone. It never unexpectedly changes to Gabe's voice.
-Voice, melody volume and light-bar colours have separate controls.
+The GCA code, including the Faceplate engine and UI, uses GPL-3.0-only. Separately identified original Faceplate images and animations owned by Alyenax use CC BY-NC-SA 4.0; third-party elements and user imports retain their own rights. Composite demonstration GIFs are not licensed as a whole by that notice. See [Licensing and reuse](https://github.com/Alyenax/GabeCubeAura/wiki/Licensing) and the [media notice](https://github.com/Alyenax/GabeCubeAura/blob/main/docs/media/public/LICENSING.md).
 
-The interactive animations are prepared **64 × 54 GIFs under 12,000 bytes each**,
-not live 3D rendering. The larger GIF above is a documentation illustration,
-not a file transferred to the faceplate. Real appearance latency still depends
-on the device's USB acknowledgement. Completed actions return promptly to the
-current Dashboard or artwork, without waiting for extra decorative loops.
-
-Optional dry remarks use a separately downloaded French/English voice pack.
-They follow confirmed, requested actions and never replace an error or safety
-confirmation. Quitting a game manually does not trigger unsolicited speech.
-
-The simplified page shows essential controls first. **Appearance and sound**
-and **Voice commands** expand on demand; **Advanced mode** contains wake
-sensitivity, detailed lighting/face controls, microphone tests and diagnostics.
-
-<details>
-<summary>Gabe Assistant · the alternative spoken character</summary>
-
-Gabe has animated eyes, glasses and eyebrows, with a light-bar mouth.
-Appearance controls include colours, mouth width, Single colour / Slow Prism
-and Subtle / Natural / Expressive reactions.
-
-The refined face uses Steam-blue eyes and warm salt-and-pepper hair and beard,
-with **bronze champagne** or **muted plum** glasses and light-brown eyebrows
-matched to the hair strands. A soft taupe beard shadow
-replaces the black cutout; the light bar remains Gabe's only animated mouth.
-
-<p align="center"><img src="docs/media/development/gabe-assistant-timer-champagne.gif" width="360" alt="Complete illustrated voice workflow: Hey Gabe, I'm listening, a 30-minute timer request, confirmation, countdown lighting and return to the animated TW3 Dashboard with LEFT 30 MIN"></p>
-
-**You:** “Hey Gabe!” → **Gabe:** “I'm listening.” →
-**You:** “Set a timer for thirty minutes.” →
-**Gabe:** “Your 30-minute timer is set.”
-
-The full exchange plays before the loop restarts. The **40% mouth width**
-follows the plugin's setting: only Gabe's speaking beats drive the cyan mouth;
-the user's turn and quiet pauses leave it off. The countdown then takes over
-the light bar and the animated TW3 Dashboard returns with **LEFT 30 MIN**.
-This silent, subtitled preview illustrates the workflow; it does not record
-speech recognition or start a real timer. The thirty minutes are not accelerated.
-
-<details>
-<summary>Compare the muted plum glasses · same face, dialogue and 40% mouth</summary>
-
-<p align="center"><img src="docs/media/development/gabe-assistant-timer-plum.gif" width="360" alt="The same complete Hey Gabe and 30-minute timer workflow, with muted plum glasses, Steam-blue eyes, warm hair and beard, and a soft taupe shadow without a black cutout"></p>
-
-Only the glasses colour changes. Both previews use the same prepared
-64 × 54 face and the same simulated Steam Machine proportions.
-
-</details>
-
-Activation can use a controller shortcut or optional voice controls, with a
-French/English command glossary. **Gabe, Gaby, Gaben, Cube and GabeCube** work
-with either character. Choose **Ok**, **Hey**, or both as the allowed prefix:
-“Hey Cube” and “Ok GabeCube” are examples. Voice activation is
-off by default and uses separately installed local speech modules. When
-enabled, the selected microphone stays open locally while waiting; waiting
-audio is not saved or uploaded. Disable it to close the microphone.
-
-Voice components are still being prepared for public distribution.
-
-</details>
-
-</details>
-
-<details>
-<summary><strong>Preview credits & limitations</strong></summary>
-
-Game artwork: [Stray by LudaX](https://www.steamgriddb.com/grid/231089),
-[The Witcher 3 by TUFKAC](https://www.steamgriddb.com/grid/523708),
-[Detroit: Become Human by TUFKAC](https://www.steamgriddb.com/grid/243447),
-[Resident Evil 2 by Jnill](https://www.steamgriddb.com/grid/785014).
-
-Previews use front-on Steam Machine enclosure studies. Native **64 × 54** frames
-drive **3,456 individual dots**; enclosure proportions, light-bar diffusion
-and glow are software illustrations, not measured hardware optics. The GIFs
-do not establish physical compatibility, voice accuracy or transfer timing.
-Displayed readings are demonstration values. The assistant GIFs are silent
-software illustrations; the older Gabe dialogue preview is subtitled.
-
-See [preview sources](docs/media/development/CREDITS.md) for individual credits.
-Experimental features may change; no public release date is announced here.
-
-</details>
-
-</details>
-
-## Your everyday display
-
-### Artwork
-
-Carry the current game's colours onto the light bar. Choose Library Hero,
-Header, or Capsule artwork and select the best row automatically or manually.
-The choice is remembered separately for every game.
-
-Local custom artwork is preferred, including SteamGridDB replacements and
-images assigned to non-Steam shortcuts. In Artwork mode, the quick Decky panel
-shows the active game image directly above its exact 17-colour sample.
-
-![Artwork mode with Deep Rock Galactic artwork](docs/media/artwork-mode-steam-machine.png)
-
-### Performance
-
-Use the bar for CPU, GPU, or both. Mixed mode gives each signal eight LEDs,
-with the centre LED off. Length shows load and colour shows temperature.
-Responsive, Balanced, and Smooth profiles control how quickly the meter reacts.
-
-Performance can be selected independently for Home, games, or a specific game.
-Three ready-made temperature palettes are included, and a native Decky colour
-picker lets you choose custom Cool, Middle, and Hot colours.
-
-CPU/GPU sensors are sampled every 0.5 seconds in every display mode. Opening
-Performance settings immediately shows fresh readings without first selecting
-Performance as the active display. Missing or expired readings are not retained
-as if they were live.
-
-![Animated mirrored CPU and GPU meter with changing load percentages, temperatures and colours](docs/media/animations/performance.gif)
-
-### Controller Battery
-
-See controller charge at a glance. Select Controllers as the permanent Home or
-In-game display to show one to four fixed battery seats. Two and four
-controllers use mirrored layouts. Three controllers use three left-to-right
-zones. Dark separators and white charge tips keep every seat readable.
-
-Charging can play a short cue or a continuous blue-and-white animation that
-stops at 100%. The Automatic colour preset uses battery colours with one
-controller, then distinct P1 to P4 seat colours from two controllers onward.
-Manual keeps either colour meaning at every controller count. Choose animation
-styles, brightness and alert contexts. This Concept Lab capture shows the
-single-controller battery view, then two mirrored gauges and continuous
-charging.
-
-![One-controller battery view followed by two mirrored controller gauges and continuous charging](docs/media/animations/controller-battery.gif)
-
-Battery and charging data depend on the controller. Unknown levels are never
-invented; see the [controller test notes](docs/CONTROLLERS_RESEARCH.md).
-
-### Playtime Countdown
-
-See the time you have left. An active Steam Families limit automatically takes
-priority when a game starts, or you can start a personal timer. The bar empties
-from right to left, turns amber below 15 minutes, and turns red below five.
-During the final eight seconds, three short white flashes repeat until zero.
-
-![Animated playtime countdown](docs/media/animations/countdown.gif)
-
-### Weather
-
-Choose a city, then select Weather as the permanent Home or In-game display.
-Twenty-two selectable loops cover clear skies, rain, cloud, partly cloudy day
-and night, snow, and storms. Version 1.2.1 adds 8 night transpositions: two moon
-scenes, four night-cloud scenes and two moon-through-cloud scenes. They keep
-the approved daytime choreography while using a deep blue night field, neutral
-clouds and stepped moon whites. **Snow takes hold** is the default snow scene;
-all animations can be previewed without network access. Existing selections
-are kept.
-
-![Weather animations on the Steam Machine light bar](docs/media/animations/weather.gif)
-
-The SteamOS top-bar weather indicator is enabled by default and appears once a
-city is selected. Choose °C or °F and one of three locally bundled icon
-styles. This works
-independently of the LED weather scene and has been confirmed on one Steam
-Machine; Steam UI updates could change its placement. No temperature colours
-are mapped to LEDs.
-
-<img src="docs/media/weather-topbar-steam-machine.png" alt="Weather icon and temperature beside the SteamOS clock on a real Steam Machine" width="700">
-
-Select a city before enabling live weather. If you enter a country, use its
-full name (for example France), not a two-letter code. GabeCubeAura fetches current
-conditions from Open-Meteo about every 15 minutes, without an API key or
-automatic location detection. The same city can drive global sunset dimming
-even when Weather is not selected as a permanent display.
-
-### Light Events
-
-Light events briefly replace the current display, play their animation, then
-restore the selected permanent display. They can work outside a game.
-Each category has its own switch, animation selector, and nearby live preview.
-
-#### Notification
-
-Return beacon is the fresh-install choice. The GIF below shows Wide echo,
-another selectable notification style.
-
-![Wide echo notification](docs/media/animations/notification.gif)
-
-#### Screenshot
-
-An icy shutter closes, followed by two flashes with expanding echoes.
-
-![Expanding echo screenshot animation](docs/media/animations/screenshot.gif)
-
-#### Achievement
-
-Constellation round trip is the fresh-install choice. The GIF below shows it.
-
-![Constellation achievement animation](docs/media/animations/achievement.gif)
-
-#### Recording
-
-Two red traces mark recording start and stop. While recording, the centre LED
-stays pure red over a compatible permanent display. Its two neighbours are black by
-default to keep the marker distinct through the physical diffuser. The marker
-never modifies a playtime countdown or another event animation.
-
-![Recording start, centre marker, and stop](docs/media/animations/recording.gif)
-
-### Game Launches
-
-GabeCubeAura can play a one-shot launch sequence when a new
-Steam AppID starts. **Game launches is independent from Artwork display**: it
-has its own Hero/Header/Capsule source and colour cache, extracts either two or
-three dominant colours locally, offers ten patterns, and uses a visible timer
-adjustable from 3 to 45 seconds. Short alerts pause that timer and the sequence
-resumes after the alert.
-
-The first animation shows three separate AppIDs and the two- or three-colour
-palette extracted from each Library Hero. The second stays on Balatro and shows
-three of the ten available launch patterns at a deliberately slower pace.
-These are browser illustrations generated from the Concept Lab, not proof of
-physical LED colour fidelity.
-
-![Local artwork palette extraction for Deep Rock Galactic, The Witcher 3, and Balatro](docs/media/animations/game-launch-palettes.gif)
-
-![Balatro launch animation using a two-colour palette with Crescendo, Color wipe, and Scanner](docs/media/animations/game-launch-patterns.gif)
-
-### Customization+
-
-Build a permanent Home or in-game display from one, two, or three exact
-opaque colours. Use the colour picker, Hex or RGB values, brightness from 34 to
-255, animation speed from 1 to 100, direction, and a live 17-LED
-preview. The 65 available effect names are grouped by dynamism: Calm & ambient,
-Flowing, and Energetic. Alpha is intentionally absent because the LED hardware
-and GabeCubeAura settings use RGB, not transparency.
-
-Steam's native Patrol, Breathe, Rainbow, and Solid presets remain in Steam.
-Select **GabeCubeAura Off** to use them; GabeCubeAura does not present approximate
-lookalikes as if they were Valve's effects.
-
-The animation below uses one restrained two-colour palette and a slower
-Crescendo loop. It is captured from the browser simulator, so diffuser
-appearance may differ slightly from the physical Steam Machine.
-
-![Customization+ running a slow Crescendo with a restrained two-colour blue palette](docs/media/animations/customization-plus.gif)
-
-### Real Time Screen Sync
-
-Screen Sync maps the running game's picture onto the light bar in real time.
-Panorama maps 17 horizontal screen zones to the 17 LEDs. Ambient calculates one
-calmer colour for the whole image. Processing stays on the Steam Machine,
-captured frames remain in memory, and no image is saved or sent over the
-network.
-
-![Screen Sync following the game on the physical Steam Machine light bar](docs/media/animations/screen-sync-steam-machine.gif)
-
-The capture runs when Screen Sync is the effective display for a running game,
-while Steam's screensaver is active and opted in, or during the 15-second
-manual preview. It requests a 34 by 18 pixel Gamescope PipeWire stream at 10
-frames per second, detects stable cinematic black bars, reduces bright HUD
-influence, smooths scene changes and stops using a frame when it becomes stale.
-If recording or another Gamescope capture consumer is detected, the saved
-Customization+ effect takes over without competing for the stream.
-Every game AppID transition also terminates the former GStreamer process and
-starts a fresh Gamescope capture session when Screen Sync is still requested;
-this avoids carrying a stale PipeWire client into the next PAUSED preroll.
-The read-only capture stays warm while Steam temporarily owns the LEDs. If the
-Gamescope or PipeWire session actually disappears, GabeCubeAura closes the old
-pipeline first, waits for the session to settle and only then rediscovers it.
-
-Screen Sync has its own settings page for Panorama or Ambient style,
-brightness, reactivity, colour intensity, black threshold and black-bar
-handling. It can be selected as the in-game default, saved per Steam AppID, or
-enabled independently for Steam's screensaver without changing either route.
-
-All existing routing still applies. Choose separate permanent displays for
-Home and games, then let temporary launch, playtime and Steam moments take the
-stage before the selected display returns.
-
-### Audio Sync
-
-Audio Sync turns the mixed system sound into light locally, without recording
-or saving audio. Choose from ten patterns, including Hi-Fi Crest, Slow Prism,
-Spectrum and Stereo Field, then combine any pattern with a built-in palette,
-custom colours, live Screen Sync colours or the running game's Artwork.
-
-Home and in-game can use different patterns, palettes and custom colours. The
-recommended Immersive setup uses Slow Prism with Sapphire at Home and Screen
-Sync in games. Its first-run preview plays a short source-independent Slow
-Prism and Screen Sync demonstration, so it remains visible without live audio
-or a running game. Steam downloads, alerts, Game launches and the screensaver
-keep their existing priority.
-
-![Audio Sync using Slow Prism with the Screen Sync palette on the Steam Machine light bar](docs/media/animations/audio-sync-slow-prism-screen-sync.gif)
-
-### Display Routing
-
-Choose one permanent display for Home and another for games: GabeCubeAura Off,
-Blackout, Customization+, Artwork (games only), Performance, Screen Sync (games
-only), Audio Sync, Weather, or Controllers. A per-game override
-can replace the in-game default. Game launches, Playtime, Light events, and
-Controller alerts are separate temporary layers, so they work without forcing
-a particular permanent display. Choosing GabeCubeAura Off reproduces the former
-Signals-only behaviour: GabeCubeAura yields the bar between temporary signals.
-Blackout instead keeps ownership and holds all 17 LEDs off.
-
-Nine one-step presets configure a complete setup: Lights out, Essential, Focus,
-Moderate, Atmosphere, Signals, Immersive, Immersive+ and Festive. Returning to
-Custom restores the setup saved before the first preset was selected.
-**Lights out excludes even Valve's download animation.** Essential still lets
-Valve show confirmed downloads. Atmosphere uses Weather at Home and falls back
-to its Slow Prism display until a current weather frame is available.
-
-Light bar brightness is global and independent from these routes. Day
-brightness applies whenever GabeCubeAura owns the bar; optional Night
-brightness follows local sunset and sunrise for a manually selected city.
-Changing a preset, Home display or in-game display never changes either value.
-
-StripMine is developed by the same author as GabeCubeAura. With StripMine
-v0.1.1-alpha.7 or newer, open **Settings > Advanced > Plugin compatibility**
-and reveal the TW3-SteamRGB and StripMine controls. Choose which plugin owns
-the bar for Artwork, Performance, Weather, Controller displays, Game launches,
-Screen Sync, Audio Sync, Customization+ and Light Events while the mine is
-active. GabeCubeAura and StripMine acknowledge every transfer before writing,
-then restore the previous owner automatically. No manual **Retry bar** action
-is required. Playtime countdowns remain GabeCubeAura priorities; unknown
-applications still trigger the normal ownership guard.
-
-[TW3 SteamRGB](https://github.com/Alyenax/TW3-SteamRGB) can use the bar as a
-live The Witcher 3 HUD. While its fresh ownership claim is active,
-GabeCubeAura yields only its permanent display. Steam system activity,
-GabeCubeAura previews, alerts, Game launches and playtime countdowns remain
-above the game HUD. The former experimental Witcher Lab is not bundled with
-GabeCubeAura 1.4.0.
-
-## How priorities work
-
-GabeCubeAura follows a strict order:
-
-1. Thermal protection stops every GabeCubeAura write and returns complete
-   control to Valve when the CPU or GPU reaches 94°C.
-2. Disabled returns complete control to Steam.
-3. Steam hard system priority blocks every GabeCubeAura write during startup,
-   downloads and repeated native LED activity.
-4. The final five minutes of a countdown cancel and outrank Game launches.
-5. Recording start and stop cues surround a Customization+ fallback with a
-   persistent red centre marker.
-6. Short alerts pause a Game launch's visible timer; the launch resumes after
-   the alert.
-7. Game launches temporarily replace regular countdowns; those countdowns
-   return afterwards.
-8. Screen Sync, Audio Sync, Artwork, Performance, Weather, Controllers or Customization+
-   provides the selected permanent display.
-9. A single native transition is allowed to settle before GabeCubeAura restores its
-   expected display. Repeated native writes keep control with Steam.
-
-## Install
-
-### Updates inside GabeCubeAura
-
-GabeCubeAura includes a dedicated **Updates** page. Automatic checks can run
-every 15 minutes, 1, 3, 6, 12 or 24 hours, and can show one Decky notification
-for each new version on the selected channel. It never installs an update
-without confirmation.
-
-Before installation, the plugin verifies HTTPS, the release metadata, archive
-size, SHA256 checksum, ZIP paths and package version. Decky then restarts
-briefly. Settings and artwork caches remain outside the replaced plugin
-directory. If the new backend does not confirm a healthy startup within 45
-seconds, the previous plugin version is restored automatically.
-
-The Stable channel is the default, checks every 24 hours and ignores GitHub
-prereleases. No private authorization or token is configured on a fresh
-installation. The optional
-Beta channel accepts published beta releases as well as later stable releases.
-Both use the same verification and confirmation flow. Changing the selector to
-**Beta** starts a fresh release check immediately for published prereleases.
-Returning to Stable explicitly offers the current stable package even when its
-version number is lower than an installed beta.
-
-### Decky Loader
-
-1. Install [Decky Loader](https://decky.xyz/).
-2. Download `GabeCubeAura-v1.4.0.zip` from the
-   [v1.4.0 release](https://github.com/Alyenax/GabeCubeAura/releases/tag/v1.4.0).
-   Do not extract it.
-3. Open **Decky > Settings > General** and enable **Developer mode** only if the
-   **Developer** section is not already visible.
-4. Open **Decky > Settings > Developer**. Under **Third-Party Plugins**, choose
-   **Install Plugin from ZIP File**, select **Browse**, then select the
-   downloaded archive.
-5. Restart Decky Loader if the installed plugin does not appear immediately.
-
-### Manual installation
-
-Extract the archive into `~/homebrew/plugins/` so the result is a
-`~/homebrew/plugins/GabeCubeAura/` directory, then restart `plugin_loader`.
-
-GabeCubeAura requests Decky's root flag only because the Steam Machine exposes its
-light bar through root-owned `valve-leds` sysfs files.
-
-## First setup
-
-1. Open GabeCubeAura in Decky's quick-access menu and select **Open guided
-   setup**.
-2. Choose Moderate, Atmosphere, Signals or Immersive. Each choice previews its
-   representative animation on the physical light bar.
-3. Set Day brightness, then optionally choose a city and configure automatic
-   Night brightness from its exact sunset and sunrise times.
-4. Review the preset, brightness and location, then apply the setup. A visible
-   scroll cue points to the final buttons above Steam's controller footer.
-
-Live Light events are enabled on a fresh installation. Controller alerts have
-their own switch and work independently of Light events. **Skip guided setup**
-applies the recommended Immersive preset and `9/255` Day brightness. Existing
-users do not see onboarding again, and their saved settings are kept.
-
-## Configuration
-
-### Artwork
-
-- Library Hero, Header, or vertical Capsule
-- Automatic, centre, lower, or manual sample row
-- Red line over the image showing the selected manual row
-- Saved source and position for each game
-- Local SteamGridDB and non-Steam custom artwork support
-
-Steam's Library Logo is not sampled because it is a transparent foreground
-layer rather than a complete image.
-
-### Performance
-
-- CPU, GPU, or mixed CPU + GPU
-- Both meters left to right, or mirrored toward the centre
-- Responsive, Balanced, or Smooth filtering
-- Selectable as the Home, In-game, or per-game display
-- Three built-in temperature palettes
-- Custom Cool, Middle, and Hot colours through Decky's colour picker
-- Live CPU/GPU load and temperature in the quick panel
-
-`Cool temperature` and `Hot temperature` are thresholds. The selected colour
-palette is blended continuously between them.
-
-### Playtime
-
-- Automatic Steam Families remaining-time signal
-- Personal timer from five to 240 minutes
-- Five starting colours
-- Timer-duration scale or fixed one, two, three, or four-hour full bar
-- Final eight-second alert
-
-Steam Families only appears while a game is running. Closing or switching games
-clears the old parental countdown immediately.
-
-### Controllers
-
-- Permanent battery gauge selected through Home/In-game display routing
-- Brief alert contexts: Off, On Home, In game, or Home + in game
-- Connection and low-battery alerts can each be disabled; charging has its own
-  Off / Brief / Continuous on Home / Continuous everywhere choice
-- Adjustable low-battery threshold from 5% to 30%
-- Three selectable styles for each signal, including the multiplayer view
-- Fixed layouts for one to four controllers, with automatic mirroring for two
-  and four and left-to-right seats for three
-- Automatic colour preset: battery colours for one controller, then four
-  editable player-seat colours from two controllers onward
-- Manual colour preset: keep either Battery level or Player seats at every
-  controller count
-- Local previews can simulate one to four controllers without changing the
-  detected Steam controller roster
-
-The gauge is the permanent display where selected; it does not combine colours
-from another display. A Steam Families countdown still wins. Unknown or
-coarse battery data is not displayed as an exact percentage.
-
-### Weather
-
-- Location selected manually by city or postal code; no automatic geolocation
-- Selectable through Home/in-game routing, with 22 17-LED animations
-- Independent optional SteamOS top-bar icon and °C/°F temperature
-- Weather brightness and faint-pixel cutoff for the physical diffuser
-- Weather previews work without a city or network connection
-
-### Light bar brightness and optical calibration
-
-The physical diffuser can make a lit LED bleed into a neighbouring dark space.
-**Extra dark LEDs** compensates by lighting fewer physical pixels than the
-logical preview. It affects Countdown and Performance, never Artwork. The
-default is two.
-
-The official Steam Machine's physical LED order is reversed by default while
-the Decky preview remains left to right.
-
-The global **Light bar brightness** section applies the selected Day brightness
-to every Home and in-game route. The recommended starting value is the tested
-`9 / 255`. Optional sunset dimming applies a percentage of that value, for
-example 35% gives `3 / 255`. The city is shared with Weather, but Weather does
-not need to be selected as a display. Important alerts temporarily return to
-Day brightness.
-
-Both sliders preview immediately on the physical bar. A red warning appears
-when Day brightness or the computed Night output falls below `8/255`, because
-such a low value can strongly affect the lighting experience.
-
-GabeCubeAura changes the hardware `brightness_scale` only while it owns the
-bar, then restores Steam's exact saved value before handing control back. If a
-driver does not expose `brightness_scale`, the panel clearly reports the RGB
-attenuation fallback. Thermal protection always returns complete control to
-Valve.
-
-### Configuration backup and reset
-
-Open **Advanced / debug > Show debug details** and choose **Export configuration
-JSON**. GabeCubeAura writes a readable snapshot of global settings, saved per-game
-profiles, and the current game's resolved choices to
-`/home/deck/Documents/GabeCubeAura-configuration.json` on a standard SteamOS setup.
-The panel always shows the exact path used. Exporting again replaces only that
-file, and controller device IDs are never included.
-
-In the same Debug section, **Import configuration JSON** opens a file picker
-and asks for confirmation before replacing saved global settings and per-game
-profiles. Unsupported or invalid files leave the existing configuration
-untouched. **Reset to defaults** asks for confirmation, clears per-game
-profiles, and restores the shipped defaults. Neither action deletes the
-exported JSON or the artwork cache; both stop a running personal timer.
-
-## Safety and privacy
-
-- No cloud telemetry. Weather city search and Open-Meteo requests occur only
-  when you use the optional Weather feature. Private Lab authorization is
-  optional, and fresh installations start disconnected without a token.
-- No SteamOS read-only filesystem modification
-- Local read-only discovery of Steam and custom-grid artwork
-- Serialized and rate-limited hardware writes
-- Redundant-frame suppression to reduce unnecessary LED writes
-- A userspace guard that yields when Steam or another process changes the bar
-- A CPU/GPU thermal interlock that yields completely to Valve at 94°C and only
-  resumes after both coherent readings stay below 90°C for 30 seconds
-
-GabeCubeAura only restores a previous frame when the hardware still matches its
-own last verified write. Missing or incoherent sensor data during a thermal
-alert keeps GabeCubeAura disabled. Fixed red remains available as an ordinary
-user colour; colour alone is never treated as a thermal warning.
-
-## Requirements and known limits
-
-- Designed for the official Steam Machine 17-pixel `valve-leds` light bar
-- Requires Decky Loader on SteamOS
-- Screen Sync requires the SteamOS Gamescope PipeWire source, `pw-dump` and
-  `gst-launch-1.0`. GabeCubeAura reports missing components and does not install
-  system packages automatically.
-- CPU and GPU sensors depend on paths exposed by the hardware and SteamOS build
-- Steam notifications and recording use private SteamClient callbacks that may
-  change between Steam builds
-- Achievement animations follow Steam's achievement notification
-- Screenshot animations follow a newly written screenshot file
-- Controller battery reporting relies on the private SteamInputManager service
-  and varies by controller. There is no verified compatibility list for every
-  controller and connection type yet.
-- No Internet artwork fallback, FPS, network, storage, Moonlight, or Sunshine
-  provider yet
-
-## Build and test
-
-```bash
-corepack pnpm install --frozen-lockfile
-corepack pnpm test
-corepack pnpm typecheck
-corepack pnpm build
-corepack pnpm package
-```
-
-The installable archives are written to `out/GabeCubeAura-v1.4.0.zip` and
-`out/GabeCubeAura.zip`. Their identical SHA256 values are written to
-`out/SHA256SUMS`.
-
-See [the Screen Sync implementation notes](docs/SCREEN_SYNC.md)
-for the implementation status, safety model and physical test checklist.
-
-See [ARCHITECTURE.md](ARCHITECTURE.md) for provider, arbitration, guard, and
-hardware-rendering details. Release history is available in
-[CHANGELOG.md](CHANGELOG.md).
-
-## Uninstall and license
-
-Use Decky's plugin settings to uninstall GabeCubeAura. Settings remain in Decky's
-normal plugin settings directory and can be removed separately if desired.
-
-GabeCubeAura's current code is distributed under the [GNU General Public License, version 3 only](LICENSE) (**GPL-3.0-only**), for contributions its rights holders are entitled to license on those terms. If you redistribute a modified version, follow the GPLv3 source-availability and licensing requirements.
-
-The project previously used the BSD 3-Clause License. Older releases and copies already distributed under BSD terms retain those rights; the change to GPLv3 is **not retroactive**. The original BSD text, copyright notices, and applicable conditions for pre-existing BSD-licensed portions are preserved in [licenses/BSD-3-Clause-previous.txt](licenses/BSD-3-Clause-previous.txt). Other third-party code and assets keep their respective licenses, listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+[Faceplate artwork inventory](https://github.com/Alyenax/GabeCubeAura/wiki/Faceplate-Artwork-Inventory) · [Complete file list and hashes](https://github.com/Alyenax/GabeCubeAura/blob/main/docs/media/public/faceplate-assets.json).

@@ -34,17 +34,19 @@ for its 64 × 54 matrix and reuse it when the game starts.
 
 ## Light bar, without a Faceplate
 
-The light bar works on its own. Start with these everyday displays and Steam signals.
+The light bar works on its own. Light events combine Steam notifications, achievements, screenshots and recording signals.
 
-| Performance | Controller batteries | Weather | Light events |
+| Performance | Controllers | Weather | Light events |
 | :---: | :---: | :---: | :---: |
-| <img src="docs/media/public/strip-performance.gif" width="240" alt="Steam Machine without a Faceplate, showing changing CPU and GPU activity on its light bar"><br>Follow available CPU and GPU load and temperature readings. | <img src="docs/media/public/strip-controllers.gif" width="240" alt="Steam Machine without a Faceplate, showing controller battery gauges and charging on its light bar"><br>See battery levels and charging when your controllers report them. | <img src="docs/media/public/strip-weather.gif" width="240" alt="Steam Machine without a Faceplate, showing animated weather on its light bar"><br>Display weather conditions for your selected city. | <img src="docs/media/public/strip-light-events.gif" width="240" alt="One animation showing Steam notification, achievement, screenshot, recording start and recording stop light signals"><br>Steam notifications, achievements, screenshots and recording signals in one animation. |
+| <img src="docs/media/public/strip-performance.gif" width="160" alt="CPU and GPU load and temperature signals on the light bar"> | <img src="docs/media/public/strip-controllers.gif" width="160" alt="Controller battery levels and charging on the light bar"> | <img src="docs/media/public/strip-weather.gif" width="160" alt="Animated weather for the selected city"> | <img src="docs/media/public/strip-light-events.gif" width="160" alt="Steam notifications, achievements, screenshots and recording signals"> |
+| CPU/GPU load<br>and temperatures. | Battery levels<br>and charging. | Animated weather<br>for your city. | Steam alerts<br>Captures · recording. |
 
 For a more personal setup, match the light bar to the picture or audio, choose your own effects, or keep track of remaining time. The countdown works with a personal timer or a supported Steam Families limit when available.
 
-| Screen Sync | Audio Sync · Slow Prism | Customization+ | Countdown |
+| Screen Sync | Audio Sync | Customization+ | Countdown |
 | :---: | :---: | :---: | :---: |
-| <img src="docs/media/public/strip-screen-sync-pip.gif" width="240" alt="Animated source video in a picture-in-picture inset, with the same images driving the light bar's Screen Sync colours"><br>See the video source in PiP and its matching light-bar colours. | <img src="docs/media/public/strip-audio-sync.gif" width="240" alt="Audio Sync Slow Prism expanding and contracting on the light bar in response to example playback"><br>Slow Prism reacts to playback with a changing illuminated width. Silent preview. | <img src="docs/media/public/strip-customization-gallery.gif" width="240" alt="Five Customization+ colour and movement examples on the Steam Machine light bar"><br>Choose your own colours and animated effects. | <img src="docs/media/public/strip-countdown.gif" width="240" alt="Light bar showing 24 of 30 minutes remaining in an illustrative countdown"><br>See remaining time for a personal timer or an available Steam Families limit. |
+| <img src="docs/media/public/strip-screen-sync-pip.gif" width="160" alt="Video source shown in PiP with matching light-bar colours"> | <img src="docs/media/public/strip-audio-sync.gif" width="160" alt="Slow Prism reacting to playback; silent preview"> | <img src="docs/media/public/strip-customization-gallery.gif" width="160" alt="Custom colour and animation examples on the light bar"> | <img src="docs/media/public/strip-countdown.gif" width="160" alt="Remaining time for a personal timer or supported Steam Families limit"> |
+| Picture-in-picture<br>colour matching. | Slow Prism<br>reacts to playback. | Your colours<br>and effects. | Personal timer<br>or Steam Families. |
 
 Choose different displays for Home, games and individual titles. One global
 light-bar brightness setting applies across those choices, with optional

@@ -66,7 +66,7 @@ class CandidateSafety(unittest.TestCase):
     def test_candidate_identity_and_runtime_allowlist_have_no_voice_or_private_delivery(self):
         from signalbar import __version__
         from signalbar.distribution import supports_private_tools
-        self.assertEqual(__version__,'1.5.0');self.assertFalse(supports_private_tools(__version__))
+        self.assertEqual(__version__,json.loads((ROOT/'package.json').read_text())['version']);self.assertFalse(supports_private_tools(__version__))
         entries=json.loads((ROOT/'scripts/runtime-files.json').read_text())
         self.assertFalse(any('/assistant/' in p or '/studio/' in p or '/cinema/' in p for p in entries))
         self.assertFalse(any('RELEASE_NOTES_' in p for p in entries))

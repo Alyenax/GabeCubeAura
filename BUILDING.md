@@ -1,4 +1,4 @@
-# Building GabeCubeAura 1.5.0
+# Building GabeCubeAura 1.5.1
 
 Use Node.js with pnpm 9 and Python 3. Install Pillow for the image tests.
 
@@ -11,7 +11,7 @@ pnpm package
 pnpm verify:release
 ```
 
-Packaging writes `out/GabeCubeAura-v1.5.0.zip`, `out/GabeCubeAura.zip` and `out/SHA256SUMS`. Only `scripts/runtime-files.json` enters the installable ZIP; tests, build tools, source-only files and documentation demonstrations remain outside it. The update manifest identifies every runtime file by size and SHA-256. No user configuration, artwork library, credentials or caches are bundled.
+Packaging writes `out/GabeCubeAura-v1.5.1.zip`, `out/GabeCubeAura.zip` and `out/SHA256SUMS`. Only `scripts/runtime-files.json` enters the installable ZIP; tests, build tools, source-only files and documentation demonstrations remain outside it. The update manifest identifies every runtime file by size and SHA-256. No user configuration, artwork library, credentials or caches are bundled.
 
 The publication review in `licenses/faceplate-scope.json` records the approval for 1.5.0. Normal packaging and release verification require its cleared status; file-scope, provenance, legal-text and checksum checks remain enforced. Packaging itself never publishes a release.
 

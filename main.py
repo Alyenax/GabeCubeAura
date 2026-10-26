@@ -135,56 +135,59 @@ class Plugin:
         self._sync_faceplate_claim()
         try:
             self.engine.start()
-        except Exception:
-            faceplate_claim.release(self.faceplate_settings_dir)
+            self.faceplate_power_events = PowerEvents(
+                self._handle_faceplate_power_event, decky.logger,
+            )
+            self.update_manager = UpdateManager(
+                __version__, self.engine.settings,
+                decky.DECKY_PLUGIN_RUNTIME_DIR,
+                decky.DECKY_PLUGIN_DIR,
+                decky.logger,
+            )
+            self.pixel_studio = PixelStudioManager(
+                decky.DECKY_PLUGIN_DIR,
+                user_home,
+                __version__,
+                decky.logger,
+            )
+            # Pixel Studio is Decky-native now. Remove the retired Desktop entry
+            # and stop only an exact matching legacy loopback service.
+            self.pixel_studio.disable_standalone()
+            self.faceplate_artwork_jobs = ArtworkPreparationJobs(
+                self.engine.faceplate.steamgriddb,
+                self.engine.faceplate_game_snapshot,
+                decky.logger,
+            )
+            self.cinema = self.cinema_installer = self.cinema_preview = self.cinema_tools = None
+            self.studio = self.studio_installer = self.studio_preview = None
+            # Studio moved to Decky-Animated-Screensaver. Do not open/migrate/scan its
+            # former library, spawn media workers, load codecs or inspect Steam export
+            # files during plugin startup. Old RPC names only provide a retired-state
+            # response to a frontend surviving an update; no service is constructed.
+            self._cinema_error = ('Animated Screensaver Studio moved to Decky-Animated-Screensaver. '
+                                  'Existing files and Steam installations were preserved.')
+            self._cinema_tools_path = ''
+            self._cinema_scanned = False
+            self._cinema_install_error = ''
+            self._cinema_installation = None
+            self._cinema_bridge_token = ''
+            self.pixel_studio.set_current_game(self.engine.faceplate_game_snapshot())
+            self._configure_faceplate_power_events()
+            self.update_manager.start()
+            self._integration_loop = asyncio.get_running_loop()
+            self.engine.assistant.actions.send = self._timer_steam_action
+            self._diagnostic_upload_task = None
+            self._diagnostic_upload_lock=asyncio.Lock()
+            self.automatic_incidents = None
+            if migrated_from:
+                decky.logger.info(f"[GabeCubeAura] imported legacy {migrated_from} settings")
+            decky.logger.info("[GabeCubeAura] loaded")
+        except BaseException:
+            # Any later startup stage may fail after the engine has acquired
+            # devices. Stop the initialized components before releasing the
+            # cooperative claim, including when Decky cancels startup.
+            await self._shutdown_plugin()
             raise
-        self.faceplate_power_events = PowerEvents(
-            self._handle_faceplate_power_event, decky.logger,
-        )
-        self.update_manager = UpdateManager(
-            __version__, self.engine.settings,
-            decky.DECKY_PLUGIN_RUNTIME_DIR,
-            decky.DECKY_PLUGIN_DIR,
-            decky.logger,
-        )
-        self.pixel_studio = PixelStudioManager(
-            decky.DECKY_PLUGIN_DIR,
-            user_home,
-            __version__,
-            decky.logger,
-        )
-        # Pixel Studio is Decky-native now. Remove the retired Desktop entry
-        # and stop only an exact matching legacy loopback service.
-        self.pixel_studio.disable_standalone()
-        self.faceplate_artwork_jobs = ArtworkPreparationJobs(
-            self.engine.faceplate.steamgriddb,
-            self.engine.faceplate_game_snapshot,
-            decky.logger,
-        )
-        self.cinema = self.cinema_installer = self.cinema_preview = self.cinema_tools = None
-        self.studio = self.studio_installer = self.studio_preview = None
-        # Studio moved to Decky-Animated-Screensaver. Do not open/migrate/scan its
-        # former library, spawn media workers, load codecs or inspect Steam export
-        # files during plugin startup. Old RPC names only provide a retired-state
-        # response to a frontend surviving an update; no service is constructed.
-        self._cinema_error = ('Animated Screensaver Studio moved to Decky-Animated-Screensaver. '
-                              'Existing files and Steam installations were preserved.')
-        self._cinema_tools_path = ''
-        self._cinema_scanned = False
-        self._cinema_install_error = ''
-        self._cinema_installation = None
-        self._cinema_bridge_token = ''
-        self.pixel_studio.set_current_game(self.engine.faceplate_game_snapshot())
-        self._configure_faceplate_power_events()
-        self.update_manager.start()
-        self._integration_loop = asyncio.get_running_loop()
-        self.engine.assistant.actions.send = self._timer_steam_action
-        self._diagnostic_upload_task = None
-        self._diagnostic_upload_lock=asyncio.Lock()
-        self.automatic_incidents = None
-        if migrated_from:
-            decky.logger.info(f"[GabeCubeAura] imported legacy {migrated_from} settings")
-        decky.logger.info("[GabeCubeAura] loaded")
 
     async def _unload(self):
         await self._shutdown_plugin()
@@ -204,18 +207,25 @@ class Plugin:
         # retain headroom for cancellation, device release and final state I/O.
         def cleanup():
             budget = ShutdownBudget(3.0)
-            self.engine._stop.set()
-            self.engine.countdown.end_action.cancel('plugin-stopped')
+            engine = getattr(self, 'engine', None)
+            if engine is not None:
+                engine._stop.set()
+                engine.countdown.end_action.cancel('plugin-stopped')
+            # A failed startup has not necessarily constructed every component.
+            # Resolve each optional stop independently so it cannot prevent the
+            # engine and the claim from being released.
             operations = (
-                ('artwork', self.faceplate_artwork_jobs.cancel, False),
+                ('artwork', getattr(getattr(self, 'faceplate_artwork_jobs', None), 'cancel', None), False),
                 ('studio', self._stop_cinema, True),
-                ('power-events', self.faceplate_power_events.stop, True),
-                ('updates', self.update_manager.stop, True),
-                ('engine', self.engine.stop, True),
+                ('power-events', getattr(getattr(self, 'faceplate_power_events', None), 'stop', None), True),
+                ('updates', getattr(getattr(self, 'update_manager', None), 'stop', None), True),
+                ('engine', getattr(engine, 'stop', None), True),
                 ('claim', self._sync_faceplate_claim, False),
             )
             failed = False
             for name, callback, bounded in operations:
+                if callback is None:
+                    continue
                 started = time.monotonic()
                 try:
                     budget.call(callback) if bounded else callback()
@@ -225,7 +235,9 @@ class Plugin:
                 finally:
                     decky.logger.info(f'[GabeCubeAura] shutdown {name}: {time.monotonic()-started:.3f}s')
             if not failed:
-                self.diagnostics.finish_session()
+                diagnostics = getattr(self, 'diagnostics', None)
+                if diagnostics is not None:
+                    diagnostics.finish_session()
                 decky.logger.info("[GabeCubeAura] unloaded; LED ownership released")
         await asyncio.get_running_loop().run_in_executor(None, cleanup)
 

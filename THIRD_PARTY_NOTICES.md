@@ -6,13 +6,15 @@ GCA's own code is GPL-3.0-only. Only the original graphics positively identified
 
 The JSAUX PIXEL Faceplate transport, GIF encoder, artwork/layout and logind power-event adaptations use work from https://github.com/hodapp/pixel-faceplate at revision `5614dd167b8a72504258558b13c4073002a4d6aa`, Copyright (c) 2026 Eli Hodapp, BSD-3-Clause. Complete terms: `licenses/Pixel-Faceplate-BSD-3-Clause.txt`. Upstream portions in artwork.py, gif.py, protocol.py, transport.py, artwork_layout.py and power_events.py retain their terms and credits. GCA original additions remain GPL-3.0-only. The upstream plugin itself is not a runtime dependency.
 
+The cooperative claim helper also incorporates Eli Hodapp's contribution in [PR #5](https://github.com/Alyenax/GabeCubeAura/pull/5), original commit `65d919addf5560fd0b68a2726aa14ece36750d37`. His original commit and three tests are preserved. The unchanged Pixel Faceplate 0.3.1 test fixtures are separately attributed under `tests/fixtures/pixel_faceplate_031/`; they are not bundled in the runtime archive.
+
 ## Decky API and UI
 
 `@decky/api` 1.1.3, SteamDeckHomebrew Team, LGPL-2.1, https://github.com/SteamDeckHomebrew/loader-api. Its short connection wrapper is incorporated into `dist/index.js`. Exact installed source files, distributed wrapper, package metadata and LGPL text are supplied unchanged under `licenses/decky-api-1.1.3/`. File hashes are recorded in `licenses/third-party-files.json`.
 
 `@decky/ui` 4.12.1 declares LGPL-2.1. The Rollup configuration treats it as the external Decky host library (`DFL`); its implementation is not copied wholesale into this plugin bundle. Its unchanged LGPL text is `licenses/Decky-UI-LGPL-2.1.txt`. React, React DOM and JSX runtime are likewise supplied externally by the host.
 
-For rebuilding or replacing the API wrapper, use the complete corresponding GCA source tree with its pnpm lockfile, `pnpm install --frozen-lockfile`, then `pnpm build`. Replace/edit the API dependency source as needed before rebuilding. The exact wrapper snapshot accompanying this release identifies the incorporated code; the complete corresponding source and lockfile accompany version 1.5.0. No extra noncommercial restriction is imposed on that code or its modification.
+For rebuilding or replacing the API wrapper, use the complete corresponding GCA source tree with its pnpm lockfile, `pnpm install --frozen-lockfile`, then `pnpm build`. Replace/edit the API dependency source as needed before rebuilding. The exact wrapper snapshot accompanying this release identifies the incorporated code; the complete corresponding source and lockfile accompany version 1.5.1. No extra noncommercial restriction is imposed on that code or its modification.
 
 ## Icons
 

@@ -314,10 +314,14 @@ class LifecycleTests(unittest.TestCase):
         start = next(i for i, n in enumerate(method.body)
                      if isinstance(n, ast.Expr) and isinstance(n.value, ast.Call)
                      and ast.unparse(n.value.func) == "self._sync_faceplate_claim")
-        segment = ast.Module(body=method.body[start:start+2], type_ignores=[])
+        # Startup cleanup is asynchronous. Keep the actual source segment in
+        # an async function so its exception path can await normal shutdown.
+        wrapper = ast.parse("async def startup_segment(self):\n    pass\n")
+        wrapper.body[0].body = method.body[start:start+2]
+        namespace = dict(faceplate_claim=claim)
+        exec(compile(ast.fix_missing_locations(wrapper), str(SOURCE / "main.py"), "exec"), namespace)
         with self.assertRaises(RuntimeError):
-            exec(compile(segment, str(SOURCE / "main.py"), "exec"),
-                 dict(self=self.p, faceplate_claim=claim))
+            asyncio.run(namespace["startup_segment"](self.p))
         self.assert_owner(False)
 
     def test_claim_precedes_engine_start(self):

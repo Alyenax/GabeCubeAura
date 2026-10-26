@@ -1,5 +1,32 @@
 # Changelog
 
+## 1.5.1 · 2026-10-26
+
+### Fixed
+
+- Keep the cooperative Faceplate claim synchronized after setup, configuration
+  imports, resets and support changes, including saved changes whose awaiting
+  command is cancelled or reports a later error.
+- Publish the claim before the engine starts, release it after shutdown or a
+  failed startup, and prevent late callbacks from reclaiming an unloaded plugin.
+  Partial startup failures now stop components that were already initialized.
+- Make the nonsecret claim readable by Pixel Faceplate's unprivileged backend
+  under restrictive file-creation permissions, without broadening private
+  configuration or credential permissions. Replace it atomically using a unique
+  temporary file.
+- Serialize claim updates and release between cooperating GCA backend processes,
+  so an old backend cannot remove a replacement backend's claim during restart.
+- Retain the claim while the display is powered off or suspended, so Pixel
+  Faceplate does not wake it unexpectedly. Disabling Faceplate support releases
+  the reservation; the serial port retains its exclusive kernel lock.
+
+These corrections build on Eli Hodapp's cooperative handoff contribution in
+[PR #5](https://github.com/Alyenax/GabeCubeAura/pull/5), preserved with its original
+commit and tests through [PR #11](https://github.com/Alyenax/GabeCubeAura/pull/11).
+Pixel Faceplate's polling cadence is unchanged; clock mode can delay handoff
+until its next scheduled wake-up. No firmware or physical-device validation is
+claimed by the automated tests.
+
 ## 1.5.0 · 2026-10-25
 
 GabeCubeAura 1.5.0 adds the optional JSAUX Faceplate, prepared artwork, Dashboards and Steam Players City, with updated setup, local backups and display controls. See [what's new](https://github.com/Alyenax/GabeCubeAura/wiki/Release-1.5.0).

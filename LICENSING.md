@@ -1,6 +1,6 @@
 # Licensing and reuse
 
-This page covers GCA source code and separately identified original Faceplate artwork. This notice accompanies the 1.5.0 installation package.
+This page covers GCA source code and separately identified original Faceplate artwork. This notice accompanies the 1.5.1 installation package.
 
 GabeCubeAura code is licensed under **GNU GPL version 3 only (`GPL-3.0-only`)**, including the Faceplate engine, integration, frontend and original generator code. Applicable third-party notices and licences remain in force. The noncommercial terms below apply to separately identified original graphical resources, not to the code.
 
@@ -33,7 +33,7 @@ A documentation GIF or image may combine original Faceplate artwork with exclude
 
 ## Publication and earlier rights
 
-This notice describes GabeCubeAura 1.5.0 and its identified bundled artwork.
+This notice describes GabeCubeAura 1.5.1 and its identified bundled artwork.
 
 Valid historical grants and upstream licences remain in force. GCA is independent of Valve and JSAUX; their names identify compatible products and do not imply endorsement.
 

@@ -131,9 +131,13 @@ class Plugin:
         )
         await asyncio.get_running_loop().run_in_executor(None, self._start_jsaux_broker)
         self._jsaux_recovery_task = asyncio.create_task(self._recover_jsaux_startup())
-        self.engine.start()
         self.faceplate_settings_dir = decky.DECKY_PLUGIN_SETTINGS_DIR
         self._sync_faceplate_claim()
+        try:
+            self.engine.start()
+        except Exception:
+            faceplate_claim.release(self.faceplate_settings_dir)
+            raise
         self.faceplate_power_events = PowerEvents(
             self._handle_faceplate_power_event, decky.logger,
         )
@@ -208,7 +212,7 @@ class Plugin:
                 ('power-events', self.faceplate_power_events.stop, True),
                 ('updates', self.update_manager.stop, True),
                 ('engine', self.engine.stop, True),
-                ('claim', lambda: faceplate_claim.release(self.faceplate_settings_dir), False),
+                ('claim', self._sync_faceplate_claim, False),
             )
             failed = False
             for name, callback, bounded in operations:
@@ -289,7 +293,7 @@ class Plugin:
             if not self._onboarding_commit_lock.acquire(blocking=False):
                 raise ValueError('Setup is already being applied')
             try:
-                return apply_complete()
+                return self._call_with_faceplate_claim_sync(apply_complete)
             finally:
                 self._onboarding_commit_lock.release()
         def persist_complete():
@@ -411,31 +415,36 @@ class Plugin:
 
     async def import_configuration(self, path: str):
         global_values, display_profiles, artwork_profiles, launch_artwork_profiles = read_configuration_import(path)
-        self.engine.import_configuration(
+        await asyncio.get_running_loop().run_in_executor(
+            None, self._call_with_faceplate_claim_sync, self.engine.import_configuration,
             global_values, display_profiles, artwork_profiles, launch_artwork_profiles,
         )
         await asyncio.get_running_loop().run_in_executor(None, self._configure_faceplate_power_events)
         return self.engine.status()
 
     async def reset_configuration(self):
-        self.engine.reset_configuration()
+        await asyncio.get_running_loop().run_in_executor(
+            None, self._call_with_faceplate_claim_sync, self.engine.reset_configuration,
+        )
         if getattr(self, 'onboarding_draft', None) is not None:
             self.onboarding_draft.discard()
         await asyncio.get_running_loop().run_in_executor(None, self._configure_faceplate_power_events)
         return self.engine.status()
 
     async def reset_settings_only(self):
-        await asyncio.get_running_loop().run_in_executor(None, self.engine.reset_settings_only)
+        await asyncio.get_running_loop().run_in_executor(
+            None, self._call_with_faceplate_claim_sync, self.engine.reset_settings_only,
+        )
         if getattr(self, 'onboarding_draft', None) is not None:
             await asyncio.get_running_loop().run_in_executor(None, self.onboarding_draft.discard)
-        await asyncio.get_running_loop().run_in_executor(None, self._sync_faceplate_claim)
         await asyncio.get_running_loop().run_in_executor(None, self._configure_faceplate_power_events)
         return self.engine.status()
 
     async def factory_reset_configuration(self, confirmation: str):
         from signalbar.configuration_reset import factory_reset
-        await asyncio.get_running_loop().run_in_executor(None, factory_reset, self, confirmation)
-        await asyncio.get_running_loop().run_in_executor(None, self._sync_faceplate_claim)
+        await asyncio.get_running_loop().run_in_executor(
+            None, self._call_with_faceplate_claim_sync, factory_reset, self, confirmation,
+        )
         await asyncio.get_running_loop().run_in_executor(None, self._configure_faceplate_power_events)
         return self.engine.status()
 
@@ -455,9 +464,13 @@ class Plugin:
         changes = {key: value}
         if key == "faceplate_lab_enabled" and type(value) is bool:
             changes["faceplate_setup_completed"] = True
-        await asyncio.get_running_loop().run_in_executor(
-            None, self.engine.update_settings, changes,
-        )
+        loop = asyncio.get_running_loop()
+        if key == "faceplate_lab_enabled":
+            await loop.run_in_executor(
+                None, self._call_with_faceplate_claim_sync, self.engine.update_settings, changes,
+            )
+        else:
+            await loop.run_in_executor(None, self.engine.update_settings, changes)
         if key == "faceplate_brightness":
             self.diagnostics.record(
                 "faceplate_brightness_changed",
@@ -468,16 +481,35 @@ class Plugin:
             await asyncio.get_running_loop().run_in_executor(
                 None, self._configure_faceplate_power_events,
             )
-            if key == "faceplate_lab_enabled":
-                self._sync_faceplate_claim()
         return await asyncio.get_running_loop().run_in_executor(None, self.engine.status)
 
+    def _call_with_faceplate_claim_sync(self, callback, *args):
+        """Follow committed settings even after failure or RPC cancellation.
+
+        Run inside the same executor job as the mutation, not in the awaiting
+        coroutine: cancelling a caller does not stop an already-running job.
+        """
+        try:
+            return callback(*args)
+        finally:
+            self._sync_faceplate_claim()
+
     def _sync_faceplate_claim(self):
-        if self.engine.settings.all().get("faceplate_lab_enabled"):
-            if not faceplate_claim.claim(self.faceplate_settings_dir):
-                decky.logger.warning("[GabeCubeAura] faceplate ownership claim unavailable")
-        else:
-            faceplate_claim.release(self.faceplate_settings_dir)
+        # Early RPCs may finish while _main is still awaiting broker startup.
+        # The normal startup sync publishes once its settings directory is ready.
+        if not getattr(self, 'faceplate_settings_dir', None):
+            return
+        # Serialize late RPC completions with shutdown. Display power/standby
+        # is deliberately NOT a release: another plugin must not wake it up.
+        lock = self.__dict__.setdefault('_faceplate_claim_lock', threading.RLock())
+        with lock:
+            enabled = (not getattr(self, '_gabe_unloading', False)
+                       and self.engine.settings.all().get("faceplate_lab_enabled"))
+            if enabled:
+                if not faceplate_claim.claim(self.faceplate_settings_dir):
+                    decky.logger.warning("[GabeCubeAura] faceplate ownership claim unavailable")
+            else:
+                faceplate_claim.release(self.faceplate_settings_dir)
 
     def _configure_faceplate_power_events(self):
         monitor = getattr(self, 'faceplate_power_events', None)

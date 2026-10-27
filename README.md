@@ -12,8 +12,6 @@ development on Ko-fi. Thank you! ❤️
 
 [![Support GabeCubeAura on Ko-fi](docs/media/public/support-kofi.svg)](https://ko-fi.com/alyenax)
 
-**GabeCubeAura 1.5.1** — fixes for coexistence with Pixel Faceplate.
-
 [Download 1.5.1](https://github.com/Alyenax/GabeCubeAura/releases/download/v1.5.1/GabeCubeAura-v1.5.1.zip)
 · [User guide](https://github.com/Alyenax/GabeCubeAura/wiki)
 · [Changelog](https://github.com/Alyenax/GabeCubeAura/blob/main/CHANGELOG.md)

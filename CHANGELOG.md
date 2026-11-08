@@ -4,6 +4,7 @@
 
 ### Faceplate clocks
 
+- Default new Home and in-game clock transfer settings to Fixed minute (about 60 transfers per hour). Keep existing saved choices.
 - Add nine standalone clock faces: Meridian, Halo, Almanac, Quadrant, Cardinal markers, Horizon, Column, Week and Date card.
 - Offer six palettes, separate Home and in-game selections, 24-hour/AM-PM formats and English/French dates.
 - Add Conservative and Fixed minute transfer modes. Clock time advances inside scheduled GIF packets; each mode retains the normal USB and display protections.

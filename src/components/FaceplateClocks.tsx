@@ -103,7 +103,7 @@ export function ClockTransferSettings({status,setStatus,context}:{status:Status;
   }
   return <>
     <PanelSectionRow><DropdownItem label="Clock transfer mode" disabled={busy}
-      selectedOption={status['faceplate_clock_cadence_'+context as 'faceplate_clock_cadence_home']??'conservative'}
+      selectedOption={status['faceplate_clock_cadence_'+context as 'faceplate_clock_cadence_home']??'minute'}
       rgOptions={[{data:'conservative',label:'Conservative · about 15/hour'},{data:'minute',label:'Fixed minute · about 60/hour'}]}
       onChange={option=>void save(String(option.data))}/></PanelSectionRow>
     <PanelSectionRow><Localized><small>Fixed minute keeps the time and date unchanged inside each GIF while animations continue. It uses more transfers. Home and games are saved separately.</small></Localized></PanelSectionRow>

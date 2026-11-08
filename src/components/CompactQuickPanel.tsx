@@ -1,9 +1,11 @@
+import {ClockCountdowns,openClockPicker} from './FaceplateClocks';
 import {useEffect,useRef,useState} from 'react';
 import {DialogButton,Field,Focusable,Localized,PanelSection,PanelSectionRow,SliderField,TextField,ToggleField} from '../localized_ui';
 import {QuickInlineChoice} from './QuickInlineChoice';
 import {CompactLedPreview} from './LiveLedPreview';
 import {extendFreeTimer,getQuickArtwork,setFaceplatePower,setFaceplateRouting,setGameDisplay,setLightBarBrightness,setSetting,startFreeTimer,stopFreeTimer} from '../api';
 import {gameDisplayOptions} from '../game_display_options';
+import {homeDisplayOptions} from '../home_display_options';
 import {quickFaceOptions,homeFaceChoice,showArtworkPreparationHint} from '../faceplate_choices';
 
 import {trailingSetting} from '../trailingSetting';
@@ -61,13 +63,11 @@ export function CompactQuickPanel({status,setStatus,colors,onOpenGame,onOpenSett
   const[editingTimer,setEditingTimer]=useState(false);
   const alive=useRef(true),working=useRef(false);
   const latest=useRef(status);latest.current=status;
-  const locked=status.onboarding_completed!==true;
-  const canUse=()=>alive.current&&latest.current.onboarding_completed===true;
+  const canUse=()=>alive.current;
   const setLatest=useRef(setStatus);setLatest.current=setStatus;
   const mutation=useRef(onMutationChange);mutation.current=onMutationChange;
   const saveBrightness=useRef<ReturnType<typeof trailingSetting<number,Status>>|null>(null);
   if(!saveBrightness.current)saveBrightness.current=trailingSetting(async value=>{
-    if(latest.current.onboarding_completed!==true)return latest.current;
     mutation.current?.(true);
     try{const next=await setLightBarBrightness('light_bar_day_brightness',value,'day');if(canUse())setLatest.current(next);return next;}
     catch(reason){if(canUse()){setErrorAction('');setError('Brightness could not be saved. Try again.');setBrightness(latest.current.light_bar_day_brightness);}throw reason;}
@@ -75,7 +75,6 @@ export function CompactQuickPanel({status,setStatus,colors,onOpenGame,onOpenSett
   },250);
   const saveFaceBrightness=useRef<ReturnType<typeof trailingSetting<number,Status>>|null>(null);
   if(!saveFaceBrightness.current)saveFaceBrightness.current=trailingSetting(async value=>{
-    if(latest.current.onboarding_completed!==true)return latest.current;
     mutation.current?.(true);
     try{const next=await setSetting('faceplate_brightness',value);if(canUse()&&latestFaceBrightness.current===value)setLatest.current(next);return next;}
     catch(reason){if(canUse()&&latestFaceBrightness.current===value){setErrorAction('faceplate-brightness');setError('JSAUX brightness could not be saved. Try again.');setFaceBrightness(latest.current.faceplate_brightness);}throw reason;}
@@ -84,12 +83,6 @@ export function CompactQuickPanel({status,setStatus,colors,onOpenGame,onOpenSett
   useEffect(()=>{alive.current=true;reportQuickUI('panel','mounted');return()=>{alive.current=false;void saveBrightness.current?.flush().catch(()=>undefined);void saveFaceBrightness.current?.flush().catch(()=>undefined);};},[]);
   useEffect(()=>{if(!saveBrightness.current?.pending())setBrightness(status.light_bar_day_brightness);},[status.light_bar_day_brightness]);
   useEffect(()=>{if(!saveFaceBrightness.current?.pending())setFaceBrightness(status.faceplate_brightness);},[status.faceplate_brightness]);
-
-  useEffect(()=>{if(locked){
-    saveBrightness.current?.cancel();saveFaceBrightness.current?.cancel();
-    setBrightness(status.light_bar_day_brightness);setFaceBrightness(status.faceplate_brightness);
-    setEditingTimer(false);setError('');
-  }},[locked]);
 
   const artRequest=useRef({key:'',attempts:0,busy:false,found:false});
   useEffect(()=>{
@@ -113,28 +106,40 @@ export function CompactQuickPanel({status,setStatus,colors,onOpenGame,onOpenSett
   };
   const update=async(task:Promise<Status>)=>{const next=await task;if(canUse())setStatus(next);};
   const timer=personalTimer(status),face=status.faceplate,game=status.game.appid>0;
-  const controlsBusy=busy||locked;
+  const controlsBusy=busy;
   const pending=controlsBusy||!status.signalbar_enabled;
   const faceBusy=Boolean(face.busy)||!face.available||pending;
   const french=status.ui_language==='fr';
   const faceOptions=quickFaceOptions(game,french);
   const faceChoice=quickFaceChoice(status);
-  const artworkGuidance=showArtworkPreparationHint(status);
+  const artworkPending=showArtworkPreparationHint(status);
+  // Allow the current route to settle before offering creation help. Status
+  // refreshes keep the same deadline; closing the panel or changing context cancels it.
+  const artworkContext=active&&artworkPending?`${status.game.appid}:${faceChoice}`:'';
+  const[artworkGuidanceContext,setArtworkGuidanceContext]=useState('');
+  useEffect(()=>{
+    setArtworkGuidanceContext('');
+    if(!artworkContext)return;
+    const timeout=setTimeout(()=>setArtworkGuidanceContext(artworkContext),5_000);
+    return()=>clearTimeout(timeout);
+  },[artworkContext]);
+  const artworkGuidance=Boolean(artworkContext&&artworkGuidanceContext===artworkContext);
   const reportedTransfer=faceplateTransferNotice(status);
   // A rejected choice may leave the previous scene's receipt in status.
   // Keep current progress/errors visible, but never confirm the failed choice.
   const transfer=busy&&errorAction==='faceplate'
     ? {label:'Saving display choice…',detail:'Please wait.',active:true,tone:'waiting'}
-    : ((error&&errorAction==='faceplate')||artworkGuidance)&&reportedTransfer?.tone==='good'?null:reportedTransfer;
+    : ((error&&errorAction==='faceplate')||artworkPending)&&reportedTransfer?.tone==='good'?null:reportedTransfer;
   const presets=quickAmbienceOptions(status.display_preset);
   const openTimer=()=>{
     if(!canUse()||working.current||editingTimer||busy)return;
     setError('');reportQuickUI('timer','opened');setEditingTimer(true);
   };
   const selectFace=async(value:string)=>{
+    if(value==='clock'){openClockPicker(latest.current,next=>{if(canUse())setStatus(next);},game?'game':'home');return;}
     if(value==='off'){await update(setFaceplatePower(false));return;}
     let next=latest.current;
-    next=await setFaceplateRouting(game?homeFaceChoice(next):value as Status['faceplate']['routing']['routes']['home'],game?value as 'dashboard'|'weather'|'artwork'|'artwork-dashboard'|'player-city':next.faceplate.routing.routes.game,next.faceplate.routing.preference_revision);
+    next=await setFaceplateRouting(game?homeFaceChoice(next):value as Status['faceplate']['routing']['routes']['home'],game?value as 'dashboard'|'weather'|'artwork'|'artwork-dashboard'|'player-city'|'clock':next.faceplate.routing.routes.game,next.faceplate.routing.preference_revision);
     if(!canUse())return;
     if(next.faceplate.powered===false)next=await setFaceplatePower(true);
     if(canUse())setStatus(next);
@@ -142,7 +147,7 @@ export function CompactQuickPanel({status,setStatus,colors,onOpenGame,onOpenSett
   const frame=status.signalbar_enabled&&status.active&&colors.length===17?colors:Array.from({length:17},()=>[0,0,0] as RGB);
   return <div id="gca-compact-root"><style>{COMPACT_QUICK_CSS}</style>
     <section className="gca-compact-visual"><PanelSection><PanelSectionRow>
-      {game?<DialogButton className="gca-compact-art-link" aria-label="Game display…" disabled={locked} onClick={()=>{if(canUse())onOpenGame();}}>
+      {game?<DialogButton className="gca-compact-art-link" aria-label="Game display…" disabled={busy} onClick={()=>{if(canUse())onOpenGame();}}>
         {artRequest.current.key===`${status.game.appid}:${status.artwork_source}`&&art?.appid===status.game.appid&&art.found&&art.data_uri?<img src={art.data_uri} alt={status.game.title} className="gca-compact-game-art"/>:<Localized><div className="gca-compact-art-empty">No game artwork available yet.</div></Localized>}
         <span className="gca-compact-game-title" translate="no">{status.game.title}</span>
       </DialogButton>:<Localized><span className="gca-compact-game-title">Home</span></Localized>}
@@ -160,7 +165,10 @@ export function CompactQuickPanel({status,setStatus,colors,onOpenGame,onOpenSett
       </PanelSectionRow>{game?<PanelSectionRow><QuickInlineChoice label="In-game light bar"
         rgOptions={gameDisplayOptions(face.available, status.current_display)} selectedOption={status.current_display} disabled={pending}
         onChange={option=>{const value=String(option.data);void run(()=>update(setGameDisplay(status.game.appid,value)));}}/>
-      </PanelSectionRow>:null}<PanelSectionRow><Localized><small className="gca-preset-summary">{presetSummary(status.display_preset)}</small></Localized>
+      </PanelSectionRow>:<PanelSectionRow><QuickInlineChoice label="LED bar in Home"
+        rgOptions={homeDisplayOptions(face.available,status.home_display)} selectedOption={status.home_display} disabled={pending}
+        onChange={option=>{const value=String(option.data);void run(()=>update(setSetting('home_display',value)));}}/>
+      </PanelSectionRow>}<PanelSectionRow><Localized><small className="gca-preset-summary">{presetSummary(status.display_preset)}</small></Localized>
       {error&&errorAction==='ambience'?<Localized><small className="gca-compact-action-error" role="alert">{error}</small></Localized>:null}</PanelSectionRow></PanelSection></section>
     <section className="gca-compact-timer"><PanelSection><PanelSectionRow><Field label="Timer" childrenLayout="below">
       {timer.active?<output className="gca-compact-clock" aria-label="Time remaining">{clock(timer.remaining_seconds)}</output>:editingTimer?null:<DialogButton disabled={controlsBusy} onClick={openTimer}>Start…</DialogButton>}</Field>
@@ -183,6 +191,7 @@ export function CompactQuickPanel({status,setStatus,colors,onOpenGame,onOpenSett
         <Localized><small role="status">If no artwork is ready for this display, the Faceplate keeps its current image. Create and apply artwork in the Artwork tab.</small></Localized>
         <DialogButton className="gca-compact-wide" disabled={controlsBusy} onClick={()=>{if(canUse()&&!working.current)onOpenArtwork();}}>Create artwork</DialogButton>
       </div>:null}
+      {faceChoice==='clock'?<><DialogButton disabled={faceBusy} onClick={()=>openClockPicker(status,setStatus,game?'game':'home')}>Choose a clock</DialogButton><ClockCountdowns status={status}/></>:null}
       {faceChoice==='player-city'?<small role="status">{playerCitySummary(status)}</small>:null}
       </PanelSectionRow><PanelSectionRow><div className="gca-compact-slider"><SliderField label="JSAUX brightness" value={faceBrightness} min={5} max={100} step={5} valueSuffix=" %" showValue disabled={faceBusy||face.powered===false}
         onChange={value=>{if(!canUse()||faceBusy||face.powered===false||!Number.isFinite(value))return;const next=Math.max(5,Math.min(100,Math.round(value/5)*5));latestFaceBrightness.current=next;setFaceBrightness(next);setError('');saveFaceBrightness.current?.push(next);}}/></div>
@@ -190,6 +199,6 @@ export function CompactQuickPanel({status,setStatus,colors,onOpenGame,onOpenSett
       {error&&['faceplate','faceplate-brightness'].includes(errorAction)?<Localized><small className="gca-compact-action-error" role="alert">{error}</small></Localized>:null}</PanelSectionRow></PanelSection></section>:null}
     {status.thermal_protection.active||status.debug?.engine_running===false?<Localized><small role="status">{status.thermal_protection.active?'Thermal protection':'Display engine stopped'}</small></Localized>:null}
     {status.timer_end_action.phase==='failed'?<Localized><small role="alert">The timer ended, but Steam did not confirm the power action. No automatic retry.</small></Localized>:null}
-    {error&&!['timer','ambience','faceplate','faceplate-brightness'].includes(errorAction)?<div className="gca-compact-error" role="alert"><Localized><small>{error}</small></Localized><DialogButton className="gca-compact-wide" disabled={locked} onClick={()=>{if(canUse())onOpenSettings();}}>Settings</DialogButton></div>:null}
+    {error&&!['timer','ambience','faceplate','faceplate-brightness'].includes(errorAction)?<div className="gca-compact-error" role="alert"><Localized><small>{error}</small></Localized><DialogButton className="gca-compact-wide" disabled={busy} onClick={()=>{if(canUse())onOpenSettings();}}>Settings</DialogButton></div>:null}
   </div>;
 }

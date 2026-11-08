@@ -6,20 +6,20 @@ import {Disclosure} from './Disclosure';
 export function FaceplateDiagnostics({status,summaryShown=false}:{status:Status;summaryShown?:boolean}){
   const p=status.faceplate,r=p.routing,w=p.automation,f=p.flash_protection,x=p.last_transfer;
   const t=(en:string,fr:string)=>status.ui_language==='fr'?fr:en;
-  const row=(en:string,fr:string,value:ReactNode)=><div><b>{t(en,fr)}: </b>{value??'—'}</div>;
+  const row=(en:string,fr:string,value:ReactNode)=><div><b>{t(en,fr)}: </b>{value??'-'}</div>;
   const words:Record<string,[string,string]>={
     idle:['Idle','Au repos'],pending:['Waiting','En attente'],preparing:['Preparing image','Préparation de l’image'],ready:['Ready','Prête'],error:['Failed','Échec'],unconfirmed:['Confirmation missing','Confirmation manquante'],
     failed:['Failed','Échec'],sending:['Sending','Envoi en cours'],confirmed:['Confirmed','Confirmé'],deferred:['Waiting to send','Envoi différé'],unknown:['Unknown','Inconnu'],persisted:['Saved','Enregistré'],fresh:['New history','Nouvel historique'],recovered:['Recovered','Récupéré'],missing:['Not found','Introuvable'],corrupt:['Unreadable','Illisible'],written:['Sent','Envoyé'],identical:['Already stored','Déjà enregistré'],reused:['Already stored','Déjà enregistré'],uncertain:['Not confirmed','Non confirmé'],
     weather:['Weather','Météo'],dashboard:['Weather Dashboard','Dashboard météo'],'artwork-dashboard':['Artwork Dashboard','Dashboard artwork'],artwork:['Game artwork','Image du jeu'],'native-clock':['Native clock','Horloge native'],'player-city':['Steam Players City','Steam Players City'],
   };
-  const name=(value?:string)=>value?(words[value]?t(...words[value]):value):'—';
+  const name=(value?:string)=>value?(words[value]?t(...words[value]):value):'-';
   const errors=[...new Set([status.faceplate_configuration_error,p.error,r.preparation.error,w.last_error,f?.persistence_error].filter((v):v is string=>Boolean(v)))];
   const today=p.upload_observability?.today_utc,journal=p.upload_observability?.journal??[],last=journal[journal.length-1];
   const section=(en:string,fr:string)=><h3 style={{fontSize:'1em',margin:'16px 0 6px'}}>{t(en,fr)}</h3>;
   return <Disclosure title="Faceplate diagnostics"><div style={{fontSize:'1em',lineHeight:1.5,width:'100%',overflowWrap:'anywhere'}}>
     {section('Connection','Connexion')}
     {row('USB connection','Connexion USB',!p.available?t('Not detected','Non détectée'):p.busy?t('Another app is using the Faceplate','Utilisée par une autre application'):t('Connected','Connectée'))}
-    {row('USB port','Port USB',p.port||'—')}
+    {row('USB port','Port USB',p.port||'-')}
     {row('Power','Alimentation',p.powered===true?t('On','Allumée'):p.powered===false?t('Off','Éteinte'):t('Not confirmed','Non confirmée'))}
     {!p.power_recovery?.suspended&&p.power_recovery?.route_state&&p.power_recovery?.route_state!=='idle'?row('Display recovery','Récupération de l’affichage',
       p.power_recovery?.route_state==='exhausted'?t('Automatic recovery stopped after three attempts. Retry with Power on.','Reprise automatique arrêtée après trois tentatives. Réessayez avec Allumer.'):
@@ -52,9 +52,9 @@ export function FaceplateDiagnostics({status,summaryShown=false}:{status:Status;
     </>:null}
     {row('Transfer status','État du transfert',w.busy||w.active_generation?t('In progress','En cours'):name(p.delivery?.state??'idle'))}
     {row('Waiting image','Image en attente',w.queued?t('Latest request queued','Dernière demande conservée'):t('None','Aucune'))}
-    {row('Requests replaced','Demandes remplacées',w.dropped??'—')}
+    {row('Requests replaced','Demandes remplacées',w.dropped??'-')}
     {w.superseded_active?row('Cancelled after a display change','Annulés après changement d’affichage',w.superseded_active):null}
-    {today&&[today.writes,today.identical,today.failed].some(value=>value!=null)?row('Today (UTC)','Aujourd’hui (UTC)',`${today.writes??'—'} ${t('sent','envoyés')} · ${today.identical??'—'} ${t('already stored','déjà présents')} · ${today.failed??'—'} ${t('failed','échoués')}`):null}
+    {today&&[today.writes,today.identical,today.failed].some(value=>value!=null)?row('Today (UTC)','Aujourd’hui (UTC)',`${today.writes??'-'} ${t('sent','envoyés')} · ${today.identical??'-'} ${t('already stored','déjà présents')} · ${today.failed??'-'} ${t('failed','échoués')}`):null}
     {(!f||p.writes_session!==f.session.confirmed||p.writes_total!==f.total.confirmed)?row('Image-change counter','Compteur de changements d’image',`${p.writes_session} ${t('session','session')} · ${p.writes_total} ${t('recorded total','au total enregistré')}`):null}
     {(x?.total_ms||p.last_upload_ms)?row('Last transfer time','Durée du dernier transfert',`${x?.total_ms||p.last_upload_ms} ms`):null}
     {p.last_start_ack_ms?row('Start confirmed after','Démarrage confirmé après',`${p.last_start_ack_ms} ms`):null}

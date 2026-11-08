@@ -14,7 +14,7 @@ const js=ts.transpileModule('const '+declaration!.getText(ast)+';this.apply=acti
 function harness(failStatus=false){
  const requests:{args:unknown[];resolve:(v:any)=>void;reject:(e:any)=>void}[]=[],messages:string[]=[],applied:string[]=[],busy:boolean[]=[],warnings:unknown[]=[],statuses:unknown[]=[];
  const request=(...args:unknown[])=>new Promise((resolve,reject)=>requests.push({args,resolve,reject}));
- const context=vm.createContext({useCallback:(fn:unknown)=>fn,STUDIO_UX:true,destination:'both',useForDashboardHome:false,
+ const context=vm.createContext({useCallback:(fn:unknown)=>fn,STUDIO_UX:true,destination:'both',dashboardPresentation:false,useForDashboardHome:false,
   applyingPrepared:{current:false},appliedSha:{current:''},deliveryKey:{current:''},prepareFocus:{current:'use-static'},
   status:{game:{appid:0}},setBusy:(v:boolean)=>busy.push(v),setStatus:(v:unknown)=>statuses.push(v),setAppliedDraftKey:(v:string)=>applied.push(v),
   commitFaceplateDashboardArtwork:request,activateFaceplateArtwork:request,
@@ -29,9 +29,9 @@ function harness(failStatus=false){
 test('controller double activation sends one Apply and telemetry failure retains its successful result',async()=>{
  const ui=harness(true),first=ui.apply(),second=ui.apply();
  assert.equal(ui.requests.length,1);assert.equal(ui.context.applyingPrepared.current,true);
- assert.equal(ui.requests[0].args.at(-1),false,'Commit must not require full status telemetry');
+ assert.equal(ui.requests[0].args[5],false,'Commit must not require full status telemetry');
  ui.requests[0].resolve({sha256:'new'});await Promise.all([first,second]);
- assert.deepEqual(ui.applied,['new:both']);assert.equal(ui.warnings.length,1);
+ assert.deepEqual(ui.applied,['new:both:false']);assert.equal(ui.warnings.length,1);
  assert(!ui.messages.some(message=>message.includes('could not be activated')));
  assert.match(ui.messages.at(-1)!,/Display selected/);assert.equal(ui.context.applyingPrepared.current,false);
  assert.equal(ui.busy.at(-1),false);
@@ -40,13 +40,13 @@ test('a real application failure remains retryable without premature applied sta
  const ui=harness(),first=ui.apply();ui.requests[0].reject(new Error('copy failed'));await first;
  assert.deepEqual(ui.applied,[]);assert.match(ui.messages.at(-1)!,/could not be activated/);
  const retry=ui.apply();assert.equal(ui.requests.length,2);ui.requests[1].resolve({sha256:'new'});await retry;
- assert.deepEqual(ui.applied,['new:both']);assert.equal(ui.context.applyingPrepared.current,false);
+ assert.deepEqual(ui.applied,['new:both:false']);assert.equal(ui.context.applyingPrepared.current,false);
 });
 test('Home-only and game destinations retain their requested scope',async()=>{
  for(const target of ['home','game','game-dashboard']){
   const ui=harness(),pending=ui.apply(target);assert.equal(ui.requests.length,1);
   assert.equal(ui.requests[0].args[3],target==='home'?true:'new');
   if(target.startsWith('game'))assert.equal(ui.requests[0].args[4],target==='game'?'artwork':'artwork-dashboard');
-  ui.requests[0].resolve({sha256:'new'});await pending;assert.deepEqual(ui.applied,[`new:${target}`]);
+  ui.requests[0].resolve({sha256:'new'});await pending;assert.deepEqual(ui.applied,[`new:${target}:false`]);
  }
 });

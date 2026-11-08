@@ -10,6 +10,8 @@ export interface SetupDraft {
   home:Status['faceplate']['routing']['routes']['home']; game:'artwork'|'dashboard'|'artwork-dashboard'|'weather'|'player-city'|'keep';
 }
 export interface SetupSnapshot { draft:Partial<SetupDraft>;bar_detected:boolean;faceplate_detected:boolean;faceplate_busy:boolean;voice_verified?:boolean;recovery_error?:string;draft_storage?:'memory'|'disk';draft_error?:string;draft_error_code?:string;draft_reset_error?:string }
+export const recoverOnboardingCurrentSettings=callable<[],Status>('recover_onboarding_current_settings');
+export const restartOnboarding=callable<[],SetupSnapshot>('restart_onboarding');
 export const getOnboarding=callable<[],SetupSnapshot>('get_onboarding');
 export const resetOnboardingDraft=callable<[],SetupSnapshot>('reset_onboarding_draft');
 export const saveOnboardingDraft=callable<[changes:Partial<SetupDraft>],SetupDraft>('save_onboarding_draft');

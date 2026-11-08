@@ -3,6 +3,7 @@ import {translate} from './i18n';
 
 /** One presentation order for Settings and QAM; Off remains a power action. */
 const SHARED_FACEPLATE_OPTIONS = [
+  {data:'clock',label:'Clock'},
   {data:'artwork',label:'Artwork'},
   {data:'artwork-dashboard',label:'Dashboard Artwork'},
   {data:'weather',label:'Weather'},
@@ -10,6 +11,7 @@ const SHARED_FACEPLATE_OPTIONS = [
 ];
 export const FACEPLATE_HOME_OPTIONS = [
   ...SHARED_FACEPLATE_OPTIONS,
+  {data:'library',label:'GIF library slideshow'},
   {data:'native-clock',label:'Native Clock (24h)'},
 ];
 export const FACEPLATE_GAME_OPTIONS = [

@@ -196,7 +196,7 @@ class WeatherArtworkRuntimeTests(unittest.TestCase):
         )
         self.assertEqual(
             hashlib.sha256(rail).hexdigest(),
-            "5de8116a304f028e7b30f2d1307e682cfee888816a6989064f0fc8d1404c844b",
+            "c1dcdf388524e7fd3e84ab6dd7853dc3ec3b051456a5c19266761fedc736de96",
         )
         self.assertEqual(metadata["power_scale"], 1.0)
         self.assertEqual(
@@ -222,7 +222,7 @@ class WeatherArtworkRuntimeTests(unittest.TestCase):
         self.assertEqual(
             dashboard_revision,
             f"{WEATHER_ARTWORK_V2_REVISION}:{WEATHER_ARTWORK_V2_DASHBOARD_REVISION}:"
-            "artwork-dashboard-26-umbrella-lowered",
+            "artwork-dashboard-27-approved-rain",
         )
         namespace = faceplate_scene_cache_namespace({
             "kind": "weather", "visual_theme": WEATHER_ARTWORK_V2_THEME,

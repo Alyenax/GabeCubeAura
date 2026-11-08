@@ -1,4 +1,5 @@
 import test from 'node:test';
+import {HOME_DISPLAY_OPTIONS} from '../../src/home_display_options';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
@@ -19,9 +20,8 @@ test('retired matrix Performance has no selectable route, consent or update cade
 });
 
 test('native 17 LED Performance controls and thermal safety remain available',()=>{
-  const home=source.slice(source.indexOf('const HOME_DISPLAY_OPTIONS'),source.indexOf('const FACEPLATE_DASHBOARD_SOURCE_OPTIONS'));
   const game=read('src/game_display_options.ts');
-  assert.match(home,/data: "performance"/);assert.match(game,/data: "performance"/);
+  assert(HOME_DISPLAY_OPTIONS.some(option=>option.data==='performance'));assert.match(game,/data: "performance"/);
   assert.match(source,/showPage\("performance"\)/);
   assert.match(source,/Thermal protection/);
 });

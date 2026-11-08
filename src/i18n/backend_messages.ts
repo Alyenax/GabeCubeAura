@@ -1,5 +1,6 @@
 /** Stock backend UI messages. Never translate transcripts, names or file paths. */
 export const backendFrench:Readonly<Record<string,string>>={
+ 'Remove Decky Vocal Assistant before restoring a GabeCubeAura version with embedded voice':'Désinstalle Decky Vocal Assistant avant de restaurer une version de GabeCubeAura avec un assistant vocal intégré.',
  'Screen capture paused after repeated failures. Use Preview to retry.':'Capture écran suspendue après plusieurs échecs. Utilise l’aperçu pour réessayer.',
  'Assistant reset in progress.':'Réinitialisation de l’assistant en cours.',
  'Finish the conversation before preparing the face.':'Termine la conversation avant de préparer le visage.',

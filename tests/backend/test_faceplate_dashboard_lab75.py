@@ -47,7 +47,7 @@ class Lab75DashboardTests(unittest.TestCase):
                 self.assertEqual(bytes(colours[token]), frame[offset:offset + 3],
                                  (x, y, token))
 
-    def test_weather_matrices_remain_exact_and_risk_uses_approved_scalloped_umbrella(self):
+    def test_weather_matrices_remain_exact_and_risk_uses_approved_rain(self):
         for condition, rows in (("rain", RAIN), ("clear_night", MOON)):
             for compact in (False, True):
                 with self.subTest(condition=condition, compact=compact):
@@ -57,8 +57,8 @@ class Lab75DashboardTests(unittest.TestCase):
         canvas = Canvas()
         _precipitation_risk_icon(canvas, 20, 20)
         self.assert_matrix(canvas, (
-            "00BBB00","0BBBBB0","BBBBBBB","B00B00B",
-            "000B000","0B0B000","00BB000"), (20, 19))
+            "0000000","00B00B0","0B00B00","B00B00B",
+            "00B00B0","0B00B00","0000000"), (20, 19))
 
     def test_weather_alone_shares_notch_and_releases_seven_columns_without_touching_motion(self):
         for condition in ("rain", "clear_night"):

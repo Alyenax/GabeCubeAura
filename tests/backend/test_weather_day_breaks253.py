@@ -1,6 +1,8 @@
 """Only day cloud breaks regain source exposure; preserve every other weather GIF."""
 from pathlib import Path
 import hashlib,json,unittest,zlib
+from unittest.mock import patch
+from signalbar.faceplate import artwork_dashboard as dashboard
 from signalbar.faceplate.weather_artwork import (load_catalog,_preset,build_weather_artwork_scene,
     build_weather_artwork_dashboard_snapshot,weather_artwork_cache_revision)
 from signalbar.backend.engine import faceplate_scene_cache_namespace
@@ -24,12 +26,16 @@ class DayBreaks253Tests(unittest.TestCase):
                     result,_=build_weather_artwork_scene(condition,variant,12,'celsius',phase,visual_theme=theme)
                 else:
                     instant='2026-10-25T12:00:00' if phase=='day' else '2026-10-25T22:00:00'
-                    result,_=build_weather_artwork_dashboard_snapshot(instant,condition,variant,12,'celsius',
-                        '2026-10-25T07:30:00','2026-10-25T18:30:00',visual_theme=theme)
+                    # Replay the frozen Lab253 umbrella overlay to retain its weather
+                    # regression evidence; current rain is checked in test_umbrella_risk.
+                    with patch.object(dashboard,'REVISION','artwork-dashboard-26-umbrella-lowered'), patch.object(
+                            dashboard,'PRECIPITATION_RISK_MARK',('0011100','0111110','1111111','1001001','0001000','0101000','0011000')):
+                        result,_=build_weather_artwork_dashboard_snapshot(instant,condition,variant,12,'celsius',
+                            '2026-10-25T07:30:00','2026-10-25T18:30:00',visual_theme=theme)
                 self.assertEqual(sha(b''.join(result.frames)),expected['rgb'])
                 self.assertEqual(sha(result.gif()),expected['gif'])
                 self.assertEqual(result.signature,expected['signature'])
-                self.assertEqual(faceplate_scene_cache_namespace(dict(kind=kind,visual_theme=theme,condition=condition)),expected['cache_namespace'])
+                self.assertEqual(faceplate_scene_cache_namespace(dict(kind=kind,visual_theme=theme,condition=condition)),expected['cache_namespace'].replace('artwork-dashboard-26-umbrella-lowered',dashboard.REVISION))
 
     def test_both_day_breaks_regain_source_exposure_and_keep_the_loop_timing(self):
         for variant in (0,1):
@@ -42,10 +48,10 @@ class DayBreaks253Tests(unittest.TestCase):
             self.assertEqual(len(scene.frames),previous['frames']);self.assertEqual(list(scene.delays_cs),previous['delays'])
             self.assertNotEqual(sha(scene.gif()),previous['gif'])
 
-    def test_only_day_breaks_cache_namespaces_are_replaced(self):
+    def test_day_breaks_and_approved_dashboard_cache_namespaces_are_replaced(self):
         for key,previous in FROZEN['renders'].items():
             theme,preset,phase,kind=key.split('/');condition=preset.split(':')[0]
             current=faceplate_scene_cache_namespace(dict(kind=kind,visual_theme=theme,condition=condition))
             if theme==THEME and condition=='breaks':
                 self.assertNotEqual(current,previous['cache_namespace']);self.assertIn('breaks-day-source-exposure-1',current)
-            else:self.assertEqual(current,previous['cache_namespace'])
+            else:self.assertEqual(current,previous['cache_namespace'].replace('artwork-dashboard-26-umbrella-lowered',dashboard.REVISION))

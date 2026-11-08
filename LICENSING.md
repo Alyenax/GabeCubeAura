@@ -40,3 +40,7 @@ Valid historical grants and upstream licences remain in force. GCA is independen
 ## Artwork inventory
 
 [Collection summary](licenses/Faceplate-Artwork-Inventory.md) · [Complete file list with attribution and hashes](licenses/faceplate-assets.json). The 197 entries are asset files, including variants and encoded representations, rather than 197 distinct designs.
+
+## Standard clocks and Monogram
+
+The nine standard clocks use original GPL-3.0-only generator code and technical geometry/catalogue data, inventoried with hashes in `licenses/standard-clocks.json`. These files are outside the separate Faceplate graphical-resource grant. Monogram by datagoblin (Vinicius Menezio), from https://datagoblin.itch.io/monogram and https://gitlab.com/datagoblin/monogram, supplies digital glyphs under CC0-1.0. The embedded font notice is “Copyright Vinicius Menezio 2024”. The rasterized glyph subset retains those terms; see `licenses/CC0-1.0.txt`. No reference watchface or Pixel Faceplate clock renderer is imported into these standard clocks.

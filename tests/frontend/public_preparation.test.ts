@@ -17,6 +17,8 @@ test("public sidebar has six native pages after Studio separation and no separat
   assert.match(sidebar, /<SimpleSettings/);
 });
 test("support capacity is explicit and public channels do not expose private authorization", () => {
+  assert.equal(supportsPrivateTools("1.6.0"), false);
+  assert.doesNotMatch(index, /DiagnosticSender|Testing GitHub connection|startPrivateUpdateAuthorization|sendDiagnosticReport/);
   assert.equal(supportsPrivateTools("1.4.1"), false);
   assert.equal(supportsPrivateTools("1.4.1-beta.1"), false);
   assert.equal(supportsPrivateTools("1.4.1-lab.84"), true);

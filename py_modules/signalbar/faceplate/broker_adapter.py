@@ -28,7 +28,8 @@ class FaceplateBrokerAdapter:
         self.engine = engine
         self.clock = clock
         self.lock = threading.RLock()
-        self.ownership = PhysicalOwnership(ownership_root or "/run/decky/jsaux-broker/v1/ownership")
+        self.ownership = PhysicalOwnership(ownership_root or "/run/decky/jsaux-broker/v1/ownership",
+                                           control=getattr(engine, "faceplate_control", None))
         install_ownership_manager(self.ownership)
         self._observation_at = None
         self._observation_health = "waiting"
@@ -116,14 +117,15 @@ class FaceplateBrokerAdapter:
     def _policy(self):
         engine = self.engine
         values = engine.settings.all()
-        enabled = bool(values.get("faceplate_lab_enabled"))
+        from .control import allows_output, allows_integration
+        enabled = bool(values.get("faceplate_lab_enabled")) and allows_output(values)
         display_on = not engine._display_panel_off(values) and getattr(engine.faceplate, "powered", None) is not False and engine._faceplate_power_target is not False
         suspended = bool(engine._faceplate_suspended or engine._stop.is_set() or self._stopped)
         thermal = bool(engine.thermal_protection.active)
         decision=getattr(engine,'_broker_decision',None)
         if callable(decision):allowed,evidence=decision(values)
         else:allowed=engine._broker_allowed(values);evidence={}
-        priority = bool(not allowed and enabled and display_on and not suspended and not thermal)
+        priority = bool((not allowed or not allows_integration(values, "das")) and enabled and display_on and not suspended and not thermal)
         reason = ("FACEPLATE_DISABLED" if not enabled else "DISPLAY_OFF" if not display_on else
                   "SUSPENDED" if suspended else "PRIORITY_ACTIVE" if thermal or priority else None)
         policy={"faceplate_enabled": enabled, "display_on": display_on,
@@ -226,8 +228,8 @@ class FaceplateBrokerAdapter:
                 semantics='first-short-circuit-blocker; omitted predicates not evaluated',physical_cause='not-established'),
             normal_route_restoration=restoration,light_bar_projection=projection,configuration=dict(engine_enabled=bool(values.get('signalbar_enabled')),
             faceplate_enabled=bool(values.get('faceplate_lab_enabled')),mode_disabled=values.get('mode')=='disabled',
-            setup_blocked=bool(getattr(self.engine,'_onboarding_recovery_blocked',False)
-                               or getattr(self.engine,'_onboarding_applying',False)),
+            setup_recovery_pending=bool(getattr(self.engine,'_onboarding_recovery_blocked',False)),
+            setup_blocked=bool(getattr(self.engine,'_onboarding_applying',False)),
             suspended=bool(self.engine._faceplate_suspended)))
 
     def prepare_extension(self,content_id,path):
@@ -444,6 +446,9 @@ class FaceplateBrokerAdapter:
                 and not self._executing and self._display_operation==operation_id) else None
 
     def service_continuous_return(self):
+        from .control import allows_integration
+        if not allows_integration(self.engine.settings.all(), "das"):
+            return
         panel=self.engine.faceplate
         if not isinstance(getattr(panel,'_continuous_return',None),dict):return
         # Evaluate providers/settings on the engine thread, never under the
@@ -587,4 +592,22 @@ class FaceplateBrokerAdapter:
             quiescent = not self._executing
         if quiescent:
             self.ownership.close()
+
+    def release_for_control(self):
+        """Revoke only Faceplate presentation; keep the broker/server available."""
+        self.projection.stop()
+        with self.lock:
+            self._closed = True
+            self._baseline = False
+            self._lightbar = None
+            operation = self._job["operation_id"] if self._job else None
+            self._restore = None
+            self._restore_pending = None
+            self._display_operation = None
+            self._return_candidate = None
+            self._return_stop_at = None
+            self._exit_stop = None
+            self._return_policy_allowed = False
+        if operation:
+            self.cancel(operation, "faceplate-control")
 

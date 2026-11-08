@@ -1,4 +1,4 @@
-"""Lab 30 — lossless orientation of complete 64 x 54 GIF animations."""
+"""Lab 30 - lossless orientation of complete 64 x 54 GIF animations."""
 import io
 import unittest
 

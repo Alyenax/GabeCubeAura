@@ -311,6 +311,10 @@ export interface Status {
   weather_brightness: number;
   weather_shadow_cutoff: number;
   faceplate_lab_enabled: boolean;
+  faceplate_control_mode?: 'automatic' | 'gca-priority' | 'other-app';
+  faceplate_allow_das?: boolean;
+  faceplate_allow_dva?: boolean;
+  faceplate_control?: {mode:string;phase:string;reserved:boolean;active_transactions:number;generation:number;error:string;port:string;exclusive_limit:string};
   faceplate_flash_protection_enabled?: boolean;
   faceplate_continuous_home_return?: boolean;
   faceplate_configuration_error?: string;
@@ -338,6 +342,19 @@ export interface Status {
   faceplate_dashboard_game_session: boolean;
   faceplate_dashboard_contexts?: Partial<Record<'home' | 'game', Partial<DashboardContent>>>;
   faceplate_playtime_enabled: boolean;
+  faceplate_clock_home?: string;
+  faceplate_clock_game?: string;
+  faceplate_clock_cadence_home?: "conservative"|"minute";
+  faceplate_clock_cadence_game?: "conservative"|"minute";
+  faceplate_clock_palette_home?: string;
+  faceplate_clock_palette_game?: string;
+  faceplate_clock_format_home?: "24"|"12";
+  faceplate_clock_format_game?: "24"|"12";
+  faceplate_clock?: import('./faceplate_clock').ClockStatus;
+  faceplate_home_library_source?: string;
+  faceplate_home_library_shuffle?: boolean;
+  faceplate_home_library_interval?: number;
+  home_library?: {count:number;loading:boolean;supports_creations:boolean};
   faceplate_player_city_row?: "count" | "controllers" | "session" | "achievements" | "total" | "dashboard";
   faceplate_player_city_dashboard_row?: "next_hour" | "today" | "controllers" | "a" | "b" | "c" | "d" | "e";
   faceplate_player_city_battery_style?: "percent" | "bar";
@@ -512,8 +529,8 @@ export interface Status {
         dashboard: FaceplateDashboardVisualTheme;
       };
       routes: {
-        home: "weather" | "dashboard" | "artwork" | "artwork-dashboard" | "native-clock";
-        game: "dashboard" | "artwork" | "artwork-dashboard" | "weather" | "player-city";
+        home: "weather" | "dashboard" | "artwork" | "artwork-dashboard" | "native-clock" | "library" | "clock";
+        game: "dashboard" | "artwork" | "artwork-dashboard" | "weather" | "player-city" | "clock";
       };
       context: "home" | "game";
       generation: number;

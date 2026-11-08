@@ -21,7 +21,7 @@ from . import gif, protocol
 from .player_city_animation import animated_rgb, DELAYS_CS
 from signalbar.providers.current_players import MAX_COUNT
 
-REVISION = 'player-city-us-count-smile-10'
+REVISION = 'player-city-approved-rain-11'
 ASSET_MANIFEST_SHA256 = '079693a078fc03ccc508b7cd4481aca434d2080414b67ce86f35bb9b13c3fdf0'
 ROOT = Path(__file__).resolve().parents[3] / 'assets/faceplate/player-city'
 TIERS = ('01_09', '10_99', '100_999', '1000_9999', '10000_99999', '100000_plus')

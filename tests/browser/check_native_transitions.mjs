@@ -2,7 +2,7 @@
 // Usage: node tests/browser/check_native_transitions.mjs http://127.0.0.1:PORT/
 import {createRequire} from 'node:module';
 import assert from 'node:assert/strict';
-const require=createRequire(process.env.GCA_QA_PLAYWRIGHT||'/Users/C/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/package.json');
+const require=createRequire(process.env.GCA_QA_PLAYWRIGHT||import.meta.url);
 const {chromium}=require('playwright');
 const url=process.argv[2];assert.match(url||'',/^http:\/\/127\.0\.0\.1:\d+\/$/);
 const browser=await chromium.launch({headless:true,executablePath:process.env.GCA_QA_CHROME||'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'});

@@ -9,6 +9,7 @@ import {presetSummary,quickAmbienceOptions} from '../../src/lighting_presets';
 import {faceplateBrightnessNotice} from '../../src/faceplate_power';
 import {trailingSetting} from '../../src/trailingSetting';
 import {gameDisplayOptions} from '../../src/game_display_options';
+import {homeDisplayOptions} from '../../src/home_display_options';
 import {quickFaceOptions,homeFaceChoice,isDashboardChoice,showArtworkPreparationHint} from '../../src/faceplate_choices';
 
 const source = readFileSync(new URL('../../src/components/CompactQuickPanel.tsx', import.meta.url), 'utf8');
@@ -39,7 +40,7 @@ function harness(faceplateControls=false, rejectRoute=false) {
         cleanup[i]?.(); dependencies[i] = deps; effects.push(() => { cleanup[i] = effect(); });
       }
     },
-    faceplateTransferNotice,playerCitySummary:()=>'',COMPACT_QUICK_CSS:'',faceplateBrightnessNotice,presetSummary,quickAmbienceOptions,gameDisplayOptions,quickFaceOptions,homeFaceChoice,isDashboardChoice,showArtworkPreparationHint,quickFaceChoice:()=> 'dashboard',clock:()=>'',personalTimer:()=>({active:false,remaining_seconds:0}),
+    faceplateTransferNotice,playerCitySummary:()=>'',COMPACT_QUICK_CSS:'',faceplateBrightnessNotice,presetSummary,quickAmbienceOptions,gameDisplayOptions,homeDisplayOptions,quickFaceOptions,homeFaceChoice,isDashboardChoice,showArtworkPreparationHint,quickFaceChoice:()=> 'dashboard',clock:()=>'',personalTimer:()=>({active:false,remaining_seconds:0}),
     setTimeout:(fn:()=>void)=>scheduled.push(fn),clearTimeout(){},getGabeStatus:()=>new Promise(resolve=>voiceRequests.push({resolve})),
     setGabeListening:async(value:boolean)=>{voiceChanges.push(value);savedVoice={voice_ready:true,busy:false,phase:'idle',config:{enabled:value,wake_enabled:value}};return savedVoice;},
     setLightBarBrightness:(...args:any[])=>new Promise((resolve,reject)=>settingRequests.push({args,resolve,reject})),
@@ -208,55 +209,34 @@ test('retained hidden QAM pauses artwork reads and never owns voice polling',asy
 });
 
 
-test('unfinished setup disables every compact control and rejects native callbacks',async()=>{
- const ui=harness(true);
- const tree=ui.render(620,{onboarding_completed:false});
+test('unfinished setup leaves compact controls usable without completing the guide',async()=>{
+ const ui=harness(true),tree=ui.render(620,{onboarding_completed:false});
  const actions=controls(tree).filter(n=>['button','toggle','slider','select'].includes(n.type));
- assert(actions.length>=8);
- for(const action of actions){
-  assert.equal(action.props.disabled,true,action.props.label||action.props['aria-label']||action.props.children);
-  action.props.onClick?.();
-  action.props.onChange?.(action.type==='select'?{data:'atmosphere'}:50);
- }
- await ui.flushSliders();
- assert.deepEqual(ui.settingRequests,[]);assert.deepEqual(ui.displayRequests,[]);
- assert.deepEqual(ui.navigations,[]);assert.deepEqual(ui.writes,[]);
- assert(!controls(ui.render(620,{onboarding_completed:false})).some(n=>n.type==='timer-editor'));
- ui.unmount();
-});
-
-test('confirmation unlocks controls; resetting blocks retained callbacks and pending slider saves',async()=>{
- const ui=harness(true);
- ui.render(620,{onboarding_completed:false});
- const enabled=controls(ui.render(620,{onboarding_completed:true}));
- const actions=enabled.filter(n=>['button','toggle','slider','select'].includes(n.type));
- assert(actions.every(n=>n.props.disabled===false));
- const face=enabled.find(n=>n.props.label==='JSAUX brightness');
- const light=enabled.find(n=>n.props.label==='Brightness');
- face.props.onChange(55);light.props.onChange(50);
- ui.render(620,{onboarding_completed:false});
- for(const action of actions){action.props.onClick?.();action.props.onChange?.(action.type==='select'?{data:'atmosphere'}:50);}
- await ui.flushSliders();
- assert.equal(ui.settingRequests.length,0);assert.deepEqual(ui.navigations,[]);
- const reopened=controls(ui.render(620,{onboarding_completed:true}));
- assert.equal(reopened.find(n=>n.props.label==='JSAUX brightness').props.value,100);
- reopened.find(n=>n.props['aria-label']==='Game display…').props.onClick();
+ assert(actions.length>=8);assert(actions.every(n=>n.props.disabled!==true));
+ actions.find(n=>n.props['aria-label']==='Game display…').props.onClick();
  assert.deepEqual(ui.navigations,['game']);
- reopened.find(n=>n.props.label==='Ambience').props.onChange({data:'signals'});
- for(let n=0;n<20;n++)await Promise.resolve();
- assert.deepEqual(ui.settingRequests[0].args,['display_preset','signals']);
- ui.settingRequests[0].resolve({display_preset:'signals'});await flush();ui.unmount();
+ actions.find(n=>n.props.label==='JSAUX brightness').props.onChange(55);await ui.flushSliders();
+ assert.deepEqual(ui.settingRequests[0].args,['faceplate_brightness',55]);
+ ui.settingRequests[0].resolve({faceplate_brightness:55});await flush();ui.unmount();
 });
 
-test('locking while an action awaits a slider prevents its later RPC and stale status update',async()=>{
+test('changing setup progress does not cancel an explicitly requested setting',async()=>{
+ const ui=harness(true),enabled=controls(ui.render(620,{onboarding_completed:true}));
+ enabled.find(n=>n.props.label==='JSAUX brightness').props.onChange(55);
+ ui.render(620,{onboarding_completed:false});await ui.flushSliders();
+ assert.equal(ui.settingRequests.length,1);
+ ui.settingRequests[0].resolve({faceplate_brightness:55});await flush();
+ const reopened=controls(ui.render(620,{onboarding_completed:false}));
+ reopened.find(n=>n.props['aria-label']==='Game display…').props.onClick();assert.deepEqual(ui.navigations,['game']);ui.unmount();
+});
+
+test('unmounting while an action awaits a slider prevents its later RPC and stale status update',async()=>{
  const ui=harness(true),enabled=controls(ui.render(620));
  enabled.find(n=>n.props.label==='JSAUX brightness').props.onChange(55);await ui.flushSliders();
  enabled.find(n=>n.props.label==='Ambience').props.onChange({data:'signals'});await flush();
- ui.render(620,{onboarding_completed:false});
- ui.settingRequests[0].resolve({faceplate_brightness:55,onboarding_completed:true});
+ ui.unmount();ui.settingRequests[0].resolve({faceplate_brightness:55,onboarding_completed:true});
  for(let n=0;n<30;n++)await Promise.resolve();
  assert.equal(ui.settingRequests.length,1);assert.equal(ui.saved.length,0);
- ui.unmount();
 });
 
 test('Player City is game-only in the quick selector and saves the shared route revision',async()=>{
@@ -347,4 +327,21 @@ test('a rejected new JSAUX choice cannot display the previous transfer confirmat
  assert.equal(notice(ui.render(0,extra)).props['data-faceplate-transfer'],'active',
    'Authoritative ongoing transfer progress remains visible after a local choice error');
  ui.unmount();
+});
+
+
+test('Home LED selector persists the Home mode and uses the same availability filter',async()=>{
+  const ui=harness(true);
+  const home=controls(ui.render(0,{home_display:'weather'})).find(n=>n.props?.label==='LED bar in Home');
+  assert.equal(home.props.selectedOption,'weather');
+  assert(home.props.rgOptions.some((o:any)=>o.data==='faceplate_extension'));
+  home.props.onChange({data:'audio_sync'});await flush();
+  assert.deepEqual(ui.settingRequests[0].args,['home_display','audio_sync']);
+  ui.settingRequests[0].resolve({home_display:'audio_sync'});await flush();
+  assert.equal(ui.saved[0].home_display,'audio_sync');
+  assert.equal(ui.displayRequests.length,0);
+  const disconnected=controls(ui.render(0,{faceplate:{available:false}})).find(n=>n.props?.label==='LED bar in Home');
+  assert(!disconnected.props.rgOptions.some((o:any)=>o.data==='faceplate_extension'));
+  assert(!controls(ui.render(620)).some(n=>n.props?.label==='LED bar in Home'));
+  ui.unmount();
 });

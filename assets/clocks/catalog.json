@@ -1,0 +1,65 @@
+[
+  {
+    "id": "meridian",
+    "label": "Meridian",
+    "movement_seconds": 60,
+    "packet_seconds": 240,
+    "family": "analog"
+  },
+  {
+    "id": "halo",
+    "label": "Halo",
+    "movement_seconds": 60,
+    "packet_seconds": 240,
+    "family": "analog"
+  },
+  {
+    "id": "almanac",
+    "label": "Almanac",
+    "movement_seconds": 60,
+    "packet_seconds": 240,
+    "family": "analog"
+  },
+  {
+    "id": "quadrant",
+    "label": "Quadrant",
+    "movement_seconds": 60,
+    "packet_seconds": 240,
+    "family": "analog"
+  },
+  {
+    "id": "cardinal",
+    "label": "Cardinal markers",
+    "movement_seconds": 60,
+    "packet_seconds": 240,
+    "family": "analog"
+  },
+  {
+    "id": "horizon",
+    "label": "Horizon",
+    "movement_seconds": 60,
+    "packet_seconds": 240,
+    "family": "digital"
+  },
+  {
+    "id": "column",
+    "label": "Column",
+    "movement_seconds": 60,
+    "packet_seconds": 240,
+    "family": "digital"
+  },
+  {
+    "id": "week",
+    "label": "Week",
+    "movement_seconds": 60,
+    "packet_seconds": 240,
+    "family": "digital"
+  },
+  {
+    "id": "date-card",
+    "label": "Date card",
+    "movement_seconds": 60,
+    "packet_seconds": 240,
+    "family": "digital"
+  }
+]

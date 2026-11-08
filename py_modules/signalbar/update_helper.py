@@ -510,7 +510,7 @@ def _run_locked_transaction(raw: dict, service=None, health_waiter=_wait_for_hea
             for relative in ('main.py','py_modules/signalbar/backend/engine.py'):
                 if receipt.get('files',{}).get(relative) != hashlib.sha256((tx['staged']/relative).read_bytes()).hexdigest(): raise ValueError()
         except (OSError, ValueError, TypeError):
-            raise TransactionError('Remove DVA before restoring embedded GCA voice')
+            raise TransactionError('Remove Decky Vocal Assistant before restoring a GabeCubeAura version with embedded voice')
     service = service or SystemdService(tx["service"])
     token = tx["token"]
     rollback_parent = tx["runtime"] / "rollback" / token

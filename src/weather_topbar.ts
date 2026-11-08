@@ -7,6 +7,7 @@ never appends an orphan indicator to the plugin document or overlays the game.
 
 import { Router } from "@decky/ui";
 import { getStatus } from "./api";
+import type { Status } from "./types";
 import { weatherIconSvg } from "./weather_icon_sets";
 import { weatherTopBarReading } from "./weather_topbar_model";
 
@@ -82,6 +83,7 @@ function mainSteamAnchor(): { doc: Document; row: HTMLElement; before: Element |
 }
 
 class WeatherTopBar {
+  constructor(private readonly onStatus?:(status:Status|null)=>void) {}
   private interval: number | null = null;
   private remountTimer: number | null = null;
   private observer: MutationObserver | null = null;
@@ -111,11 +113,18 @@ class WeatherTopBar {
   private async refresh() {
     if (this.stopped || this.fetching) return;
     this.fetching = true;
+    let receivedStatus=false;
     try {
-      this.reading = weatherTopBarReading(await getStatus());
-      if (!this.stopped) this.mount();
+      const status=await getStatus();
+      receivedStatus=true;
+      if (!this.stopped) {
+        this.onStatus?.(status);
+        this.reading = weatherTopBarReading(status);
+        this.mount();
+      }
     } catch {
-      // Keep the last reading through a transient Decky RPC error. The next
+      if (!this.stopped && !receivedStatus) this.onStatus?.(null);
+      // Keep the last weather reading through a transient Decky RPC error. The next
       // successful status checks age and removes stale readings.
     } finally {
       this.fetching = false;
@@ -182,8 +191,8 @@ class WeatherTopBar {
   }
 }
 
-export function startWeatherTopBar() {
-  const indicator = new WeatherTopBar();
+export function startWeatherTopBar(onStatus?:(status:Status|null)=>void) {
+  const indicator = new WeatherTopBar(onStatus);
   indicator.start();
   return indicator;
 }

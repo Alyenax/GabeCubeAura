@@ -2,15 +2,13 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import test from 'node:test';
 import {translate} from '../../src/i18n';
+import {HOME_DISPLAY_OPTIONS} from '../../src/home_display_options';
 import {GAME_DISPLAY_OPTIONS} from '../../src/game_display_options';
 
 const ui = readFileSync(new URL('../../src/index.tsx', import.meta.url), 'utf8');
 
 test('source extension is an exclusive Home/in-game choice with inherited game overrides', () => {
-  for (const name of ['HOME_DISPLAY_OPTIONS']) {
-    const options = ui.slice(ui.indexOf(`const ${name}`), ui.indexOf('];', ui.indexOf(`const ${name}`)));
-    assert.match(options, /data: "faceplate_extension", label: "Faceplate image extension"/);
-  }
+  assert(HOME_DISPLAY_OPTIONS.some(option=>option.data==='faceplate_extension'));
   assert(GAME_DISPLAY_OPTIONS.some(option=>option.data==='faceplate_extension'));
   assert.match(ui, /data: "inherit", label: "Use in-game default" }, \.\.\.gameDisplayOptions\(status.faceplate.available, status.display_override\)/);
   assert.match(ui, /setSetting\("faceplate_extension_mapping", String\(option.data\)\)/);

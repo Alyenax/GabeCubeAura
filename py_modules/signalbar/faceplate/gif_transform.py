@@ -153,8 +153,10 @@ def _decode_lzw(packed, minimum, expected):
     return bytes(output)
 
 
-def rotate_gif(data):
+def rotate_gif(data, *, max_frames=MAX_FRAMES):
     """Rotate every RGB-indexed frame, including all animated GIF frames."""
+    if type(max_frames) is not int or not 1 <= max_frames <= 1024:
+        raise GifTransformError("invalid rotation frame budget")
     data = bytes(data)
     if not 13 <= len(data) <= MAX_BYTES or data[:6] not in (b"GIF87a", b"GIF89a"):
         raise GifTransformError("not a bounded GIF file")
@@ -233,7 +235,7 @@ def rotate_gif(data):
         transparency.append(next_transparent)
         next_delay = 10
         next_transparent = None
-        if len(frames) > MAX_FRAMES:
+        if len(frames) > max_frames:
             raise GifTransformError("too many GIF frames")
     if not frames or offset >= len(data) or data[offset] != 0x3B:
         raise GifTransformError("missing GIF trailer")

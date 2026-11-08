@@ -57,7 +57,8 @@ def main(argv=None):
     args = parser.parse_args(argv)
     # A normal packaging invocation continues to enforce the public-publication gate.
     check_license_scope(ROOT, public_build=not args.private_candidate)
-    if '-lab' in PACKAGE['version'] or '-test' in PACKAGE['version']: raise ValueError('Candidate must not enter Lab/test channels')
+    if ('-lab.' in PACKAGE['version'] or '-test.' in PACKAGE['version']) and not args.private_candidate:
+        raise ValueError('Lab/test packaging requires explicit --private-candidate')
     import refresh_vocal_contract
     files = list(iter_files()); manifest = build_update_manifest(files)
     OUTPUT.parent.mkdir(parents=True,exist_ok=True)

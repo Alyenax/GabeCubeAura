@@ -7,8 +7,10 @@ owns an instance in production.
 from __future__ import annotations
 
 import glob
+import errno
 import os
 import re
+import sys
 import threading
 from typing import Optional
 
@@ -28,12 +30,44 @@ def discover_paths(pattern: str = LED_GLOB):
 
 
 class ValveLedHardware:
-    def __init__(self, paths=None):
+    def __init__(self, paths=None, *, cache_reads=None):
         self.paths = list(paths) if paths is not None else discover_paths()
         if len(self.paths) != LED_COUNT:
             raise RuntimeError(f"expected {LED_COUNT} valve-leds devices, found {len(self.paths)}")
         self._io_lock = threading.RLock()
         self._reverse = False
+        # Only real Linux sysfs uses persistent read descriptors by default.
+        # Normal-file fixtures can opt in explicitly; write I/O is unchanged.
+        self._cache_reads = bool(cache_reads) if cache_reads is not None else (
+            sys.platform.startswith("linux")
+            and all(os.path.realpath(path).startswith("/sys/") for path in self.paths)
+        )
+        self._read_session = False
+        self._read_handles = {}
+        self._read_fault = False
+
+    def begin_read_session(self):
+        with self._io_lock:
+            if self._read_fault:
+                raise OSError(errno.EIO, "LED hardware must be rediscovered after a read failure")
+            self._read_session = self._cache_reads
+
+    def close_read_handles(self):
+        """Release resources, not saved values; passive/status reads stay fresh."""
+        with self._io_lock:
+            self._read_session = False
+            handles, self._read_handles = self._read_handles, {}
+            for descriptor, _identity in handles.values():
+                try:
+                    os.close(descriptor)
+                except OSError:
+                    pass
+
+    def __del__(self):
+        # Lifecycle callers close deterministically. This is a last resort for
+        # discarded startup objects, including partially constructed instances.
+        if hasattr(self, "_read_handles"):
+            self.close_read_handles()
 
     @property
     def device_path(self) -> str:
@@ -48,6 +82,8 @@ class ValveLedHardware:
     def set_reverse(self, reverse: bool):
         with self._io_lock:
             changed = self._reverse != bool(reverse)
+            if changed:
+                self.close_read_handles()
             self._reverse = bool(reverse)
             return changed
 
@@ -55,9 +91,48 @@ class ValveLedHardware:
         return list(reversed(self.paths)) if self._reverse else self.paths
 
     @staticmethod
-    def _read(path: str, name: str) -> str:
-        with open(os.path.join(path, name), encoding="ascii") as handle:
-            return handle.read().strip()
+    def _read_identity(info):
+        return info.st_dev, info.st_ino, info.st_mode, info.st_uid, info.st_gid
+
+    def _read(self, path: str, name: str) -> str:
+        with self._io_lock:
+            if self._read_fault:
+                raise OSError(errno.EIO, "LED hardware must be rediscovered after a read failure")
+            filename = os.path.join(path, name)
+            if not self._read_session:
+                with open(filename, encoding="ascii") as handle:
+                    return handle.read().strip()
+            try:
+                entry = self._read_handles.get(filename)
+                if entry is not None:
+                    descriptor, identity = entry
+                    # Detect rebind/replacement and permission changes. Never
+                    # continue reading an unlinked inode or retained old rights.
+                    if self._read_identity(os.stat(filename)) != identity:
+                        raise OSError(errno.ESTALE, "LED attribute generation or permissions changed")
+                else:
+                    if len(self._read_handles) >= LED_COUNT * 2 + 3:
+                        raise OSError(errno.EMFILE, "LED read descriptor limit reached")
+                    descriptor = os.open(filename, os.O_RDONLY | getattr(os, "O_CLOEXEC", 0))
+                    try:
+                        os.set_inheritable(descriptor, False)
+                        identity = self._read_identity(os.fstat(descriptor))
+                    except BaseException:
+                        os.close(descriptor)
+                        raise
+                    self._read_handles[filename] = descriptor, identity
+                # sysfs invokes show() again at offset zero. Do not reuse a
+                # buffered read, an EOF or the bytes of a previous signature.
+                raw = os.pread(descriptor, 4096, 0)
+                if not raw or len(raw) == 4096:
+                    raise OSError(errno.EIO, "Empty or oversized LED attribute")
+                return raw.decode("ascii").strip()
+            except (OSError, UnicodeError) as error:
+                self._read_fault = True
+                self.close_read_handles()
+                if isinstance(error, OSError):
+                    raise
+                raise OSError(errno.EILSEQ, "Invalid LED attribute encoding") from error
 
     @staticmethod
     def _write(path: str, name: str, value: str):
@@ -70,6 +145,10 @@ class ValveLedHardware:
     def _read_control(self, name: str) -> Optional[str]:
         path = self._control_path(name)
         if not os.path.exists(path):
+            if path in self._read_handles:
+                self._read_fault = True
+                self.close_read_handles()
+                raise OSError(errno.ESTALE, "LED control disappeared")
             return None
         return self._read(self.paths[0], name)
 

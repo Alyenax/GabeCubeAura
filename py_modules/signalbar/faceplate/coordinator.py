@@ -525,6 +525,8 @@ class FaceplateCoordinator(ContinuousReturn):
             "stored_display_restarted": bool(transfer.get('stored_display_restarted')),
             'restore_repacked': bool(transfer.get('restore_repacked')),
         }
+        if scene == 'clock':
+            event['clock_power_on_skipped'] = bool(transfer.get('clock_power_on_skipped'))
         if sha256 != source_sha:
             event['source_sha256'] = source_sha
         if error:
@@ -638,6 +640,25 @@ class FaceplateCoordinator(ContinuousReturn):
             },
         }
 
+    def invalidate_control_session(self):
+        """Withdraw this process's old receipts after an ownership transition.
+
+        No USB command or media deletion. A peer can change MCU mode without
+        changing the USB device identity; the next route must be acknowledged.
+        """
+        with self.lock:
+            self.known_epochs.clear()
+            self._native_attempt = None
+            self._native_result = None
+            self._restore_alias = None
+            self._restore_uncertain = None
+            self._continuous_return = None
+            self._delegated_gif_activation_pending = True
+            self.flash.invalidate()
+            self._brightness_command = None
+            self.last_synchronized = False
+            self.delivery = {"state": "idle", "scene": "", "signature": ""}
+
     def configure(self, enabled: bool, brightness: int):
         with self.lock:
             self.enabled = bool(enabled)
@@ -667,16 +688,16 @@ class FaceplateCoordinator(ContinuousReturn):
         return (profile.get("style", self.artwork_style),
                 profile.get("position", self.logo_position))
 
-    def _orient_gif(self, data):
+    def _orient_gif(self, data, *, max_frames=192):
         """Cached 180° transform of all frames, with no external media decoder."""
         if not self.rotate_180:
             return data
-        digest = hashlib.sha256(data).digest()
+        digest = (hashlib.sha256(data).digest(), max_frames)
         cached = self.rotated_gif_cache.get(digest)
         if cached is not None:
             self.rotated_gif_cache.move_to_end(digest)
             return cached
-        converted = rotate_gif(data)
+        converted = rotate_gif(data, max_frames=max_frames)
         self.rotated_gif_cache[digest] = converted
         while len(self.rotated_gif_cache) > 6:
             self.rotated_gif_cache.popitem(last=False)
@@ -1055,7 +1076,7 @@ class FaceplateCoordinator(ContinuousReturn):
             self.phase = "rendering"
             self.detail = f"Preparing local artwork for Steam app {appid}"
             self.error = ""
-        if not appid:
+        if not appid and not (home and self.steamgriddb.independent_manifest(0, home=True)):
             return {"attempted": False, "wrote": False, "found": False}
 
         try:
@@ -1074,7 +1095,7 @@ class FaceplateCoordinator(ContinuousReturn):
                 if manifest.get('dashboard_pack') == 'artwork-dashboard.rgb':
                     projection_source = {'kind': 'artwork',
                         'path': str(Path(compiled_path).parent / 'artwork-dashboard.rgb'),
-                        'root': str(self.steamgriddb.artwork_root),
+                        'root': str(Path(compiled_path).parent if manifest.get('appid') == 0 else self.steamgriddb.artwork_root),
                         'frames': manifest.get('dashboard_pack_frames', 0),
                         'sha256': manifest.get('dashboard_pack_sha256', '')}
                 selected_animated = bool(manifest.get("animated"))
@@ -1396,7 +1417,7 @@ class FaceplateCoordinator(ContinuousReturn):
         panel CRC remains the final protection against rewriting an identical
         GIF, while the persisted journal records whether a real write occurred.
         """
-        data = bytes(data) if delegated else self._orient_gif(bytes(data))
+        data = bytes(data) if delegated else self._orient_gif(bytes(data), max_frames=1024 if scene == "clock" else 192)
         # The saved brightness is the command. No media decode, RGB profile
         # lookup or unknown-content dimming runs on this delivery path.
         if not delegated:
@@ -1435,6 +1456,13 @@ class FaceplateCoordinator(ContinuousReturn):
                 if not port:
                     raise LinkError("faceplate not found (no JSAUX CH340 ttyUSB)")
                 token = self.identity_reader(port)
+                keep_clock_running = bool(not delegated and scene == 'clock'
+                    and token == self.device_token and self.powered is True
+                    and self.last_synchronized and self.delivery.get('state') == 'confirmed'
+                    and self.delivery.get('scene') == 'clock'
+                    and not self._screensaver_exit_blank
+                    and not self._delegated_gif_activation_pending
+                    and self._native_attempt is None and not self._continuous_return)
                 retained = None if delegated or scene == 'player-city' else self._retained_restore(data, token)
                 if retained:
                     return retained
@@ -1454,13 +1482,18 @@ class FaceplateCoordinator(ContinuousReturn):
                 with self._upload_link(port, data, scene, reason, allow_brightness=not delegated) as link:
                     if not delegated:
                         self._write_brightness(link, safe_brightness(self.brightness))
-                    self._begin_scene_power(link)
+                    keep_clock_running = bool(keep_clock_running
+                        and getattr(link, 'transport_profile', '') == 'baseline')
+                    if not keep_clock_running:
+                        self._begin_scene_power(link)
                     try:
                         wrote = self._send_protected(link, data, scene=scene, reason=reason, cancelled=cancelled)
                     finally:
                         self.last_transfer = dict(
                             getattr(link, "last_transfer_timings", {}) or {},
                         )
+                        if scene == 'clock':
+                            self.last_transfer['clock_power_on_skipped'] = keep_clock_running
                     self.displayed_peak_load = float(peak_load)
                     self._displayed_power_identity = hashlib.sha256(data).hexdigest()
                     # Raise brightness only after the new GIF is committed.

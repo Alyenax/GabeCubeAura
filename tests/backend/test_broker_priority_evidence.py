@@ -6,7 +6,8 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 from signalbar.backend.engine import Engine
-from signalbar.faceplate.priority_evidence import BLOCKERS,clean
+from signalbar.faceplate.priority_evidence import BLOCKERS as HISTORICAL_BLOCKERS,clean
+BLOCKERS=tuple(name for name in HISTORICAL_BLOCKERS if name != "onboarding-recovery")
 from signalbar.activation import ScreenSyncActivation
 
 
@@ -53,8 +54,16 @@ class PriorityEvidenceTests(unittest.TestCase):
                 self.assertEqual(list(evidence['evaluated']),list(BLOCKERS[:BLOCKERS.index(name)+1]))
                 self.assertEqual(sum(evidence['evaluated'].values()),1)
                 self.assertEqual(calls.count('timer'),1)
-                self.assertEqual(calls.count('event'),int(BLOCKERS.index(name)>=15))
-                self.assertEqual(calls.count('launch'),max(0,BLOCKERS.index(name)-15))
+                self.assertEqual(calls.count('event'),int(BLOCKERS.index(name)>=BLOCKERS.index('light-event-active')))
+                self.assertEqual(calls.count('launch'),max(0,BLOCKERS.index(name)-BLOCKERS.index('light-event-active')))
+
+    def test_pending_setup_recovery_is_diagnostic_only_and_keeps_other_safety_gates(self):
+        e,v,d,calls=self.fixture();e._onboarding_recovery_blocked=True
+        allowed,proof=e._broker_decision(v)
+        self.assertTrue(allowed);self.assertEqual(proof['first_blocker'],'none')
+        e.thermal_protection.active=True
+        allowed,proof=e._broker_decision(v)
+        self.assertFalse(allowed);self.assertEqual(proof['first_blocker'],'thermal-protection')
 
     def test_economy_toggle_and_continuity_cannot_manufacture_a_priority(self):
         for economy in (True,False):

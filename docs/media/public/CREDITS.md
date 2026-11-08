@@ -109,3 +109,15 @@ rights. Refer to the original source and rights holders before reusing artwork.
 ### Weather day/night refresh
 
 The four Bluewater and Pearl Rain day/night examples use the native prepared Weather frames and the matching 17-LED colour sequences. Their 24-second presentation preserves both animation cycles. Values are illustrative; enclosure and diffuser rendering is a software simulation, without calibrated white-spill adjustment or physical colour acceptance.
+
+
+## Standard clock previews for 1.6.0
+
+The nine clock previews and palette/format sheets are generated directly from
+GCA's standard-clock renderer, integer geometry and Monogram glyph data.
+Monogram retains its CC0 attribution; renderer/technical-data licensing remains
+as declared in the project. No external game art is used in these new previews.
+The illustrative date is 5 November 2026, with analog faces at 12:12 and digital
+faces at 12:15, enlarged with nearest-neighbour scaling. The overview GIF compares palettes, not real-time
+clock or firmware transfer behaviour. See [the generation manifest](v1.6.0/manifest.json)
+for native source identity, file hashes and exact-pixel checks.

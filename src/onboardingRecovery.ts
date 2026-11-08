@@ -14,6 +14,7 @@ export function setupReadGate(){
 
 export function setupRecoveryMessage(code:string|undefined,fr:boolean){
   const messages:Record<string,readonly [string,string]>={
+    setup_busy:['Une configuration est en cours d’enregistrement. Patiente un instant, puis recommence.','Setup is being saved. Wait a moment, then restart.'],
     draft_permissions:['Le dossier du guide ne peut pas être modifié : accès refusé ou disque en lecture seule. Ferme le guide et envoie le diagnostic GCA.','The setup folder cannot be changed: access denied or read-only storage. Close setup and send a GCA diagnostic.'],
     draft_unsafe:['Le brouillon a un propriétaire ou un type de fichier inattendu. Il a été conservé. Ferme le guide et envoie le diagnostic GCA.','The draft has an unexpected owner or file type. It was preserved. Close setup and send a GCA diagnostic.'],
     draft_archive_full:['Les sauvegardes du guide ont atteint leur limite. Aucune n’a été écrasée. Ferme le guide et envoie le diagnostic GCA.','Setup backups have reached their limit. None was overwritten. Close setup and send a GCA diagnostic.'],

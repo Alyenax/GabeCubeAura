@@ -427,7 +427,7 @@ class ArtworkDashboardTests(unittest.TestCase):
         self.assertGreaterEqual(separator_left - morning_right, 2)
         self.assertGreaterEqual(afternoon_left - separator_right, 2)
 
-    def test_next_hour_risk_uses_approved_umbrella_beside_unchanged_forecast_rain(self):
+    def test_next_hour_risk_uses_approved_rain_beside_unchanged_forecast_rain(self):
         frame = build_artwork_dashboard(
             (bytes(64 * 54 * 3),), "2026-10-09T21:48:45+02:00", 0,
             weather={"condition": "breaks", "temperature_c": 18}, ux_enabled=True,
@@ -438,7 +438,7 @@ class ArtworkDashboardTests(unittest.TestCase):
         ).frames[0]
         cyan = set(colour_positions(frame, (66, 220, 255), top=46))
         expected={(41+x,47+y) for y,line in enumerate((
-            "0011100","0111110","1111111","1001001","0001000","0101000","0011000"))
+            "0000000","0010010","0100100","1001001","0010010","0100100","0000000"))
             for x,bit in enumerate(line) if bit=='1'}
         self.assertEqual({p for p in cyan if 41<=p[0]<=47},expected)
         # The actual rain forecast remains a grey cloud with cyan rain strokes.
@@ -493,7 +493,7 @@ class ArtworkDashboardTests(unittest.TestCase):
         }
         expected_rails = {
             "controllers": "db39e4afacc38bfde4c8c33222bcb72c356b78d5812ef15e3ebfce474b2d1ef4",
-            "next_hour": "5de8116a304f028e7b30f2d1307e682cfee888816a6989064f0fc8d1404c844b",
+            "next_hour": "c1dcdf388524e7fd3e84ab6dd7853dc3ec3b051456a5c19266761fedc736de96",
             "today": "15a4207b93be04193362020ddbb09b983a25b3cee2262c66ac45d39f0907bc3e",
         }
         expected_header = "854322cbf5deaafe2bbca303708d278434d86fcb80ffe9f37f740e1d1931aca8"

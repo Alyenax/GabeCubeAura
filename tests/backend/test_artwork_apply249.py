@@ -129,3 +129,20 @@ class ArtworkApply249Tests(unittest.TestCase):
         self.assertEqual(self.library.home_selected(620)[1]['sha256'],manifest['sha256'])
         self.assertEqual(self.library.selected(620)[1]['sha256'],manifest['sha256'])
         self.assertEqual(self.plugin._faceplate_artwork_applies,{})
+
+
+    def test_home_destination_has_an_independent_dashboard_toggle_without_reencoding(self):
+        manifest,_=self.prepare('animated',draft=True)
+        from signalbar.models import GameState
+        self.engine._game=GameState(0,'')
+        self.engine._faceplate_artwork_dashboard_facts.return_value={'dashboard_show_clock':False}
+        for presentation in ('artwork','artwork-dashboard'):
+            with self.subTest(presentation=presentation):
+                with patch.object(self.library,'prepare_choice',side_effect=AssertionError('No conversion on Apply')):
+                    result=asyncio.run(self.plugin.assign_faceplate_dashboard_artwork(
+                        620,'animated',True,True,manifest['sha256'],False,presentation))
+                self.assertEqual(result['sha256'],manifest['sha256'])
+                self.assertEqual(self.engine.faceplate_preferences.read().home_scene,presentation)
+                request=self.engine.faceplate_worker.submit.call_args.args[1]
+                self.assertEqual(request['kind'],presentation)
+                self.assertEqual(request['appid'],620)

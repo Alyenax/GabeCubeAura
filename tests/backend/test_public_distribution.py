@@ -23,7 +23,7 @@ class PublicDistributionTests(unittest.TestCase):
             module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(module)
             plugin = module.Plugin()
-            plugin.diagnostics = DiagnosticJournal(Path(directory) / "state", "1.4.1")
+            plugin.diagnostics = DiagnosticJournal(Path(directory) / "state", "1.6.0")
             plugin.diagnostics.record("manual_test", api_key="secret-value", path="/home/deck/private")
             plugin.configuration_export_path = Path(directory) / "Documents" / "configuration.json"
             plugin.update_manager = Mock()
@@ -42,8 +42,16 @@ class PublicDistributionTests(unittest.TestCase):
             plugin.update_manager.upload_diagnostic_report.assert_not_called()
             self.assertEqual(Path(result["path"]).stat().st_mode & 0o777, 0o600)
 
+    def test_lightweight_lab_suffix_does_not_reenable_retired_private_tools(self):
+        for version in ('1.5.1-beta.17', '1.5.1-lab.257', 'v1.5.1-test.1', '2.0.0-lab.1'):
+            self.assertFalse(supports_private_tools(version))
+        with tempfile.TemporaryDirectory() as directory:
+            journal=DiagnosticJournal(directory,'1.5.1-lab.257')
+            self.assertFalse(journal.status()['automatic_upload'])
+            self.assertFalse(journal.set_automatic_upload(True)['automatic_upload'])
+
     def test_build_capability_is_not_an_update_channel_preference(self):
-        for version in ("1.4.1", "1.5.0-beta.1", "1.5.0-beta1", "unknown"):
+        for version in ("1.6.0", "1.6.0-beta.1", "1.6.0-lab.1", "1.5.1-beta.28", "1.5.1-lab.288", "1.4.1", "1.5.0-beta.1", "1.5.0-beta1", "unknown"):
             self.assertFalse(supports_private_tools(version))
         for version in ("1.4.1-lab.84", "v1.4.1-lab.84", "1.4.1-test.1"):
             self.assertTrue(supports_private_tools(version))

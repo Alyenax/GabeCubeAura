@@ -1,6 +1,6 @@
 {
   "name": "gabecubeaura",
-  "version": "1.5.1",
+  "version": "1.6.0",
   "description": "Steam Machine light bar and JSAUX PIXEL Faceplate; generic external integrations",
   "type": "module",
   "packageManager": "pnpm@9.15.9",

@@ -3,7 +3,7 @@
   "service": "gca.integrations",
   "capture_owner": false,
   "files": {
-    "main.py": "977954f02ba3c71894cfb02311b3890f0f2e3113a7359a678605427fda52ecaa",
-    "py_modules/signalbar/backend/engine.py": "980eea9b37fa7b1a46d7ef0a8004d022832a1e5dcf3c424847221efe28ec7525"
+    "main.py": "e594ae4ea38f93fbf49d8921076191060d4629b67d0d35190b1ba6504d1bf1d9",
+    "py_modules/signalbar/backend/engine.py": "68b54c5c4f50b0ea54c5bd6aaba9bd12abf3ff27198c101550fbec2d50f6e68d"
   }
 }

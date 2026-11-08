@@ -1,0 +1,33 @@
+{
+  "schema": 1,
+  "note": "Technical generator data is separate from the original artwork grant. Monogram glyphs retain CC0; no reference clock code or graphics imported.",
+  "monogram": {
+    "creator": "datagoblin (Vinicius Menezio)",
+    "source": "https://gitlab.com/datagoblin/monogram",
+    "creator_page": "https://datagoblin.itch.io/monogram",
+    "license": "CC0-1.0",
+    "license_text": "licenses/CC0-1.0.txt",
+    "ttf_sha256": "0a9b4ec97046e0297bc9f40a12338bfaac0695c95349b6a15514f86618ef8e0a",
+    "embedded_copyright": "Copyright Vinicius Menezio 2024"
+  },
+  "files": [
+    {
+      "path": "assets/clocks/catalog.json",
+      "sha256": "b7d948008113059b47afd9820bdf88dbe29a7a7624486c4837e1a983b42f85f2",
+      "license": "GPL-3.0-only",
+      "description": "Original generator geometry, palette or technical catalogue data"
+    },
+    {
+      "path": "assets/clocks/geometry.json",
+      "sha256": "e41fb64b0c8c9fa5ddeaff9c4e98bc222f424ff4da07037fdd3d4011712828af",
+      "license": "GPL-3.0-only",
+      "description": "Original generator geometry, palette or technical catalogue data"
+    },
+    {
+      "path": "assets/clocks/monogram.json",
+      "sha256": "022e992140bc96bb80028fbaffa2e8c760e4e38009dccb5452e64424ea0ab580",
+      "license": "CC0-1.0",
+      "description": "Rasterized Monogram glyphs, datagoblin; original TTF unchanged"
+    }
+  ]
+}

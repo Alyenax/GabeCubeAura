@@ -16,7 +16,9 @@ test('the simple settings rebuild keeps all non-UI Lab153 modules and the Lab158
   // Approved Lab159 settings-only replacement. Backend/API/hardware retain their frozen contract.
   // Audit GH-07 and GA-06 replace quantized RGB and stale runtime continuations; behavioral tests cover both.
   // Lab199 removes vocal steps; onboarding behavior and recovery have dedicated tests.
-  const targeted=new Set(['src/faceplate_ux.ts','src/components/AnimatedScreensaverStudio.tsx','src/setupFlow.ts','src/components/PreciseColorEditor.tsx','src/runtime.ts','src/components/FirstRunOnboarding.tsx','src/onboardingApi.ts',
+  // The lightweight 1.5 runtime replaces suffix-only private capability detection;
+  // explicit behavior is covered in public_preparation.test.ts.
+  const targeted=new Set(['src/distribution.ts','src/faceplate_ux.ts','src/components/AnimatedScreensaverStudio.tsx','src/setupFlow.ts','src/components/PreciseColorEditor.tsx','src/runtime.ts','src/components/FirstRunOnboarding.tsx','src/onboardingApi.ts',
     'src/index.tsx','src/localized_ui.tsx','src/localized_nodes.tsx','src/i18n/fr.ts','src/i18n.ts','src/components/Disclosure.tsx',
     // Retired TV frontend and tests now live in the external DAS provenance bundle.
     'src/cinema_bridge.ts','src/cinema_types.ts','src/studio_types.ts','src/studio_workflow.ts','src/components/ScreensaverPanel.tsx',
@@ -26,6 +28,7 @@ test('the simple settings rebuild keeps all non-UI Lab153 modules and the Lab158
     'src/components/AmbienceProfilesPanel.tsx',
     // Lab195 intentionally changes the UI-only Faceplate visibility gate; runtime contracts remain frozen.
     'src/quick_panel.ts',
+    'src/weather_topbar.ts',
     // Lab196 restores Steam button paint and focus; no runtime/hardware change.
     'src/components/QuickAction.tsx',
     // Lab214 cancels queued slider saves when first-time setup locks the panel.
@@ -74,6 +77,6 @@ test('historical shells stay excluded and GCA no longer renders a vocal settings
   assert.equal(existsSync(new URL('src/components/GabeAssistantPanel.tsx',root)),false);
   assert.doesNotMatch(read('src/index.tsx').toString(),/GabeAssistantPanel|GabeSettingsSession/);
   const pkg=JSON.parse(read('package.json').toString());
-  assert.equal(pkg.version,'1.5.0');
+  assert.equal(pkg.version,'1.6.0');
   assert.equal(pkg.gabecubeaura_test_build,undefined);
 });

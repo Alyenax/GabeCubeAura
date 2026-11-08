@@ -1,0 +1,22 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import {readFileSync} from 'node:fs';
+import vm from 'node:vm';
+import ts from 'typescript';
+import {createElement,Fragment} from 'react';
+const source=readFileSync(new URL('../../src/components/HomeLibrarySettings.tsx',import.meta.url),'utf8');
+const js=ts.transpileModule(source.slice(source.indexOf('export function')).replace('export function','function'),{compilerOptions:{target:ts.ScriptTarget.ES2020,jsx:ts.JsxEmit.React}}).outputText;
+const nodes=(t:any):any[]=>Array.isArray(t)?t.flatMap(nodes):t&&typeof t==='object'?[t,...nodes(t.props?.children)]:[];
+test('Home playback exposes exactly four timers, ordered/random playback and only supplied sources',async()=>{
+ let cursor=0;const values:any[]=[],writes:any[]=[],saved:any[]=[];
+ const context=vm.createContext({React:{createElement,Fragment},useRef:(initial:any)=>{const i=cursor++;return values[i]??(values[i]={current:initial});},useState:(initial:any)=>{const i=cursor++;if(!(i in values))values[i]=initial;return[values[i],(v:any)=>values[i]=v];},setSetting:async(...args:any[])=>{writes.push(args);return{saved:true};},DropdownItem:'dropdown',ToggleField:'toggle',Localized:'local',PanelSectionRow:'row',ButtonItem:'button'});
+ vm.runInContext(js+'\nthis.component=HomeLibrarySettings;',context);
+ const render=()=>{cursor=0;return nodes(context.component({status:{faceplate_home_library_source:'creations'},setStatus:(s:any)=>saved.push(s),sources:[{data:'artwork',label:'Artwork SteamGridDB'}]}));};
+ let tree=render();const sourceChoice=tree.find(n=>n.props?.label==='GIF library source');
+ assert.equal(sourceChoice.props.selectedOption,'artwork');assert.equal(sourceChoice.props.rgOptions.length,1);
+ const timer=tree.find(n=>n.props?.label==='Change GIF every');assert.deepEqual(Array.from(timer.props.rgOptions,(o:any)=>o.data),[300,900,1800,3600]);
+ timer.props.onChange({data:900});for(let i=0;i<8;i++)await Promise.resolve();
+ tree=render();tree.find(n=>n.props?.label==='Random order').props.onChange(true);for(let i=0;i<8;i++)await Promise.resolve();
+ assert.deepEqual(writes,[['faceplate_home_library_interval',900],['faceplate_home_library_shuffle',true]]);assert.equal(saved.length,2);
+ assert(!/GIPHY|giphy|searchGiphy|prepareGiphy/.test(source));
+});

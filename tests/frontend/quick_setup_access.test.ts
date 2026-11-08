@@ -6,28 +6,19 @@ import {createElement} from 'react';
 import ts from 'typescript';
 import {publishQuickSetupStatus,quickSetupCompleted,subscribeQuickSetup} from '../../src/quick_setup_access';
 
-test('title settings action shares confirmed setup state, unlocks and relocks without polling',()=>{
- assert.equal(quickSetupCompleted(),false,'Unknown setup is locked');
+test('title settings action remains available before setup and after reset',()=>{
  const source=readFileSync(new URL('../../src/index.tsx',import.meta.url),'utf8');
- const action=source.slice(source.indexOf('function QuickSettingsAction'),source.indexOf('function QuickAccessContent'));
- let changes=0;const unsubscribe=subscribeQuickSetup(()=>changes++);
+ const ast=ts.createSourceFile('index.tsx',source,99,true,4);
+ const component=ast.statements.find(n=>ts.isFunctionDeclaration(n)&&n.name?.text==='QuickSettingsAction')!;
  const navigations:string[]=[];
- const context=vm.createContext({React:{createElement},exports:{},DialogButton:'button',TbSettings:'icon',
-  useSyncExternalStore:(_subscribe:any,get:any)=>get(),subscribeQuickSetup,quickSetupCompleted,
-  Navigation:{CloseSideMenus:()=>navigations.push('close'),Navigate:(route:string)=>navigations.push(route)}});
- vm.runInContext(ts.transpileModule(action+';exports.render=QuickSettingsAction;',{
-  compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React}}).outputText,context);
- let button=context.exports.render();assert.equal(button.props.disabled,true);
- button.props.onClick();assert.deepEqual(navigations,[]);
- publishQuickSetupStatus({onboarding_completed:false});assert.equal(changes,0);
- publishQuickSetupStatus({onboarding_completed:true});assert.equal(changes,1);
- button=context.exports.render();assert.equal(button.props.disabled,false);
- button.props.onClick();assert.deepEqual(navigations,['close','/gabecubeaura/settings']);
- publishQuickSetupStatus({onboarding_completed:false});assert.equal(changes,2);
- button.props.onClick();assert.equal(navigations.length,2,'Retained callback cannot bypass a reset');
- assert.equal(context.exports.render().props.disabled,true);
- unsubscribe();publishQuickSetupStatus({onboarding_completed:true});assert.equal(changes,2);
- publishQuickSetupStatus({onboarding_completed:false});
+ const context=vm.createContext({exports:{},React:{createElement},DialogButton:'button',TbSettings:'icon',
+  Navigation:{CloseSideMenus:()=>navigations.push('close'),Navigate:(path:string)=>navigations.push(path)}});
+ vm.runInContext(ts.transpileModule(component.getText(ast)+';exports.render=QuickSettingsAction',{compilerOptions:{jsx:ts.JsxEmit.React,module:ts.ModuleKind.CommonJS}}).outputText,context);
+ for(const completed of [false,true,false]){
+  publishQuickSetupStatus({onboarding_completed:completed});
+  const button=context.exports.render();assert.notEqual(button.props.disabled,true);button.props.onClick();
+ }
+ assert.deepEqual(navigations,['close','/gabecubeaura/settings','close','/gabecubeaura/settings','close','/gabecubeaura/settings']);
 });
 
 test('hidden Content adopts setup confirmation/reset immediately and invalidates older reads',()=>{

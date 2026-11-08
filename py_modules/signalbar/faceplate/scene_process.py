@@ -66,7 +66,15 @@ def main(argv) -> int:
         visual_theme = str(request.get("visual_theme", "integrated"))
         render_metadata = {}
         with exclusive_render_lock(timeout=20.0):
-            if kind == "player-city":
+            if kind == "clock":
+                from signalbar.faceplate.clocks import build_packet
+                result = build_packet(request)
+                from signalbar.faceplate.source_projection import clock_projection
+                projection = clock_projection(result.frames, result.delays_cs)
+                render_metadata = {'frames':len(result.frames), 'duration_ms':sum(result.delays_cs)*10,
+                                   'clock_id':request['clock_id'], 'display_at':request['display_at'],
+                                   'end_at':request['end_at'], 'projection_source':projection}
+            elif kind == "player-city":
                 result = build_player_city(request['weather'], request['phase'], request['players'], row=request.get('row'))
                 city = animation_manifest()
                 render_metadata = {'players': request['players'], 'appid': request['appid'],

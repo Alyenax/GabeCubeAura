@@ -61,11 +61,14 @@ test('every existing native control retains its callback and numeric limits exce
       assert.match(dashboard,/presentation.open\(\{category: 'faceplate', tab\}\)/);continue;
     }
     // Lab174 localizes the language-switch label; its callback/value is unchanged.
-    const label=field.label==='"Français / English"'?'"French interface"':field.label;
+    const label=(field.label==='"Français / English"'?'"French interface"':field.label)?.replace('Apply to Dashboard Home','Apply to Home');
     const matches=controls.filter(item=>item.owner===field.owner&&item.tag===field.tag&&item.label===label);
     if(!matches.length){missing.push(`${field.owner}/${field.label}`);continue;}
-    for(const key of ['min','max','step'])assert(matches.some(item=>item[key]?.replaceAll('actionFailed','console.warn')===field[key]),`${field.label}/${key}`);
+    for(const key of ['min','max','step'])assert(matches.some(item=>item[key]?.replaceAll('actionFailed','console.warn').replaceAll(':${dashboardPresentation}','')===field[key]),`${field.label}/${key}`);
     for(const key of ['onChange','onClick'])if(field[key]){
+      if(field.owner==='PixelStudioArtworkPanel'&&field.label==='"Apply to"'&&key==='onChange'){
+        assert(matches.some(item=>item.onChange?.includes('dashboardPresentation')),'Destination and Dashboard presentation are separate choices');continue;
+      }
       if(key==='onChange'&&((field.owner==='PixelStudioWeatherCatalog'&&field.label==='"Weather condition"')
           ||(field.owner==='WeatherPanel'&&field.label==='"Condition to configure"'))){
         assert(matches.some(item=>item.onChange?.replace('WeatherConfigurationCondition','WeatherCondition')===field.onChange),
@@ -79,7 +82,7 @@ test('every existing native control retains its callback and numeric limits exce
       if(field.owner==='Content'&&['"Faceplate at Home"','"Faceplate in game"'].includes(field.label??'')&&key==='onChange'){
         assert(matches.some(item=>item.onChange?.includes('changeFaceplateRoute')),'Display keeps the native route callback with Home parity');continue;
       }
-      assert(matches.some(item=>item[key]?.replaceAll('actionFailed','console.warn')===field[key]),`${field.owner}/${field.label}/${key}`);
+      assert(matches.some(item=>item[key]?.replaceAll('actionFailed','console.warn').replaceAll(':${dashboardPresentation}','')===field[key]),`${field.owner}/${field.label}/${key}`);
     }
   }
   assert.deepEqual(missing,[]);

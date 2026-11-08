@@ -283,7 +283,7 @@ class PlayerCityCadenceTests(unittest.TestCase):
         self.confirm(self.city.plan(620,self.sample(6176),self.weather()))
         saved=json.loads(self.path.read_text())
         for key in ('confirmed','attempt'):
-            saved[key]['render_revision']='player-city-animated-dense-x2-1'
+            saved[key]['render_revision']='player-city-us-count-smile-10'
         self.path.write_text(json.dumps(saved))
         self.city=PlayerCityCadence(self.path,clock=self.clock.wall)
         original_at=self.city.confirmed['at']

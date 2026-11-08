@@ -12,10 +12,12 @@ development on Ko-fi. Thank you! ❤️
 
 [![Support GabeCubeAura on Ko-fi](docs/media/public/support-kofi.svg)](https://ko-fi.com/alyenax)
 
-[Download 1.5.1](https://github.com/Alyenax/GabeCubeAura/releases/download/v1.5.1/GabeCubeAura-v1.5.1.zip)
+**New in 1.6.0:** [Nine clock faces](#faceplate-clocks) · [Per-game artwork](#artwork-from-a-games-menu)
+
+[Download GabeCubeAura](https://github.com/Alyenax/GabeCubeAura/releases/latest)
 · [User guide](https://github.com/Alyenax/GabeCubeAura/wiki)
 · [Changelog](https://github.com/Alyenax/GabeCubeAura/blob/main/CHANGELOG.md)
-· [What's new in 1.5.0](https://github.com/Alyenax/GabeCubeAura/wiki/Release-1.5.0)
+· [What’s new in 1.6.0](https://github.com/Alyenax/GabeCubeAura/wiki/Release-1.6.0)
 
 ## Artwork
 
@@ -73,7 +75,7 @@ be set separately from the light bar.
 <tr>
 <th align="center" width="33%">Weather</th>
 <th align="center" width="33%">Personal timer</th>
-<th align="center" width="33%">TV + Faceplate · <a href="https://github.com/Alyenax/Decky-Animated-Screensaver">DAS</a></th>
+<th align="center" width="33%">TV + Faceplate · <a href="https://github.com/Alyenax/Decky-Animated-Screensaver">Decky Animated Screensaver</a></th>
 </tr>
 <tr>
 <td align="center" valign="top"><img src="docs/media/public/faceplate-weather-pearl-rain-day.gif" width="240" alt="Pearl Rain on the Faceplate and coordinated light bar"></td>
@@ -83,7 +85,7 @@ be set separately from the light bar.
 <tr>
 <td align="center" valign="top">Your city’s weather<br>on both displays.</td>
 <td align="center" valign="top">A visible countdown<br>over game artwork.</td>
-<td align="center" valign="top">Different artwork on each display.<br>Requires the separate <a href="https://github.com/Alyenax/Decky-Animated-Screensaver">DAS plugin</a>.</td>
+<td align="center" valign="top">Different artwork on each display.<br>Requires the separate <a href="https://github.com/Alyenax/Decky-Animated-Screensaver">Decky Animated Screensaver</a>.</td>
 </tr>
 </table>
 
@@ -92,12 +94,34 @@ Home and games. Dashboard rows can show controller batteries,
 session time, recorded playtime or achievement progress when data is available.
 Steam Players City turns the running game's player count into an animated city.
 
-**Decky Vocal Assistant (DVA)** can add optional voice-assistant visuals through
-GCA, while **[Decky Animated Screensaver (DAS)](https://github.com/Alyenax/Decky-Animated-Screensaver)** can share prepared screensaver
+**Decky Vocal Assistant** can add optional voice-assistant visuals through
+GCA, while **[Decky Animated Screensaver](https://github.com/Alyenax/Decky-Animated-Screensaver)** can share prepared screensaver
 collections with the Faceplate. Both are separate plugins; see the
 [integration guide](https://github.com/Alyenax/GabeCubeAura/wiki/Integrations).
 
 *The animated device previews are software illustrations with example readings.*
+
+## Faceplate clocks
+
+Choose from **nine clock faces**: five analog designs and four digital or calendar layouts. Use a different clock at Home and in games, with independent colours and time formats.
+
+![Nine Faceplate clock faces cycling through Amber, Glacier blue, Dusty rose, Sage green, Lavender and Ivory](docs/media/public/v1.6.0/clocks-overview.gif)
+
+*Native 64 × 54 clock renders, enlarged for readability. Analog faces are shown at 12:12 and digital faces at 12:15; the GIF compares six colour palettes.*
+
+**Amber · Glacier blue · Dusty rose · Sage green · Lavender · Ivory**
+
+Choose 24-hour time or AM/PM; dates follow the GCA language. These clocks run locally without an artwork key. Open **Settings → Faceplate Jsaux → Display**, select **Clock** for Home or games, then **Choose a clock**.
+
+[See every clock and its settings](https://github.com/Alyenax/GabeCubeAura/wiki/Clocks) · [Static overview](docs/media/public/v1.6.0/clocks-overview.png)
+
+## Artwork from a game’s menu
+
+With a Faceplate connected, open a game’s Steam library menu and choose **JSAUX Faceplate artwork…**. Select an image, adjust it and prepare a preview for that game. **Settings → Faceplate Jsaux → Artwork** lists your customized games, with actions to edit them or return to the default without deleting prepared copies.
+
+At Home, **GIF library slideshow** rotates already prepared artwork in order or randomly, every 5, 15 or 30 minutes, or every hour. Playback reuses local media.
+
+[Per-game artwork guide](https://github.com/Alyenax/GabeCubeAura/wiki/Faceplate-Artwork) · [Home library](https://github.com/Alyenax/GabeCubeAura/wiki/Home-Library)
 
 ## Compatibility
 
@@ -119,8 +143,10 @@ Keep the downloaded ZIP zipped for Decky installation.
 2. Download the plugin ZIP without extracting it.
 3. Open **Decky → Settings → Developer → Install Plugin from ZIP File** and
    choose the downloaded file. Enable Developer mode if that section is hidden.
-4. Open GabeCubeAura and complete guided setup: choose an experience, set
-   brightness, review your choices and confirm.
+4. Open GabeCubeAura. Use the optional guided setup for a starting configuration,
+   or go straight to the controls and settings. You can reopen the guide later.
+
+Guided setup stays optional. If an earlier attempt was interrupted, **Restart setup** starts the guide again while keeping your active settings, keys and prepared media.
 
 ## Guides and support
 

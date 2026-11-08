@@ -1,4 +1,4 @@
-# Historical notices — not the current runtime inventory
+# Historical notices - not the current runtime inventory
 
 Archived on 2026-10-25. This records earlier private Lab components, including voice, Cinema and Studio. Descriptions below are historical and do not assert their presence in the current candidate. Current runtime notices: ../THIRD_PARTY_NOTICES.md.
 

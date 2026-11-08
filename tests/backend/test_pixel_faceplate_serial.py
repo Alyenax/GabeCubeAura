@@ -60,7 +60,7 @@ def gca_link():
                 'port_owners', 'port_owner_details', 'LinkError', 'LinkBusy', 'Link'}:
             if node.name == 'Link':
                 node.body = [n for n in node.body if isinstance(n, ast.FunctionDef)
-                             and n.name in {'__init__', 'open', 'close'}]
+                             and n.name in {'__init__', 'open', '_open_new', 'close'}]
             selected.append(node)
     ns = dict(os=os, Path=Path, errno=errno, fcntl=fcntl, termios=termios,
               PROFILE_BASELINE='baseline', TRANSPORT_PROFILES=('baseline', 'vendor', 'auto'),

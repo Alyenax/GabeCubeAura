@@ -2,7 +2,10 @@
 
 Steam Machine light bar and optional JSAUX PIXEL Faceplate. Configure lighting from Decky's quick panel or Settings. With no Faceplate connected, only general and light-bar controls are shown. Your choices survive disconnection.
 
-DVA provides optional voice functions; DAS provides animated TV screensavers. Each plugin is configured separately. GabeCubeAura works without either plugin. [Decky Animated Screensaver](https://github.com/Alyenax/Decky-Animated-Screensaver) is available separately.
+Decky Vocal Assistant provides optional voice functions;
+[Decky Animated Screensaver](https://github.com/Alyenax/Decky-Animated-Screensaver)
+provides animated TV screensavers. Each plugin is configured separately.
+GabeCubeAura works without either plugin.
 
 Diagnostics: Settings > Advanced > Diagnostics > Export a local diagnostic. The report is redacted and saved privately under Documents. Nothing is uploaded. For capture failures, enable the optional five-minute capture diagnostic before reproducing the problem, then export the report. Detailed capture traces expire automatically.
 
@@ -33,3 +36,19 @@ The initial setup uses 15/255 light-bar brightness, 70% Faceplate brightness and
 Confirming setup for a connected Faceplate activates the saved display through the normal power and transfer loop. Not now, an unplugged panel, system sleep and global display Off retain their protections.
 
 Setup waits for the selected display’s USB-confirmed scene and content key before closing. A pending power request or an old confirmed image is insufficient. If confirmation is missing, the guide stays open with an explicit retry message. USB confirmation still does not verify visible playback. The setup confirmation wait is bounded to 90 seconds and stops if the guide is left.
+
+Faceplate Priority is configured only in Settings → Faceplate JSAUX → Priority. Automatic keeps the existing behaviour without reserving the serial port between transfers. GCA Priority retains the USB connection and lets you allow DAS screensavers and DVA temporary faces through GCA. Other app cancels GCA Faceplate work and releases USB after active traffic closes, preserving saved displays, brightness and the light bar. The stored image may continue playing. Sleep and Power off remain separate. An already-open or privileged application may still interfere with terminal exclusion. Companion voice and TV functions remain independent.
+
+## Faceplate clocks
+
+Choose **Clock** for the Faceplate at Home or in game, then **Choose a clock**. Standard models: Meridian, Halo, Almanac, Quadrant, Cardinal markers, Horizon, Column, Week and Date card. Clock colours offers Amber, Glacier blue, Dusty rose, Sage green, Lavender and Ivory. Digital clocks offer 24 hours or 12 hours (AM/PM). Analog clocks use a twelve-hour dial with an optional AM/PM indicator. Dates follow the GCA language. Home and in-game selections, colours and formats are independent.
+
+Clock animations are finite and prepared ahead of their scheduled transfer, roughly every four minutes. Small differences in visible timing can remain. Other app priority, screen-off and suspend rules still apply. Colour changes replace pending clock preparation; an older preparation cannot restore the preceding palette.
+
+Home image extension also follows prepared Home library images without a Steam game. It uses the original image pack, not dashboard text or counters. Missing or changed source files remain ineligible; choosing another source replaces the palette without relaunching GCA.
+
+Standalone clocks support Faceplate image extension. Bottom edge follows the bottom eight rows, which may be black; Whole image includes the dial, time and date. Prepared clock colours are independent of USB confirmation. Confirmed same-session clock renewals avoid an unnecessary Power On command; physical playback continuity still needs checking.
+
+Clock transfer mode is saved separately for Home and games: Conservative (default, about 15 transfers/hour) or Fixed minute (about 60/hour). Fixed minute keeps one time/date inside each GIF while animations continue. These rates are nominal; transfer timing and animation continuity require a physical check.
+
+Analog clocks use thin hour and minute hands sharing one native pivot. The five dial styles retain their existing lengths, colours, dates and transfer modes.

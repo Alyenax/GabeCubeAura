@@ -220,6 +220,13 @@ class Renderer:
                 "startup_recovered": self._startup_brightness_recovered,
             }
 
+    def close_read_session(self):
+        """Invalidate open read descriptors across explicit sleep/resume hooks."""
+        with self._lock:
+            close_reads = getattr(self.hardware, "close_read_handles", None)
+            if callable(close_reads):
+                close_reads()
+
     def render(self, frame, *, force=False) -> bool:
         clean = normalize_frame(frame)
         with self._lock:
@@ -229,6 +236,9 @@ class Renderer:
             if self._last_write_at and now - self._last_write_at < self.min_interval_s:
                 return False
             try:
+                begin_reads = getattr(self.hardware, "begin_read_session", None)
+                if callable(begin_reads):
+                    begin_reads()
                 if self._saved_frame is None:
                     capture_state = getattr(self.hardware, "capture_state", None)
                     if callable(capture_state):
@@ -251,6 +261,9 @@ class Renderer:
                 self._failed = True
                 self._last_frame = None
                 self._last_signature = None
+                close_reads = getattr(self.hardware, "close_read_handles", None)
+                if callable(close_reads):
+                    close_reads()
                 raise
             self._last_frame = clean
             self._last_write_at = now
@@ -260,6 +273,13 @@ class Renderer:
 
     def relinquish(self, restore_if_owned: bool = True) -> bool:
         """Stop owning the bar; restore only when nobody changed our frame."""
+        with self._lock:
+            try:
+                return self._relinquish_state(restore_if_owned)
+            finally:
+                self.close_read_session()
+
+    def _relinquish_state(self, restore_if_owned):
         with self._lock:
             restored = False
             if restore_if_owned and self._saved_frame is not None and self._last_signature is not None:
@@ -280,7 +300,12 @@ class Renderer:
                     self._applied_brightness_scale = None
                     self._brightness_override_active = False
                 else:
-                    self._release_brightness_override()
+                    try:
+                        self._release_brightness_override()
+                    except OSError:
+                        # An unplugged/rebound device cannot safely confirm
+                        # restoration. Keep the recovery journal for rediscovery.
+                        self._failed = True
             self._last_frame = None
             self._last_signature = None
             self._saved_frame = None

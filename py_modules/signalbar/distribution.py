@@ -4,7 +4,10 @@ import re
 
 
 def supports_private_tools(version: str) -> bool:
-    return bool(re.fullmatch(r"(?:v)?\d+\.\d+\.\d+-(?:lab|test)\.\d+", str(version)))
+    match = re.fullmatch(r"(?:v)?(\d+)\.(\d+)\.(\d+)-(?:lab|test)\.\d+", str(version))
+    # From the public 1.5 runtime onward, a Lab suffix alone must not revive
+    # the retired private diagnostics, speech delivery or authorization tools.
+    return bool(match and tuple(map(int, match.groups())) < (1, 5, 0))
 
 
 def require_private_tools(version: str):

@@ -110,7 +110,7 @@ export function SimpleSettings({initial,initialSource,faceplateConnected,renderC
                   activeTab={selection.category===item.id?selection.tab:remembered.current[item.id]??item.tabs[0][0]}
                   onShowTab={(tab:string)=>{if(revision.current===renderedRevision&&current.current.category===item.id)switched(settingsSelection(item.id,tab));}}
                   tabs={item.tabs.map(tab=>({id:tab[0],title:french?tab[1]:tab[2],
-                    footer:SETTINGS_TAB_INDICATOR,
+                    footer:item.id==='faceplate'?{...SETTINGS_TAB_INDICATOR,style:{paddingLeft:6,paddingRight:6}}:SETTINGS_TAB_INDICATOR,
                     content:<SettingsTabBody selection={settingsSelection(item.id,tab[0])} renderContent={renderContent} onOpen={open}
                       entry={entry} canEnter={()=>isCurrent(item.id,tab[0])&&area.current==='content'}/>}))}/></div>
               </div>,

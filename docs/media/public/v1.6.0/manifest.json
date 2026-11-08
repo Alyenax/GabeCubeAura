@@ -1,0 +1,271 @@
+{
+  "native_dimensions": [
+    64,
+    54
+  ],
+  "designs": [
+    "meridian",
+    "halo",
+    "almanac",
+    "quadrant",
+    "cardinal",
+    "horizon",
+    "column",
+    "week",
+    "date-card"
+  ],
+  "palettes": [
+    "amber",
+    "glacier",
+    "rose",
+    "sage",
+    "lavender",
+    "ivory"
+  ],
+  "illustrative_times": {
+    "meridian": "2026-11-05T12:12:00",
+    "halo": "2026-11-05T12:12:00",
+    "almanac": "2026-11-05T12:12:00",
+    "quadrant": "2026-11-05T12:12:00",
+    "cardinal": "2026-11-05T12:12:00",
+    "horizon": "2026-11-05T12:15:00",
+    "column": "2026-11-05T12:15:00",
+    "week": "2026-11-05T12:15:00",
+    "date-card": "2026-11-05T12:15:00"
+  },
+  "hardware_capture": false,
+  "network_or_usb_access": false,
+  "verified_exact_native_regions": 108,
+  "analog_pivot_continuity_checked": [
+    "meridian",
+    "halo",
+    "almanac",
+    "quadrant",
+    "cardinal"
+  ],
+  "renderer_sha256": "52702d2b749f7011c039e4d636b74a8637ae32e2d075e683f94efe23ff946169",
+  "files": [
+    {
+      "path": "clock-almanac.gif",
+      "size_bytes": 12741,
+      "dimensions": [
+        256,
+        216
+      ],
+      "frames": 6,
+      "sha256": "90fa34b338010843bcd0e20749550126b2c5c501baa6e3d562c6a3380d968b9a"
+    },
+    {
+      "path": "clock-almanac.png",
+      "size_bytes": 660,
+      "dimensions": [
+        192,
+        162
+      ],
+      "frames": 1,
+      "sha256": "3df9ba0ee4ced0c23b0bcd715f713e703617ed5dd8713576e61d1e720ecd3735"
+    },
+    {
+      "path": "clock-cardinal.gif",
+      "size_bytes": 11907,
+      "dimensions": [
+        256,
+        216
+      ],
+      "frames": 6,
+      "sha256": "74aa811356646ff119c94fe4170386ba92a77b278caf70bc86bb915784ca8bb4"
+    },
+    {
+      "path": "clock-cardinal.png",
+      "size_bytes": 698,
+      "dimensions": [
+        192,
+        162
+      ],
+      "frames": 1,
+      "sha256": "9a2c9162c9834269a5c356c94f82eff0fab06e8d56ef19158eee59fea70caf5c"
+    },
+    {
+      "path": "clock-colours.png",
+      "size_bytes": 19518,
+      "dimensions": [
+        840,
+        518
+      ],
+      "frames": 1,
+      "sha256": "1af4318a0e3548548ac7db85c9f716c2b63a2a645df6ba05e7b8515b98da65da"
+    },
+    {
+      "path": "clock-column.gif",
+      "size_bytes": 14781,
+      "dimensions": [
+        256,
+        216
+      ],
+      "frames": 6,
+      "sha256": "2e4ab1b0d5f0d8052a2fdd4792688aed15fb903560211e797f3b71328825e93f"
+    },
+    {
+      "path": "clock-column.png",
+      "size_bytes": 729,
+      "dimensions": [
+        192,
+        162
+      ],
+      "frames": 1,
+      "sha256": "1adc436e1010c9983f865396dc7c5379d0fe0c2ec2b945d78f4e4cc032dcb3aa"
+    },
+    {
+      "path": "clock-date-card.gif",
+      "size_bytes": 16239,
+      "dimensions": [
+        256,
+        216
+      ],
+      "frames": 6,
+      "sha256": "7257d3cefd0d543312a8061e2d021b307fad73f1376ec2044fc23c03c845c554"
+    },
+    {
+      "path": "clock-date-card.png",
+      "size_bytes": 686,
+      "dimensions": [
+        192,
+        162
+      ],
+      "frames": 1,
+      "sha256": "59152841c770bdaf45bc7b45be2dab4bb0ab6eccabc89593f1fa3d5bd8387811"
+    },
+    {
+      "path": "clock-halo.gif",
+      "size_bytes": 13269,
+      "dimensions": [
+        256,
+        216
+      ],
+      "frames": 6,
+      "sha256": "d0c6ba4eda99380f2be19b1fd3ecbaf80245f537f0cd1ee00ea50aa8fe858ab4"
+    },
+    {
+      "path": "clock-halo.png",
+      "size_bytes": 811,
+      "dimensions": [
+        192,
+        162
+      ],
+      "frames": 1,
+      "sha256": "b9be23c5e80335f8bee61a60c31de97bfead23aa4b88dbcfee7d10e821ad9aeb"
+    },
+    {
+      "path": "clock-horizon.gif",
+      "size_bytes": 14259,
+      "dimensions": [
+        256,
+        216
+      ],
+      "frames": 6,
+      "sha256": "55634d814665ecaba29996d5a6ba73f0b27f6fb0e016917c8bd20709a06af89c"
+    },
+    {
+      "path": "clock-horizon.png",
+      "size_bytes": 557,
+      "dimensions": [
+        192,
+        162
+      ],
+      "frames": 1,
+      "sha256": "b1c7ca0694c65e4803c19ff17af25087a728ff8447f3b600ba05238349570c2c"
+    },
+    {
+      "path": "clock-meridian.gif",
+      "size_bytes": 11607,
+      "dimensions": [
+        256,
+        216
+      ],
+      "frames": 6,
+      "sha256": "cc43b2f01a36ab8c67fc6a97fb6b75557b398e8dc8a1f2c5450a9d4e57c71090"
+    },
+    {
+      "path": "clock-meridian.png",
+      "size_bytes": 693,
+      "dimensions": [
+        192,
+        162
+      ],
+      "frames": 1,
+      "sha256": "2930d74f15a4293cf87e82f54942bf8feffdf68d44007486f5ae93090d74bff3"
+    },
+    {
+      "path": "clock-options.png",
+      "size_bytes": 17218,
+      "dimensions": [
+        840,
+        518
+      ],
+      "frames": 1,
+      "sha256": "6a98db4f4f179715e3790793381597c128e8016460f92f9906eabbfa26506368"
+    },
+    {
+      "path": "clock-quadrant.gif",
+      "size_bytes": 11457,
+      "dimensions": [
+        256,
+        216
+      ],
+      "frames": 6,
+      "sha256": "c95ad347f289ad7ee1936f31dba7b95a0b4e402a104892d7e278c8254bc38b30"
+    },
+    {
+      "path": "clock-quadrant.png",
+      "size_bytes": 638,
+      "dimensions": [
+        192,
+        162
+      ],
+      "frames": 1,
+      "sha256": "6f510939a01cb6081d7dd25af15673c6766f509a393d9acf10699b5fbc1956e1"
+    },
+    {
+      "path": "clock-week.gif",
+      "size_bytes": 21021,
+      "dimensions": [
+        256,
+        216
+      ],
+      "frames": 6,
+      "sha256": "99f2c071326bc26eb42dee0d253fc8031a06a3565816c428954cc56ce8190348"
+    },
+    {
+      "path": "clock-week.png",
+      "size_bytes": 942,
+      "dimensions": [
+        192,
+        162
+      ],
+      "frames": 1,
+      "sha256": "669439faf7b349a9986e802645484175224ea49e5791aa0d2df697242f1c2323"
+    },
+    {
+      "path": "clocks-overview.gif",
+      "size_bytes": 225787,
+      "dimensions": [
+        840,
+        842
+      ],
+      "frames": 6,
+      "sha256": "cdbddd6c82eca1e73fff8dcfd4783d49461c0a9639e2f08770b7a5182abbc004"
+    },
+    {
+      "path": "clocks-overview.png",
+      "size_bytes": 35211,
+      "dimensions": [
+        840,
+        842
+      ],
+      "frames": 1,
+      "sha256": "31d08a313ed568cc5df26ef044d03484386dee681adc6e23f14a917ee620f477"
+    }
+  ],
+  "source_tag": "v1.6.0",
+  "renderer_path": "py_modules/signalbar/faceplate/clock_standard.py"
+}

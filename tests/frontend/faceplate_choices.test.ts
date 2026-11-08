@@ -8,7 +8,7 @@ test('quick selector exposes every Settings route and Off with Home/game parity'
   assert.deepEqual(game.map(o=>o.data),[...FACEPLATE_GAME_OPTIONS.map(o=>o.data),'off']);
   assert.deepEqual(home.map(o=>o.data),[...FACEPLATE_HOME_OPTIONS.map(o=>o.data),'off']);
   assert(!home.some(o=>o.data==='player-city'));
-  assert.deepEqual(game.slice(1,-1).map(o=>o.data),home.slice(0,-2).map(o=>o.data));
+  assert.deepEqual(game.slice(1,-1).map(o=>o.data),home.filter(o=>!['native-clock','library','off'].includes(o.data)).map(o=>o.data));
   assert.equal(new Set(game.map(o=>o.data)).size,game.length);
   assert.equal(new Set(home.map(o=>o.data)).size,home.length);
   assert.equal(game.at(-1)?.label,french?'Éteint':'Off');

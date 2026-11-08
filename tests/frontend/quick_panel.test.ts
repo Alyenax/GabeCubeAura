@@ -90,7 +90,7 @@ test('game menu has exactly two explicit Off choices and Steam control is only i
   assert.match(options,/data: "bar_off", label: "Light bar off"/);
   assert.match(options,/data: "displays_off", label: "Light bar \+ Faceplate off"/);
   assert.doesNotMatch(options,/data: "steam"|data: "blackout"|GabeCubeAura Off/);
-  const homeOptions=source.slice(source.indexOf('const HOME_DISPLAY_OPTIONS'),source.indexOf('const FACEPLATE_DASHBOARD_SOURCE_OPTIONS'));
+  const homeOptions=readFileSync(new URL('../../src/home_display_options.ts',import.meta.url),'utf8');
   assert.doesNotMatch(homeOptions,/data: "steam"|GabeCubeAura Off/);
   const advanced=source.slice(source.indexOf('showPage("advanced") ? <SettingsPart slot={[\'advanced.general\''),source.indexOf('slot="advanced.data"'));
   assert.match(advanced,/label="Steam control"/);

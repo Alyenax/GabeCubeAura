@@ -33,13 +33,14 @@ except ImportError:  # pragma: no cover - defensive fallback for non-POSIX tools
 
 
 PREFERENCES_SCHEMA = 2
-HOME_SCENES: Tuple[str, ...] = ("weather", "dashboard", "native-clock", "artwork", "artwork-dashboard")
+HOME_SCENES: Tuple[str, ...] = ("weather", "dashboard", "native-clock", "artwork", "artwork-dashboard", "library", "clock")
 GAME_SCENES: Tuple[str, ...] = (
     "dashboard",
     "artwork",
     "artwork-dashboard",
     "weather",
     "player-city",
+    "clock",
 )
 DEFAULT_HOME_SCENE = "dashboard"
 DEFAULT_GAME_SCENE = "artwork"

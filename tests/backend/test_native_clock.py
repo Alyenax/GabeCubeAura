@@ -145,6 +145,13 @@ class NativeSceneTests(unittest.TestCase):
 
     def activations(self): return [p for p in self.calls if p[2:4] == b'\x01\x05']
 
+    def test_pending_setup_recovery_does_not_block_real_native_command_path(self):
+        self.engine._onboarding_recovery_blocked = True
+        self.engine._reconcile_faceplate('routing-change', force=True)
+        self.assertEqual(len(self.activations()), 1)
+        self.assertEqual(self.engine.faceplate_router.status()['effective_scene'], 'native-clock')
+        self.assertTrue(self.engine._onboarding_recovery_blocked)
+
     def test_stable_home_does_not_render_budget_or_send_per_second_minute_or_midnight(self):
         with patch.object(self.faceplate.flash, 'preflight', side_effect=AssertionError('GIF budget')), \
              patch.object(self.faceplate.flash, 'delay', side_effect=AssertionError('GIF budget')):

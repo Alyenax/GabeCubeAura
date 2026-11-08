@@ -156,6 +156,7 @@ class Continuous193(unittest.TestCase):
         from signalbar.faceplate.service import FaceplateWorker
         from signalbar.providers.countdown import CountdownProvider
         c=self.prepare();e=Engine.__new__(Engine)
+        e.settings=SimpleNamespace(all=lambda:{'faceplate_control_mode':'automatic'})
         e.faceplate=c;e._stop=threading.Event();e._lock=threading.RLock()
         e.countdown=CountdownProvider();e.faceplate_router=Mock()
         e._timer_power_thread=None;e._thread=None;e._renderer=None

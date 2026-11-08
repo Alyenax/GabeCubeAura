@@ -1,8 +1,9 @@
+import {STEAM_ROUTE_FRAME} from '../steam_route_viewport';
 import {useEffect,useRef,useState,type CSSProperties} from 'react';
 import {DialogBody,DialogHeader,getGamepadNavigationTrees} from '@decky/ui';
 import {DialogButton,DropdownItem,Focusable,ScrollPanel,SliderField,TextField,ToggleField} from '../localized_ui';
 import {FullPageSection as PanelSection,FullPageRow as PanelSectionRow} from '../full_page_ui';
-import {completeOnboarding,getOnboarding,resetOnboardingDraft,saveOnboardingDraft,setupSteps,type SetupDraft,type SetupSnapshot,type SetupStep} from '../onboardingApi';
+import {completeOnboarding,restartOnboarding,recoverOnboardingCurrentSettings,getOnboarding,resetOnboardingDraft,saveOnboardingDraft,setupSteps,type SetupDraft,type SetupSnapshot,type SetupStep} from '../onboardingApi';
 import {getStatus,previewDisplayPreset,stopDisplayPresetPreview,searchWeatherCities,setSteamGridDBApiKey,validateSteamGridDBApiKey} from '../api';
 import type {Status,WeatherLocation} from '../types';
 import {createSetupPreview,type PresetPreview} from '../onboardingPreview';
@@ -13,12 +14,12 @@ import {FACEPLATE_GAME_OPTIONS,isDashboardChoice,quickFaceOptions} from '../face
 import {QUICK_CONTROL_CSS} from './QuickAction';
 import {recoverSetupDraft,setupReadGate,setupRecoveryMessage} from '../onboardingRecovery';
 
-const shell:CSSProperties={width:'100%',height:'100%',minHeight:0,display:'flex',flexDirection:'column',paddingBottom:'calc(88px + env(safe-area-inset-bottom, 0px))',boxSizing:'border-box',overflow:'hidden',background:'var(--gpSystemDarkestGrey,#0e141b)',color:'var(--gpSystemLightestGrey,#dcdedf)'};
+const shell:CSSProperties={...STEAM_ROUTE_FRAME,background:'var(--gpSystemDarkestGrey,#0e141b)',color:'var(--gpSystemLightestGrey,#dcdedf)'};
 const viewportCSS='.gca-onboarding-content > *{height:100%;max-height:100%;min-height:0;box-sizing:border-box}';
 const card:CSSProperties={margin:'16px 0',minWidth:0};
 const choices=[['custom','Garder les réglages de départ','Keep initial settings'],['moderate','Modéré','Moderate'],['atmosphere','Atmosphère','Atmosphere'],['signals','Signaux','Signals'],['immersive','Immersif','Immersive']] as const;
 const descriptions={
-  custom:['Conserver les couleurs, effets et réglages proposés ; les étapes suivantes restent obligatoires.','Keep the supplied colours, effects and settings; the following steps are still required.'],
+  custom:['Conserver vos réglages actuels. Vous pouvez quitter le guide à tout moment.','Keep your current settings. You can leave the guide at any time.'],
   moderate:['Customization+ à l’accueil, couleurs du jeu en jeu.','Customization+ at Home, game artwork colours in games.'],
   atmosphere:['Météo à l’accueil, Slow Prism en attendant la météo ; couleurs du jeu en jeu.','Weather at Home, Slow Prism while weather is unavailable; game artwork colours in games.'],
   signals:['État des manettes à l’accueil, CPU/GPU en jeu.','Controller status at Home, CPU/GPU in games.'],
@@ -26,7 +27,7 @@ const descriptions={
 };
 function initial(status:Status):SetupDraft{return{step:'ambiance',preset:choices.some(item=>item[0]===status.display_preset)?status.display_preset as SetupDraft['preset']:'custom',brightness:status.light_bar_day_brightness||15,
   night:status.night_mode_enabled,night_percentage:status.night_mode_brightness||75,city:status.weather_location,
-  faceplate_requested:null,home:'dashboard',game:status.faceplate.routing.routes.game};}
+  faceplate_requested:null,home:'dashboard',game:status.faceplate.routing.routes.game==='clock'?'keep':status.faceplate.routing.routes.game};}
 
 /** Native setup; temporary bar previews never persist the selected recipe. */
 export function FirstRunOnboarding({status,setStatus,onClose,openBrowser,faceplateOnly=false}:{faceplateOnly?:boolean;status:Status;setStatus:(s:Status)=>void;onClose:()=>void;openBrowser:(url:string)=>void}){
@@ -124,6 +125,25 @@ export function FirstRunOnboarding({status,setStatus,onClose,openBrowser,facepla
     } catch(error) { throw new Error(setupActivationMessage(error,fr)); }
     finally {if(alive.current)setActivating(false);}
   });
+  const restartGuide=()=>void run(async()=>{
+    window.clearTimeout(saveTimer.current);
+    void previewSession.current?.stop().catch(()=>undefined);
+    await recoverSetupDraft({gate:readGate.current,reset:restartOnboarding,alive:()=>alive.current,
+      pending:()=>saveChain.current.catch(()=>undefined),snapshot:setDevice,
+      failed:code=>setError(setupRecoveryMessage(code,fr)),
+      recovered:snapshot=>{
+        const value=initial(status);value.step=setupSteps(value,scopedDevice(snapshot))[0];
+        draftRef.current=value;setDraft(value);loaded.current=true;setError('');
+        setNotice(t('La configuration recommence au début. Tes réglages actifs et tes créations sont conservés.','Setup has restarted. Your active settings and creations have been kept.'));
+      }});
+  });
+  const keepCurrent=()=>void run(async()=>{
+    window.clearTimeout(saveTimer.current);
+    await previewSession.current?.stop();
+    await saveChain.current.catch(()=>undefined);
+    const nextStatus=await recoverOnboardingCurrentSettings();
+    if(alive.current){setStatus(nextStatus);onClose();}
+  });
   const label=(step:SetupStep)=>({ambiance:t('Votre ambiance','Your experience'),brightness:t('Luminosité','Brightness'),faceplate:t('Votre faceplate','Your faceplate'),services:t('Images et météo','Images and weather'),review:t('Récapitulatif','Review')} as Partial<Record<SetupStep,string>>)[step]??t('Récapitulatif','Review');
   const action=(text:string,onClick:()=>void,disabled=false)=><div style={{margin:'10px 0'}}><DialogButton
     className="gca-quick-action" disabled={busy||disabled} onClick={onClick}>{text}</DialogButton></div>;
@@ -132,8 +152,24 @@ export function FirstRunOnboarding({status,setStatus,onClose,openBrowser,facepla
   const enabledNext=draft.step==='faceplate'&&device?.faceplate_detected?draft.faceplate_requested!==null:true;
   return <Focusable ref={panelRef} style={shell} flow-children="column" aria-label="GabeCubeAura guided setup">
     <style>{viewportCSS}</style>
-    <div className="gca-onboarding-content" data-setup-scroll style={{flex:'1 1 0%',minHeight:0,overflow:'hidden'}}><ScrollPanel><DialogBody><div style={{maxWidth:1040,margin:'0 auto',padding:'24px clamp(22px,5vw,70px) 24px'}}>
     <style>{QUICK_CONTROL_CSS}</style>
+    <div data-setup-restart-bar style={{flex:'0 0 auto',padding:'12px clamp(22px,5vw,70px)',borderBottom:'1px solid rgba(255,255,255,.12)'}}>
+      <div style={{maxWidth:1040,margin:'0 auto'}}>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:14,
+        margin:0,padding:device?.recovery_error||error?16:0,borderRadius:12,
+        background:device?.recovery_error||error?'rgba(255,190,80,.12)':'transparent'}}>
+        {device?.recovery_error||error?<div style={{flex:'1 1 280px',lineHeight:1.45}} role="status">
+          {t('Une erreur est survenue dans le guide. Tu peux le recommencer sans réinitialiser GCA.','Setup encountered an error. Restart the guide without resetting GCA.')}
+        </div>:null}
+        <DialogButton className="gca-quick-action" disabled={busy} onClick={restartGuide}
+          style={{minHeight:48,padding:'10px 22px',fontWeight:700,
+            ...(device?.recovery_error||error?{background:'#51b6e5',color:'#08141c'}:{})}}>
+          {busy?t('Patiente un instant…','Please wait…'):t('Recommencer la configuration','Restart setup')}
+        </DialogButton>
+      </div>
+      </div>
+    </div>
+    <div className="gca-onboarding-content" data-setup-scroll style={{flex:'1 1 0%',minHeight:0,overflow:'hidden'}}><ScrollPanel><DialogBody><div style={{maxWidth:1040,margin:'0 auto',padding:'24px clamp(22px,5vw,70px) 24px'}}>
     <header style={{display:'flex',justifyContent:'space-between',gap:18,flexWrap:'wrap',marginBottom:20}}>
       <div><strong style={{fontSize:24}}>GabeCubeAura</strong><div style={{opacity:.7}}>{faceplateOnly?t('Configuration de la faceplate','Faceplate setup'):t('Première utilisation','First-time setup')}</div></div>
       <div style={{opacity:.75}}>{device?.bar_detected?'Steam Machine':'SteamOS'}{device?.faceplate_detected?' · JSAUX':''}</div>
@@ -185,7 +221,7 @@ export function FirstRunOnboarding({status,setStatus,onClose,openBrowser,facepla
           {draft.faceplate_requested?<>
             <p>{t('À l’accueil : Dashboard Weather','At Home: Dashboard Weather')}</p>
             <p>{t('Aucun artwork n’est fourni. Pour utiliser un artwork à l’accueil, créez-le puis appliquez-le depuis Réglages → Faceplate JSAUX → Artwork.','No artwork is included. To use artwork at Home, create and apply your own in Settings → Faceplate JSAUX → Artwork.')}</p>
-            <DropdownItem label={t('En jeu','In game')} selectedOption={draft.game} rgOptions={[...FACEPLATE_GAME_OPTIONS,{data:'keep',label:t('Ne pas modifier mon choix actuel','Keep my current choice')}]} onChange={o=>change({game:o.data as SetupDraft['game']})}/>
+            <DropdownItem label={t('En jeu','In game')} selectedOption={draft.game} rgOptions={[...FACEPLATE_GAME_OPTIONS.filter(option=>option.data!=='clock'),{data:'keep',label:t('Ne pas modifier mon choix actuel','Keep my current choice')}]} onChange={o=>change({game:o.data as SetupDraft['game']})}/>
             {isDashboardChoice(draft.home)||isDashboardChoice(draft.game)?<p style={{color:'#ffd27a'}}>{t('Voir l’onglet Dashboard pour paramétrer ses choix.','See the Dashboard tab to configure your choices.')}</p>:null}
             <p>{t('Pas de CPU/GPU sur la matrice. Les nouveaux Dashboard n’affichent pas l’heure par défaut. L’horloge native reste un mode distinct.','No CPU/GPU on the matrix. New Dashboards hide the clock by default. Native clock remains a separate mode.')}</p>
           </>:null}
@@ -216,7 +252,11 @@ export function FirstRunOnboarding({status,setStatus,onClose,openBrowser,facepla
         <p>{t('Vos choix seront enregistrés après confirmation.','Your choices will be saved after confirmation.')}</p>
         {device.faceplate_detected&&draft.faceplate_requested?<p>{t('Les affichages JSAUX suivent leurs protections. Decky Animated Screensaver se configure séparément.','JSAUX displays follow their protections. Configure Decky Animated Screensaver separately.')}</p>:null}
       </div>:null}
-      {device.recovery_error?<div role="alert" style={{...card,color:'#ffb9ae'}}>{t('Une configuration interrompue doit être vérifiée. Vos fichiers sont conservés.','An interrupted setup needs attention. Your files have been preserved.')} {device.recovery_error}</div>:null}
+      {device.recovery_error?<div role="alert" style={{...card,color:'#ffb9ae'}}>
+        <p>{t('Une ancienne configuration interrompue est conservée. Les commandes restent disponibles.','An interrupted setup has been preserved. Your controls remain available.')} {device.recovery_error}</p>
+        <p>{t('Vous pouvez reprendre avec vos réglages actuels. L’ancienne configuration sera sauvegardée ; vos GIF et créations seront conservés.','Resume with your current settings. The interrupted setup will be backed up; your GIFs and creations will be kept.')}</p>
+        {action(t('Conserver mes réglages et reprendre','Keep my settings and resume'),keepCurrent)}
+      </div>:null}
     </>}
     </div></DialogBody></ScrollPanel></div>
     {device&&!device.draft_error?<div data-setup-actions style={{flex:'0 0 auto',boxSizing:'border-box',width:'100%',maxWidth:1040,margin:'0 auto',padding:'8px clamp(22px,5vw,70px) 12px',borderTop:'1px solid rgba(255,255,255,.15)'}}>

@@ -17,7 +17,7 @@ from . import gif
 from .playtime import draw_timer_rail
 
 
-REVISION = "artwork-dashboard-26-umbrella-lowered"
+REVISION = "artwork-dashboard-27-approved-rain"
 TREATMENTS = ("none", "cinema", "hero-cut", "palette-echo")
 COMPRESSION_LEVELS = ("compatible", "balanced", "fine")
 CLOCK_SIZES = ("compact", "large")
@@ -299,11 +299,11 @@ RAIN_MARK = (
     "00000000", "000CCC00", "00CCCCC0", "0CCCCCCC",
     "00B0B0B0", "0B0B0B00", "00B00000", "00000000",
 )
-# Approved seven-column scalloped umbrella. The cyan percentage identifies
-# probability; the separate forecast icon continues to describe the weather.
-UMBRELLA_MARK = (
-    "0011100", "0111110", "1111111", "1001001",
-    "0001000", "0101000", "0011000",
+# Owner-approved 7 x 7 rain mark; the percentage identifies probability.
+# Source drawing is preserved in tests/fixtures/rain-risk-approved.json.
+PRECIPITATION_RISK_MARK = (
+    "0000000", "0010010", "0100100", "1001001",
+    "0010010", "0100100", "0000000",
 )
 MOON_MARK = (
     "00000000", "00YYG000", "0YYGGG00", "0YYGGG00",
@@ -429,8 +429,8 @@ def _droplet(canvas, x, y, colour=WEATHER_BLUE):
 
 
 def _precipitation_risk_icon(canvas, x, y):
-    """Approved scalloped umbrella in the existing 7-column risk seat."""
-    for row, pattern in enumerate(UMBRELLA_MARK):
+    """Owner-approved rain pixels in the existing 7-column risk seat."""
+    for row, pattern in enumerate(PRECIPITATION_RISK_MARK):
         for column, token in enumerate(pattern):
             if token == "1":
                 canvas.pixel(x + column, y - 1 + row, WEATHER_BLUE)

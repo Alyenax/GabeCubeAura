@@ -93,6 +93,31 @@ def check_license_scope(root: Path, staged: Path | None = None, *, public_build:
         raise ValueError("Superseded PolyForm policy cannot be bundled")
     if any(p.startswith("assets/faceplate/calibrated-home/") for p in runtime):
         raise ValueError("Third-party Stray starter must not be bundled")
+    clock_paths = {p for p in runtime if p.startswith('assets/clocks-lab/')}
+    if clock_paths:
+        import re
+        if public_build or not re.fullmatch(r'v?\d+\.\d+\.\d+-lab\.\d+', pkg['version']):
+            raise ValueError('Private clock artwork cannot be included outside a local Lab candidate')
+        clock_inventory = json.loads(_file(root,'licenses/clocks-lab.json').read_text())
+        if clock_inventory.get('redistribution_cleared') is not False:
+            raise ValueError('Clock artwork has no redistribution clearance')
+        if {entry['path'] for entry in clock_inventory['files']} != clock_paths:
+            raise ValueError('Unclassified private clock artwork')
+        for entry in clock_inventory['files']:
+            if _hash(root,entry['path']) != entry['sha256']:
+                raise ValueError('Private clock artwork changed without inventory update')
+    standard_paths = {p for p in runtime if p.startswith('assets/clocks/')}
+    if standard_paths:
+        standards = json.loads(_file(root, 'licenses/standard-clocks.json').read_text())
+        if {entry['path'] for entry in standards['files']} != standard_paths:
+            raise ValueError('Unclassified standard clock data')
+        for entry in standards['files']:
+            if _hash(root, entry['path']) != entry['sha256']:
+                raise ValueError('Standard clock data changed without inventory update')
+            expected = 'CC0-1.0' if entry['path'].endswith('/monogram.json') else GPL
+            if entry['license'] != expected: raise ValueError('Standard clock data licence mismatch')
+            if staged is not None and _hash(Path(staged), entry['path']) != entry['sha256']:
+                raise ValueError('Bundled standard clock data differs from source')
     declared = json.loads(_file(root, data["asset_manifest"]).read_text())
     if declared.get("license") != ART:
         raise ValueError("Artwork manifest licence mismatch")
@@ -124,7 +149,7 @@ def check_license_scope(root: Path, staged: Path | None = None, *, public_build:
         for relative in required:
             if _file(staged, relative).read_bytes() != _file(root, relative).read_bytes():
                 raise ValueError(f"Bundled licensing material differs from source: {relative}")
-        for relative in gpl | bsd | expected_graphics | technical:
+        for relative in gpl | bsd | expected_graphics | technical | clock_paths:
             if _hash(staged, relative) != _hash(root, relative):
                 raise ValueError(f"Bundled code/artwork differs from reviewed source: {relative}")
 

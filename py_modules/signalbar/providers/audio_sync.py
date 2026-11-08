@@ -12,6 +12,7 @@ import subprocess
 import threading
 import time
 from collections import deque
+from functools import lru_cache
 
 from signalbar.models import LED_COUNT, ProviderOutput, normalize_frame
 from signalbar.providers.screen_sync import ScreenCaptureService
@@ -31,7 +32,46 @@ ANALYSIS_HOP_MS = ANALYSIS_HOP / SAMPLE_RATE * 1000.0
 LED_REQUEST_INTERVAL_MS = 60.0
 LED_RENDER_FLOOR_MS = 50.0
 MAX_PENDING_BLOCKS = 16
-CAPTURE_REVISION = "1.3.2-independent-pattern-palette-v5"
+CAPTURE_REVISION = "1.5.1-independent-pattern-palette-v7"
+
+
+@lru_cache(maxsize=1)
+def _analysis_plan(size):
+    """Reuse immutable coefficients; preserve the original FFT operation order.
+
+    Built lazily when audio is analysed, shared by both channels/processors and
+    bounded to one size. No captured samples or rendered state enter this cache.
+    """
+    order = list(range(size))
+    j = 0
+    for index in range(1, size):
+        bit = size >> 1
+        while j & bit:
+            j ^= bit
+            bit >>= 1
+        j ^= bit
+        if index < j:
+            order[index], order[j] = order[j], order[index]
+    operations = []
+    length = 2
+    while length <= size:
+        angle = -2.0 * math.pi / length
+        root = complex(math.cos(angle), math.sin(angle))
+        factor = complex(1.0, 0.0)
+        factors = []
+        for _ in range(length // 2):
+            factors.append(factor)
+            factor *= root
+        for start in range(0, size, length):
+            for offset, factor in enumerate(factors):
+                operations.append((start + offset, start + offset + length // 2, factor))
+        length <<= 1
+    window = tuple(
+        0.42 - 0.5 * math.cos(2.0 * math.pi * index / (size - 1))
+        + 0.08 * math.cos(4.0 * math.pi * index / (size - 1))
+        for index in range(size)
+    )
+    return tuple(order), tuple(operations), window
 
 EXPERIMENTAL_STYLES = {
     "velvet-relay", "negative-bloom", "stereo-lanterns",
@@ -135,6 +175,12 @@ def _rgb_to_oklab(colour):
 
 
 def _lab_distance(first, second):
+    if len(first) == len(second) == 3:
+        # Keep sum's floating-point behaviour; avoid a generator for each of
+        # the thousands of fixed three-coordinate palette comparisons.
+        return sum(((first[0] - second[0]) ** 2,
+                    (first[1] - second[1]) ** 2,
+                    (first[2] - second[2]) ** 2))
     return sum((left - right) ** 2 for left, right in zip(first, second))
 
 
@@ -381,6 +427,8 @@ class AudioSyncProcessor:
         self._hifi_time_s = None
         self._hifi_palette = None
         self._hifi_palette_source = "selected"
+        self._palette_sample_key = None
+        self._palette_sample_result = None
         self._hifi_last_spectra = None
         self._spectrum_db_history = deque(maxlen=170)
         self._spectrum_db_range = [-58.0, -18.0]
@@ -411,6 +459,15 @@ class AudioSyncProcessor:
         """In-place radix-2 FFT, kept dependency-free for SteamOS."""
         result = [complex(value, 0.0) for value in values]
         size = len(result)
+        if size == FFT_SIZE:
+            order, operations, _window = _analysis_plan(size)
+            result = [result[index] for index in order]
+            for first, second, factor in operations:
+                even = result[first]
+                odd = factor * result[second]
+                result[first] = even + odd
+                result[second] = even - odd
+            return result
         j = 0
         for index in range(1, size):
             bit = size >> 1
@@ -521,6 +578,13 @@ class AudioSyncProcessor:
 
     @staticmethod
     def _blackman(values):
+        try:
+            size = len(values)
+        except TypeError:
+            size = None
+        if size == FFT_SIZE:
+            _order, _operations, window = _analysis_plan(FFT_SIZE)
+            return [sample * coefficient for sample, coefficient in zip(values, window)]
         return [
             sample * (
                 0.42
@@ -550,17 +614,30 @@ class AudioSyncProcessor:
         selected = spectrum[start:end]
         return math.sqrt(sum(value * value for value in selected) / max(1, len(selected)))
 
+    def _contextual_palette(self, colours):
+        # One immutable input/result pair per processor. Copy nested colours
+        # so in-place source updates cannot hide behind an equal list identity.
+        key = tuple(tuple(colour) for colour in colours)
+        if key == self._palette_sample_key and self._screen_palette == self._palette_sample_result:
+            return self._palette_sample_result
+        # Dark input uses the previous palette. Checking that previous still
+        # equals our cached result above preserves that original fallback.
+        result = _three_colour_palette(colours, self._screen_palette)
+        self._palette_sample_key = key
+        self._palette_sample_result = result
+        return result
+
     def _hifi_target_palette(self, palette, custom_colours, screen_colours,
                              artwork_colours):
         artwork = list(artwork_colours or [])
         if palette == "screen-sync":
             supplied = list(screen_colours or [])
             if len(supplied) >= 3:
-                self._screen_palette = _three_colour_palette(supplied, self._screen_palette)
+                self._screen_palette = self._contextual_palette(supplied)
                 target = self._screen_palette
                 self._hifi_palette_source = "screen-sync"
             elif len(artwork) >= 3:
-                self._screen_palette = _three_colour_palette(artwork, self._screen_palette)
+                self._screen_palette = self._contextual_palette(artwork)
                 target = self._screen_palette
                 self._hifi_palette_source = "artwork"
             elif self._hifi_palette is not None:
@@ -571,7 +648,7 @@ class AudioSyncProcessor:
                 self._hifi_palette_source = "sapphire-fallback"
         elif palette == "artwork":
             if len(artwork) >= 3:
-                self._screen_palette = _three_colour_palette(artwork, self._screen_palette)
+                self._screen_palette = self._contextual_palette(artwork)
                 target = self._screen_palette
                 self._hifi_palette_source = "artwork"
             elif self._hifi_palette is not None:

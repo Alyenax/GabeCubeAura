@@ -26,8 +26,8 @@ function harness(){
 }
 
 test('Display catalogues follow the exact hierarchy and preserve legacy Home artwork',()=>{
-  assert.deepEqual(FACEPLATE_GAME_OPTIONS.map(x=>x.label),['Steam Players City','Artwork','Dashboard Artwork','Weather','Dashboard Weather']);
-  assert.deepEqual(FACEPLATE_HOME_OPTIONS.slice(0,4),FACEPLATE_GAME_OPTIONS.slice(1));
+  assert.deepEqual(FACEPLATE_GAME_OPTIONS.map(x=>x.label),['Steam Players City','Clock','Artwork','Dashboard Artwork','Weather','Dashboard Weather']);
+  assert.deepEqual(FACEPLATE_HOME_OPTIONS.slice(0,5),FACEPLATE_GAME_OPTIONS.slice(1));
   assert.equal(FACEPLATE_HOME_OPTIONS.at(-1)?.data,'native-clock');
   const legacy:any={faceplate_dashboard_home_source:'artwork',faceplate:{routing:{routes:{home:'dashboard'}}}};
   assert.equal(homeFaceChoice(legacy),'artwork-dashboard');legacy.faceplate.routing.routes.home='artwork';assert.equal(homeFaceChoice(legacy),'artwork');

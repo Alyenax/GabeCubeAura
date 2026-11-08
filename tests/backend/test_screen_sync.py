@@ -612,6 +612,24 @@ class ScreenCaptureDiscoveryTests(unittest.TestCase):
         self.assertNotIn("target-object=gamescope", legacy)
         self.assertNotIn("keepalive-time=33", legacy)
 
+    def test_surplus_frames_are_dropped_before_pixel_work_for_every_selector(self):
+        for selector in ('target-object', 'target-object-compat', 'path'):
+            command = ScreenCaptureService._capture_command('gst-launch-1.0', 91, selector)
+            stages = []
+            for token in command[command.index('!') + 1:]:
+                if token == '!': continue
+                stages.append(token)
+            self.assertLess(stages.index('videorate'), stages.index('videoconvert'))
+            self.assertLess(stages.index('video/x-raw,framerate=10/1'), stages.index('videoconvert'))
+            self.assertLess(stages.index('videoconvert'), stages.index('videoscale'))
+            self.assertIn('drop-only=true', stages)
+            self.assertIn('max-size-buffers=1', stages)
+            self.assertIn('leaky=downstream', stages)
+            self.assertIn('method=1', stages)
+            self.assertIn('video/x-raw,format=BGRx,width=34,height=18,framerate=10/1', stages)
+            self.assertIn('sync=false', stages)
+            self.assertNotIn('width=34', command[:command.index('!')])
+
     def test_consumer_count_only_includes_links_from_selected_node(self):
         dump = [
             {"type": "PipeWire:Interface:Link", "info": {"state": "active", "props": {

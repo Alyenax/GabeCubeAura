@@ -5,8 +5,8 @@ export type DashboardRowChoice = NonNullable<Status['faceplate_player_city_dashb
 /** One catalogue for Dashboard and City without a player count. */
 export function dashboardRowOptions(game = true): {data: DashboardRowChoice; label: string}[] {
   return [
-    {data:'next_hour',label:'Weather — Next hour'},
-    {data:'today',label:'Weather — Today'},
+    {data:'next_hour',label:'Weather - Next hour'},
+    {data:'today',label:'Weather - Today'},
     {data:'controllers',label:'Controllers'},
     ...(game ? [
       {data:'d' as const,label:'Achievement Progress'},

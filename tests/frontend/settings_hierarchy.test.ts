@@ -11,9 +11,9 @@ const index=readFileSync(new URL('../../src/index.tsx',import.meta.url),'utf8');
 const shell=readFileSync(new URL('../../src/components/SimpleSettings.tsx',import.meta.url),'utf8');
 const walk=(node:any):any[]=>Array.isArray(node)?node.flatMap(walk):node&&typeof node==='object'?[node,...walk(node.props?.children)]:[];
 const nativeTabs=(page:any)=>walk(page.content).find(n=>n.type==='tabs');
-test('six lighting/settings categories and 19 native tabs use the documented native containers',()=>{
+test('six lighting/settings categories and 20 native tabs use the documented native containers',()=>{
   assert.deepEqual(SETTINGS_CATEGORIES.map(item=>item.title),['Display Light','Signals light','Weather','Faceplate Jsaux','Updates','Advanced']);
-  assert.equal(SETTINGS_CATEGORIES.flatMap(item=>item.tabs).length,19);
+  assert.equal(SETTINGS_CATEGORIES.flatMap(item=>item.tabs).length,20);
   for(const item of SETTINGS_CATEGORIES)for(const tab of item.tabs){
     const choice=settingsSelection(item.id,tab[0]);assert(settingsSources(choice).length);
   }

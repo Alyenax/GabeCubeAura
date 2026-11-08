@@ -183,6 +183,41 @@ class TransactionTests(unittest.TestCase):
             {'home':'weather','game':'artwork'})
         return before, after
 
+    def test_every_supported_route_survives_prepared_and_committed_recovery(self):
+        from signalbar.faceplate.routing import HOME_SCENES, GAME_SCENES
+        for home in HOME_SCENES:
+            for game in GAME_SCENES:
+                for stage in ('prepared', 'committed'):
+                    with self.subTest(home=home, game=game, stage=stage):
+                        self.settings.update({'light_bar_day_brightness': 31})
+                        self.preferences.update(home_scene=home, game_scene=game)
+                        before, after = self.settings.plan_update({'light_bar_day_brightness': 32})
+                        # Reproduce the exact old writer: it persisted valid routes
+                        # without checking that its own reader could accept them.
+                        value = dict(schema=1, stage=stage, before_settings=before,
+                            after_settings=after, before_routes={'home':home,'game':game},
+                            after_routes={'home':'dashboard','game':'player-city'})
+                        self.transaction.path.write_text(json.dumps(value))
+                        self.settings.update({'light_bar_day_brightness': 32})
+                        self.preferences.update(home_scene='dashboard', game_scene='player-city')
+                        self.assertEqual(stage, self.transaction.recover(self.settings, self.preferences))
+                        routes = self.preferences.read()
+                        expected = (home, game) if stage == 'prepared' else ('dashboard', 'player-city')
+                        self.assertEqual(expected, (routes.home_scene, routes.game_scene))
+                        self.assertEqual(31 if stage == 'prepared' else 32,
+                            self.settings.all()['light_bar_day_brightness'])
+                        self.assertFalse(self.transaction.path.exists())
+
+    def test_prepare_rejects_invalid_routes_before_creating_a_journal(self):
+        for context, route in (('home','keep'), ('game','keep'), ('game','library'),
+                               ('home','unknown'), ('home',[])):
+            with self.subTest(context=context, route=route):
+                before, after = self.settings.plan_update(self.changes)
+                routes = dict(home='dashboard', game='artwork'); routes[context] = route
+                with self.assertRaises(ValueError):
+                    self.transaction.prepare(before, after, routes, routes)
+                self.assertFalse(self.transaction.path.exists())
+
     def test_plan_has_no_io_and_only_changed_fields(self):
         before, after = self.settings.plan_update(self.changes)
         self.assertEqual(set(before), set(after))
@@ -213,6 +248,18 @@ class TransactionTests(unittest.TestCase):
         with self.assertRaises(ValueError): self.transaction.recover(self.settings, self.preferences)
         self.assertEqual(77, self.settings.all()['light_bar_day_brightness'])
         self.assertTrue(self.transaction.path.exists())
+
+    def test_recovery_with_library_keeps_newer_route_and_journal_intact(self):
+        self.preferences.update(home_scene='library', game_scene='clock')
+        before, after = self.settings.plan_update(self.changes)
+        self.transaction.prepare(before, after, {'home':'library','game':'clock'},
+            {'home':'dashboard','game':'player-city'})
+        original = self.transaction.path.read_bytes()
+        self.preferences.update(home_scene='weather')
+        with self.assertRaises(ValueError):
+            self.transaction.recover(self.settings, self.preferences)
+        self.assertEqual('weather', self.preferences.read().home_scene)
+        self.assertEqual(original, self.transaction.path.read_bytes())
 
     def test_corrupt_or_secret_injected_transaction_is_rejected(self):
         for value in ([], {'schema':1}, {'schema':1,'stage':'prepared',
@@ -267,6 +314,20 @@ class OnboardingRPCTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(self.plugin.onboarding_draft.path.exists())
         self.plugin.update_manager.disconnect_private.assert_not_called()
 
+    async def test_redo_setup_with_existing_library_or_clock_routes(self):
+        for home, game in (('library','player-city'), ('clock','clock')):
+            for requested in (True, False, None):
+                with self.subTest(home=home, game=game, requested=requested):
+                    self.settings.update({'onboarding_completed':True})
+                    self.preferences.update(home_scene=home, game_scene=game)
+                    await self.plugin.complete_onboarding({'faceplate_requested':requested,'game':'keep'})
+                    self.assertTrue(self.settings.all()['onboarding_completed'])
+                    routes = self.preferences.read()
+                    self.assertEqual('dashboard' if requested is True else home, routes.home_scene)
+                    self.assertEqual(game, routes.game_scene)
+                    self.assertFalse(self.plugin.engine._onboarding_recovery_blocked)
+                    self.assertFalse(self.plugin.onboarding_transaction.path.exists())
+
     async def test_keep_initial_calibration_still_needs_explicit_setup_confirmation(self):
         self.settings=SettingsStore(str(self.root/'config.json'),first_install_defaults=True)
         self.plugin.engine.settings=self.settings
@@ -306,6 +367,19 @@ class OnboardingRPCTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual('review',self.plugin.onboarding_draft.read()['step'])
         self.assertFalse(self.plugin.engine._onboarding_applying)
 
+    async def test_redo_setup_runtime_failure_restores_library_and_clock(self):
+        self.settings.update({'onboarding_completed':True})
+        self.preferences.update(home_scene='library', game_scene='clock')
+        before = self.settings.base_all()
+        self.plugin.engine.refresh_settings = Mock(side_effect=[RuntimeError('render failed'), None])
+        with self.assertRaises(RuntimeError):
+            await self.plugin.complete_onboarding({'faceplate_requested':True,'game':'player-city'})
+        self.assertEqual(before, self.settings.base_all())
+        routes = self.preferences.read()
+        self.assertEqual(('library','clock'), (routes.home_scene,routes.game_scene))
+        self.assertFalse(self.plugin.engine._onboarding_recovery_blocked)
+        self.assertFalse(self.plugin.onboarding_transaction.path.exists())
+
     async def test_voice_consent_is_unnecessary_and_legacy_choices_never_mutate_voice(self):
         for choices in ({},{'assistant_requested':None},{'assistant_requested':True,'assistant_confirmed':True},
                         {'assistant_requested':False,'assistant_confirmed':False}):
@@ -334,12 +408,13 @@ class OnboardingRPCTests(unittest.IsolatedAsyncioTestCase):
         self.plugin.engine.assistant.status.assert_not_called()
         self.plugin.engine.assistant.configure.assert_not_called()
 
-    async def test_recovery_error_blocks_reapplication_and_is_visible(self):
+    async def test_recovery_warning_is_visible_but_validated_setup_can_continue(self):
         self.plugin._onboarding_recovery_error='ValueError'
         state=await self.plugin.get_onboarding()
         self.assertEqual('ValueError',state['recovery_error'])
-        with self.assertRaises(ValueError): await self.plugin.complete_onboarding({'assistant_requested':False})
-        self.assertFalse(self.settings.all()['onboarding_completed'])
+        await self.plugin.complete_onboarding({'assistant_requested':False})
+        self.assertTrue(self.settings.all()['onboarding_completed'])
+        self.assertEqual(self.plugin._onboarding_recovery_error,'')
 
     async def test_corrupt_draft_automatically_restarts_without_applying_settings(self):
         self.plugin.onboarding_draft.path.write_text('[]')

@@ -30,13 +30,87 @@ CAPTURE_WIDTH = 34
 CAPTURE_HEIGHT = 18
 BYTES_PER_PIXEL = 4
 FRAME_BYTES = CAPTURE_WIDTH * CAPTURE_HEIGHT * BYTES_PER_PIXEL
-CAPTURE_REVISION = "1.4.1-system-capture-v10"
+CAPTURE_REVISION = "1.5.1-system-capture-v12"
 CAPTURE_PROCESS_MARKER = "client-name=GabeCubeAura-Screen-Sync"
 SESSION_RESTART_SETTLE_SECONDS = 2.0
 # Connecting/prerolling is different from losing an established stream. Do not
 # repeatedly disconnect a slow Gamescope producer before its first frame.
 FIRST_FRAME_TIMEOUT_SECONDS = 8.0
 FRAME_STALL_TIMEOUT_SECONDS = 1.5
+
+
+class _RegistryPoller:
+    """Run bounded registry reads away from the capture pipe-draining thread.
+
+    A failed or stale observation is never interpreted as an empty graph.
+    The existing 2s / 0.5s preview intervals and capture conflict policy remain.
+    """
+    def __init__(self, read, initial, *, clock=time.monotonic, interval=2.0):
+        self._read = read
+        self._clock = clock
+        self._lock = threading.Lock()
+        self._stop = threading.Event()
+        self._wake = threading.Event()
+        self._interval = interval
+        self._sample_interval = interval
+        self._started_at = clock()
+        self._last_started_at = self._started_at
+        self._snapshot = (initial, self._started_at, None, 0)
+        self._thread = None
+
+    def start(self):
+        self._thread = threading.Thread(target=self._run, name="gabecubeaura-screen-registry", daemon=True)
+        self._thread.start()
+        return self
+
+    def set_interval(self, interval):
+        with self._lock:
+            changed = interval != self._interval
+            self._interval = interval
+        if changed:
+            self._wake.set()
+
+    def _run(self):
+        while not self._stop.is_set():
+            with self._lock:
+                remaining = self._last_started_at + self._interval - self._clock()
+                poll_interval = self._interval
+            if remaining > 0:
+                self._wake.wait(remaining)
+                self._wake.clear()
+                continue
+            self._last_started_at = self._clock()
+            try:
+                data, error = self._read(), None
+            except Exception as failure:
+                data, error = None, failure
+            if self._stop.is_set():
+                return
+            with self._lock:
+                self._snapshot = data, self._clock(), error, self._snapshot[3] + 1
+                self._sample_interval = poll_interval
+            if error is not None:
+                return
+
+    def snapshot(self):
+        with self._lock:
+            data, sampled_at, error, sequence = self._snapshot
+            interval = max(self._interval, self._sample_interval)
+        if error is not None:
+            raise RuntimeError("PipeWire registry check failed") from error
+        # Existing command timeout is 2s. A complete poll interval plus that
+        # timeout and one drain-cycle margin is the maximum trusted age.
+        if self._clock() - sampled_at > interval + 2.25:
+            raise RuntimeError("PipeWire registry check stopped responding")
+        return data, sequence
+
+    def stop(self, timeout=2.1):
+        self._stop.set()
+        self._wake.set()
+        thread = self._thread
+        if thread and thread is not threading.current_thread():
+            thread.join(timeout=max(0.0, timeout))
+        return thread is None or not thread.is_alive()
 
 VALID_STYLES = {"panorama", "ambient"}
 VALID_REACTIVITY = {"calm", "balanced", "fast"}
@@ -237,7 +311,8 @@ class ScreenSyncProcessor:
 class ScreenCaptureService:
     """Supervise a low-resolution GStreamer consumer of Gamescope PipeWire."""
 
-    def __init__(self, clock=time.monotonic, popen=subprocess.Popen, run=subprocess.run, trace=None):
+    def __init__(self, clock=time.monotonic, popen=subprocess.Popen, run=subprocess.run, trace=None,
+                 registry_factory=_RegistryPoller):
         self._clock = clock
         self._popen = popen
         self._run_command = run
@@ -284,6 +359,7 @@ class ScreenCaptureService:
         self._retry_paused = False
         self._unhealthy_sessions = 0
         self._paused_graph_check_at = 0.0
+        self._registry_factory = registry_factory
 
     @staticmethod
     def _runtime_dirs():
@@ -592,8 +668,11 @@ class ScreenCaptureService:
             source.append("keepalive-time=33")
         return source + [
             "!", "queue", "max-size-buffers=1", "leaky=downstream",
-            "!", "videoconvert", "!", "videoscale", "method=1",
+            # Drop surplus/keepalive frames before any pixel conversion or
+            # scaling. Final caps and rendering remain unchanged.
             "!", "videorate", "drop-only=true",
+            "!", "video/x-raw,framerate=10/1",
+            "!", "videoconvert", "!", "videoscale", "method=1",
             "!", "video/x-raw,format=BGRx,width=34,height=18,framerate=10/1",
             "!", "fdsink", "fd=1", "sync=false",
         ]
@@ -1068,6 +1147,7 @@ class ScreenCaptureService:
                 self._wait(0.5)
                 continue
             process = None
+            registry = None
             captured_frame = False
             selector_mode = self._selector_mode
             # Discovery can fail while Gaming Mode is being suspended or while
@@ -1156,7 +1236,11 @@ class ScreenCaptureService:
                 os.set_blocking(process.stderr.fileno(), False)
                 buffer = bytearray()
                 last_frame = self._clock()
-                last_conflict_check = last_frame
+                registry = self._registry_factory(
+                    lambda: self._pipewire_dump(runtime_dir), dump, clock=self._clock,
+                    interval=0.5 if self.trace.previewing else 2.0,
+                ).start()
+                last_registry_sequence = 0
                 last_progress = last_frame
                 with self._lock:
                     self._started_at = last_frame
@@ -1212,8 +1296,9 @@ class ScreenCaptureService:
                     if captured_frame and now - last_frame > FRAME_STALL_TIMEOUT_SECONDS:
                         raise RuntimeError("Gamescope capture stopped producing frames")
                     interval = 0.5 if self.trace.previewing else 2.0
-                    if now - last_conflict_check >= interval:
-                        current = self._pipewire_dump(runtime_dir)
+                    registry.set_interval(interval)
+                    current, registry_sequence = registry.snapshot()
+                    if registry_sequence != last_registry_sequence:
                         self._trace_pipewire(current, node_id)
                         consumers = (
                             self.count_consumers(current, node_id)
@@ -1225,7 +1310,7 @@ class ScreenCaptureService:
                                 consumers - 1,
                             )
                             break
-                        last_conflict_check = now
+                        last_registry_sequence = registry_sequence
                 if process.poll() is not None and active and not self._stop.is_set():
                     self._read_stderr(process)
                     # Closing-state INFO messages must not replace the actual
@@ -1314,6 +1399,8 @@ class ScreenCaptureService:
                 backoff = min(5.0, backoff * 2.0)
             finally:
                 self._finish_process(process, "inactive-or-stopped")
+                if registry is not None:
+                    registry.stop()
                 with self._lock:
                     if self._process is process:
                         self._process = None

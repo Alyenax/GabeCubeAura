@@ -37,6 +37,14 @@
     {
       "path": "licenses/Tabler-Icons-MIT.txt",
       "sha256": "b740a1d46122672da62833e97f7e7c8a13fa85cbc7445b584b297cc00dde93db"
+    },
+    {
+      "path": "assets/clocks/monogram.json",
+      "sha256": "022e992140bc96bb80028fbaffa2e8c760e4e38009dccb5452e64424ea0ab580"
+    },
+    {
+      "path": "licenses/CC0-1.0.txt",
+      "sha256": "a2010f343487d3f7618affe54f789f5487602331c0a8d03f49e9a7c547cf0499"
     }
   ]
 }

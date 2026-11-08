@@ -31,9 +31,9 @@ class FaceplatePreferencesStoreTests(unittest.TestCase):
     def test_absent_store_has_inert_route_defaults_without_enabling_hardware(self):
         snapshot = self.store.read()
 
-        self.assertEqual(("weather", "dashboard", "native-clock", "artwork", "artwork-dashboard"), HOME_SCENES)
+        self.assertEqual(("weather", "dashboard", "native-clock", "artwork", "artwork-dashboard", "library", "clock"), HOME_SCENES)
         self.assertEqual(
-            ("dashboard", "artwork", "artwork-dashboard", "weather", "player-city"),
+            ("dashboard", "artwork", "artwork-dashboard", "weather", "player-city", "clock"),
             GAME_SCENES,
         )
         self.assertEqual(DEFAULT_HOME_SCENE, snapshot.home_scene)

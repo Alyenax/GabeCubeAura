@@ -1,4 +1,4 @@
-"""Source-only spatial projection. Never accepts a composed Dashboard GIF."""
+"""Original-source projection and native clock reduction, never Dashboard overlays."""
 import hashlib
 import json
 from pathlib import Path
@@ -33,6 +33,47 @@ def project_backgrounds(frames, mapping='bottom', rotate=False, *, height=HEIGHT
     divisor = WIDTH * len(rows) * len(frames)
     return [tuple((value + divisor // 2) // divisor for value in colour) for colour in totals]
 
+
+
+def clock_projection(frames, delays_cs):
+    """Reduce native clock pixels once in the renderer, weighted by display time.
+
+    Keep black pixels and exact fractional 64/17 bins. Three column banks
+    provide bottom/top edges and whole-image mappings in both orientations,
+    without decoding the GIF or running a renderer from the LED loop.
+    """
+    if (not 1 <= len(frames) <= 1024 or len(frames) != len(delays_cs)
+            or any(len(f) != WIDTH * HEIGHT * 3 for f in frames)
+            or any(type(d) is not int or not 1 <= d <= 65535 for d in delays_cs)
+            or not 0 < sum(delays_cs) <= 25000):
+        raise ValueError('Invalid native clock projection timeline')
+    banks = {key: [[0, 0, 0] for _ in range(WIDTH)] for key in ('whole', 'top', 'bottom')}
+    stride = WIDTH * 3
+    digest = hashlib.sha256(b'native-clock-projection-v1')
+    for frame, delay in zip(frames, delays_cs):
+        digest.update(frame); digest.update(delay.to_bytes(4, 'big'))
+        for x in range(WIDTH):
+            for c in range(3):
+                offset = x * 3 + c
+                banks['whole'][x][c] += sum(frame[offset::stride]) * delay
+                banks['top'][x][c] += sum(frame[offset:8 * stride:stride]) * delay
+                banks['bottom'][x][c] += sum(frame[(HEIGHT - 8) * stride + offset::stride]) * delay
+    colours = {}
+    for mapping in ('bottom', 'whole'):
+        divisor = WIDTH * (8 if mapping == 'bottom' else HEIGHT) * sum(delays_cs)
+        for rotated in (False, True):
+            bank = banks['whole' if mapping == 'whole' else 'top' if rotated else 'bottom']
+            result = []
+            for led in range(LEDS):
+                left, right = led * WIDTH, (led + 1) * WIDTH
+                total = [0, 0, 0]
+                for x in range(left // LEDS, min(WIDTH, (right + LEDS - 1) // LEDS)):
+                    weight = min(right, (x + 1) * LEDS) - max(left, x * LEDS)
+                    column = bank[WIDTH - 1 - x if rotated else x]
+                    for c in range(3): total[c] += column[c] * weight
+                result.append(tuple((v + divisor // 2) // divisor for v in total))
+            colours[mapping + ('-rotated' if rotated else '')] = result
+    return {'kind': 'clock-strip', 'sha256': digest.hexdigest(), 'colours': colours}
 
 def load_source(source):
     if source.get('kind') == 'weather':
@@ -84,11 +125,20 @@ def background_key(payload, context, game_appid, fingerprint='', layout=None):
     real Home/game transitions even when both routes share a weather background.
     """
     kind = payload.get('kind')
-    if kind in ('artwork', 'artwork-dashboard') and payload.get('appid'):
+    # Independent Home creations and the prepared Home playlist deliberately
+    # use AppID 0. Their verified original pack is the image identity; a Steam
+    # game is not required. Keep unscoped/no-source requests ineligible.
+    home_original = bool(context == 'home' and game_appid == 0
+        and payload.get('appid') == 0 and fingerprint
+        and (payload.get('home_artwork') or payload.get('home_dashboard')))
+    if kind in ('artwork', 'artwork-dashboard') and (payload.get('appid') or home_original):
         original = ['artwork', payload['appid'], payload.get('source', 'hero'), fingerprint, layout]
     elif kind in ('weather', 'dashboard') and payload.get('condition') and payload.get('phase'):
         original = ['weather', payload.get('visual_theme'), payload['condition'],
                     payload.get('variant', 0), payload['phase'], fingerprint]
+    elif kind == 'clock' and payload.get('clock_id'):
+        original = ['clock', payload['clock_id'], payload.get('options'), payload.get('cadence','conservative'),
+                    bool(payload.get('night')), payload.get('display_at'), payload.get('end_at')]
     elif kind == 'player-city':
         from .player_city import population_tier, REVISION as CITY_REVISION
         tier = population_tier(payload.get('players'))

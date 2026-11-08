@@ -82,6 +82,8 @@ def faceplate_scene_cache_namespace(payload):
     visual_theme = str(payload.get("visual_theme", ""))
     # Preserve the Lab183 pixel-cache generation; only the gain policy changed.
     parts = ["gabecubeaura", "encoded-rgb-peak-1", kind or "scene"]
+    if kind == "clock":
+        parts.append("native-clock-projection-v2-fine-centred")
     if kind == "player-city":
         parts.append(PLAYER_CITY_REVISION)
     if kind == "artwork-dashboard":
@@ -166,6 +168,10 @@ class Engine:
             cache_path=os.path.join(state_directory, "weather-last-sample.json"),
         )
         initial = settings.all()
+        from signalbar.faceplate.control import FaceplateControl
+        self.faceplate_control = FaceplateControl(initial)
+        self._faceplate_control_phase = None
+        self._faceplate_control_retry_at = 0.0
         plugin_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
         self._faceplate_state_directory = state_directory
         self.faceplate_extension = FaceplateExtension(os.path.join(state_directory, 'faceplate-source-projection'))
@@ -200,9 +206,13 @@ class Engine:
             os.path.join(state_directory, "faceplate-lab-state.json"),
             logger,
         )
+        from signalbar.faceplate.home_library import HomeLibrary
+        self.home_library = HomeLibrary(getattr(self.faceplate, 'steamgriddb', None))
+        from signalbar.faceplate.clocks import ClockRuntime
+        self._clock_runtime = ClockRuntime()
         self._automatic_dashboard_backgrounds = AutomaticDashboardBackgrounds()
         self.faceplate.configure(
-            initial["faceplate_lab_enabled"], initial["faceplate_brightness"],
+            initial["faceplate_lab_enabled"] and self.faceplate_control.permitted(), initial["faceplate_brightness"],
         )
         if isinstance(self.faceplate, FaceplateCoordinator):
             self.faceplate.flash.configure(initial.get("faceplate_flash_protection_enabled", True))
@@ -215,7 +225,7 @@ class Engine:
             )
         self.faceplate_worker = FaceplateWorker(
             self._handle_faceplate_scene,
-            enabled=initial["faceplate_lab_enabled"],
+            enabled=initial["faceplate_lab_enabled"] and self.faceplate_control.permitted(),
             logger=logger,
             on_complete=self._write_faceplate_runtime_status,
             on_idle=self._flush_faceplate_statistics,
@@ -404,7 +414,6 @@ class Engine:
 
     def _assistant_preflight(self):
         if (self._stop.is_set() or getattr(self, '_assistant_system_suspended', False)
-                or getattr(self, '_onboarding_recovery_blocked', False)
                 or getattr(self, '_onboarding_applying', False)
                 or self.thermal_protection.status().get("active")):
             raise RuntimeError("Assistant suspendu ou protection thermique active.")
@@ -418,11 +427,12 @@ class Engine:
         """Decorative leases are optional; never probe or open USB for the voice."""
         values = self.settings.all()
         safe = not self._stop.is_set() and not self.thermal_protection.active
+        from signalbar.faceplate.control import allows_integration
         return {
             'bar_available': bool(safe and self._available
                 and values.get('mode') != 'disabled' and not values.get('steam_control_enabled')
                 and not self._display_bar_off(values)),
-            'matrix_available': bool(safe and not self._screensaver_owns_matrix() and values.get('faceplate_lab_enabled')
+            'matrix_available': bool(safe and allows_integration(values, 'dva') and not self._screensaver_owns_matrix() and values.get('faceplate_lab_enabled')
                 and not self._display_panel_off(values) and not self._faceplate_suspended
                 and getattr(self, '_faceplate_extension_present', False)
                 and self.faceplate.powered is not False),
@@ -440,7 +450,6 @@ class Engine:
 
     def _assistant_wake_permitted(self):
         if (not self._assistant_wake_allowed or self._stop.is_set()
-                or getattr(self, '_onboarding_recovery_blocked', False)
                 or getattr(self, '_onboarding_applying', False)
                 or getattr(self, '_assistant_system_suspended', False) or self.thermal_protection.active):
             return False
@@ -450,7 +459,7 @@ class Engine:
         if self._stop.is_set():return 'stopping'
         if getattr(self,'_assistant_system_suspended',False):return 'system-suspended'
         if self.thermal_protection.active:return 'thermal'
-        if getattr(self,'_onboarding_recovery_blocked',False) or getattr(self,'_onboarding_applying',False):return 'setup'
+        if getattr(self,'_onboarding_applying',False):return 'setup'
         if not self._assistant_wake_allowed:return 'user-disabled'
         return ''
 
@@ -458,7 +467,6 @@ class Engine:
         # Only settings/context changes compute policy. The 50-ms wake loop
         # reads a boolean and hardware flags, never deep-copies all settings.
         return bool(values.get('gabe_assistant', {}).get('enabled')
-                    and not getattr(self, '_onboarding_recovery_blocked', False)
                     and not getattr(self, '_assistant_system_suspended', False))
 
     def _assistant_acquire(self, data, manifest, cancel):
@@ -468,7 +476,8 @@ class Engine:
         # A cancelled uploader must never enqueue after the restoration route.
         # Hold only during queue hand-off, never during a USB transfer/ACK.
         with self._assistant_route_lock:
-            if cancel.is_set():
+            from signalbar.faceplate.control import allows_integration
+            if cancel.is_set() or not allows_integration(self.settings.all(), 'dva'):
                 raise Cancelled()
             if self._screensaver_owns_matrix():
                 # Capability may have changed since preflight. Drop decoration
@@ -496,7 +505,7 @@ class Engine:
         with self._assistant_route_lock:
             self.faceplate_worker.cancel_scene_class("external")
             values = self.settings.all()
-            self.faceplate_worker.configure(bool(values["faceplate_lab_enabled"] and not self._faceplate_suspended and not self._stop.is_set()))
+            self.faceplate_worker.configure(bool(values["faceplate_lab_enabled"] and self.faceplate_control.permitted() and not self._faceplate_suspended and not self._stop.is_set()))
             self._faceplate_follow_key = None
             self._faceplate_next_reconcile = 0.0
             if not self._stop.is_set():
@@ -541,6 +550,7 @@ class Engine:
     def _commit_faceplate_routing(self, home_scene, game_scene, expected_revision, performance_risk_accepted):
         if "performance" in (home_scene, game_scene):
             raise ValueError("CPU/GPU is available on the light bar and in the interface, not on the JSAUX matrix")
+        previous_routes = self.faceplate_preferences.read()
         snapshot = self.faceplate_preferences.update(
             home_scene=home_scene, game_scene=game_scene,
             expected_revision=expected_revision,
@@ -559,7 +569,9 @@ class Engine:
                 self._faceplate_weather_required(values),
             )
             self._faceplate_next_reconcile = 0.0
-            self._reconcile_faceplate("routing-change", force=True)
+            context = 'game' if self._game.running else 'home'
+            keep_clock = previous_routes.scene_for(context) == snapshot.scene_for(context) == 'clock'
+            self._reconcile_faceplate("routing-change", force=not keep_clock)
             self._faceplate_configuration_error = ""
         except Exception:
             self._faceplate_configuration_error = "Saved display preferences could not be applied. Retry or restart GabeCubeAura."
@@ -668,6 +680,8 @@ class Engine:
             self.faceplate.flush_statistics()
 
     def stop(self, timeout=None):
+        if getattr(self, 'home_library', None) is not None:
+            self.home_library.stop()
         budget = ShutdownBudget(timeout)
         self._stop.set()
         self.faceplate_router.invalidate("plugin-stopped")
@@ -688,6 +702,9 @@ class Engine:
         if getattr(self, 'current_players', None) is not None:
             budget.call(self.current_players.stop)
         budget.call(self.faceplate_worker.stop)
+        control = getattr(self, "faceplate_control", None)
+        if control is not None:
+            budget.call(control.close)
         if isinstance(self.faceplate, FaceplateCoordinator):
             self.faceplate.flash.flush(force=True)
             self.faceplate.flush_statistics(force=True)
@@ -787,6 +804,11 @@ class Engine:
 
     def _apply_faceplate_power(self, enabled, reason, attempts=1):
         """Apply a volatile panel state with a bounded, observable retry."""
+        from signalbar.faceplate.control import allows_output
+        if not allows_output(self.settings.all()):
+            self._faceplate_power_target = None
+            return {"ok": False, "powered": self.faceplate.powered,
+                    "error": "Faceplate access is released to other apps"}
         result = {"ok": False, "powered": None, "error": "not attempted"}
         for attempt in range(max(1, int(attempts))):
             result = self.faceplate.set_power(
@@ -865,11 +887,18 @@ class Engine:
         untouched. Overlapping Off reasons share one restoration lease.
         """
         values = self.settings.all()
-        off = self._display_panel_off(values)
+        from signalbar.faceplate.control import allows_output
         bar_off = self._display_bar_off(values)
         self._assistant_wake_allowed = self._assistant_wake_policy(values)
         if bar_off or values.get('steam_control_enabled'):
             self._assistant_detach_visuals('bar-unavailable', matrix=False, bar=True)
+        if not allows_output(values):
+            self._faceplate_power_target = None
+            self._faceplate_power_retry_at = 0.0
+            self._display_faceplate_restore = False
+            self._display_faceplate_off = False
+            return
+        off = self._display_panel_off(values)
         if off:
             self._assistant_detach_visuals('matrix-off', matrix=True, bar=False)
             if not self._display_faceplate_off:
@@ -901,6 +930,9 @@ class Engine:
 
     def suspend_faceplate(self, kind="sleep"):
         """Cancel scene traffic and reliably darken the USB-powered panel."""
+        close_reads = getattr(getattr(self, "_renderer", None), "close_read_session", None)
+        if callable(close_reads):
+            close_reads()
         self._faceplate_suspended = True
         self.faceplate_router.invalidate("system-suspended")
         self._assistant_system_suspended = True
@@ -912,6 +944,10 @@ class Engine:
 
     def set_faceplate_power(self, enabled, reason="Decky control"):
         """Honor an explicit user choice over any automatic pending retry."""
+        from signalbar.faceplate.control import allows_output
+        if not allows_output(self.settings.all()):
+            return {"ok": False, "powered": self.faceplate.powered,
+                    "error": "Faceplate access is released to other apps"}
         if enabled and self._display_panel_off():
             return {"ok": False, "powered": self.faceplate.powered,
                     "error": "Enable GabeCubeAura and select an active display before powering on the Faceplate"}
@@ -952,7 +988,8 @@ class Engine:
         """
         with self._display_power_lock:
             values = self.settings.all()
-            if (not values.get('faceplate_lab_enabled') or self._display_panel_off(values)
+            from signalbar.faceplate.control import allows_output
+            if (not allows_output(values) or not values.get('faceplate_lab_enabled') or self._display_panel_off(values)
                     or self._assistant_system_suspended):
                 return False
             self.faceplate_router.invalidate('faceplate-setup')
@@ -976,11 +1013,18 @@ class Engine:
 
     def resume_faceplate(self):
         """Power on, re-enable the worker and reassert the current scene."""
+        close_reads = getattr(getattr(self, "_renderer", None), "close_read_session", None)
+        if callable(close_reads):
+            close_reads()
         self.countdown.end_action.cancel('system-resumed')
         values = self.settings.all()
         self.set_screen_sync_context('steam-screensaver',False,'waiting','resume')
         self._assistant_system_suspended = False
         self._assistant_wake_allowed = self._assistant_wake_policy(values)
+        from signalbar.faceplate.control import allows_output
+        if not allows_output(values):
+            self.faceplate_worker.configure(False)
+            return {"ok": True, "powered": None, "skipped": True, "error": ""}
         if not values.get("faceplate_lab_enabled") or values.get("faceplate_power_mode") != "auto":
             return {"ok": True, "powered": None, "skipped": True, "error": ""}
         self._faceplate_suspended = False
@@ -1113,6 +1157,9 @@ class Engine:
         Provider status methods can advance their own queues. Do not poll them
         again for diagnostics or evaluate predicates the old chain skipped.
         """
+        from signalbar.faceplate.control import allows_integration
+        if not allows_integration(values, 'das'):
+            return False, {'first_blocker': 'faceplate-disabled', 'evaluated': {'faceplate-disabled': True}}
         countdown = self.countdown.status(allow_parental=values.get('parental_countdown_enabled', True) and self._game.running)
         timer_priority = countdown.get('active') and countdown.get('remaining_seconds', float('inf')) <= 300
         event_evidence={}
@@ -1133,7 +1180,6 @@ class Engine:
         checks=(
             ('plugin-disabled',lambda:not values.get('signalbar_enabled')),
             ('faceplate-disabled',lambda:not values.get('faceplate_lab_enabled')),
-            ('onboarding-recovery',lambda:getattr(self,'_onboarding_recovery_blocked',False)),
             ('onboarding-applying',lambda:getattr(self,'_onboarding_applying',False)),
             ('mode-disabled',lambda:values.get('mode')=='disabled'),
             ('panel-route-off',lambda:self._display_panel_off(values)),
@@ -1517,6 +1563,17 @@ class Engine:
 
     def _handle_faceplate_scene(self, request):
         payload = request.get("payload") or {}
+        from signalbar.faceplate.control import allows_output, allows_integration
+        values = self.settings.all()
+        if not allows_output(values):
+            return {"attempted": False, "superseded": True,
+                    "error": "Faceplate access is released to other apps"}
+        if payload.get("kind") in ("broker", "broker-exit", "return-stop") and not allows_integration(values, "das"):
+            return {"attempted": False, "superseded": True,
+                    "error": "DAS presentations are disabled by Faceplate priority"}
+        if payload.get("kind") == "external" and not allows_integration(values, "dva"):
+            return {"attempted": False, "superseded": True,
+                    "error": "DVA presentations are disabled by Faceplate priority"}
         if isinstance(self.faceplate,FaceplateCoordinator) and self.faceplate._continuous_return:
             self.faceplate._return_event('worker-start',queue_ms=max(0,round((time.monotonic()-request.get('queued_at',time.monotonic()))*1000)))
         if payload.get("kind") == "performance":
@@ -1525,7 +1582,7 @@ class Engine:
         # Safety stop must still execute when setup/display guards block scenes.
         if payload.get('kind') == 'return-stop':
             return self.faceplate.stop_continuous_return()
-        if (getattr(self, '_onboarding_recovery_blocked', False) or getattr(self, '_onboarding_applying', False)) and not (
+        if (getattr(self, '_onboarding_applying', False)) and not (
                 payload.get('kind') == 'control' and payload.get('powered') is False):
             return {"attempted": False, "superseded": True, "error": "Setup recovery required"}
         if self._display_panel_off():
@@ -1547,7 +1604,8 @@ class Engine:
             return self.faceplate.synchronize_scene(
                 payload["data"], scene="external", signature=manifest["signature"],
                 peak_load=manifest["peak_load"], reason="External presentation",
-                cancelled=lambda: session_cancel.is_set() or (cancelled is not None and cancelled.is_set()),
+                cancelled=lambda: session_cancel.is_set() or (cancelled is not None and cancelled.is_set())
+                    or not allows_integration(self.settings.all(), "dva"),
             )
         if self._assistant_holds_matrix() and payload.get("kind") != "control":
             return {"attempted": False, "superseded": True}
@@ -1611,6 +1669,11 @@ class Engine:
                     cancelled=native_cancelled,
                 )
                 successful = bool(result.get("synchronized")) and not result.get("error")
+            elif kind == "clock":
+                result = self._synchronize_clock(payload, ticket, request)
+                projection_source = result.get('projection_source')
+                successful = bool(result.get('synchronized')) and not result.get('error')
+                self.clock_runtime.receipt(payload, result, time.time())
             elif kind == "cinema":
                 return {'attempted': False, 'superseded': True}
             elif kind == "artwork":
@@ -1801,6 +1864,8 @@ class Engine:
             self._write_faceplate_runtime_status()
             return result
         except (FaceplateRenderError, OSError, TypeError, ValueError) as error:
+            if kind == 'clock':
+                self.clock_runtime.receipt(payload, {'error':str(error)}, time.time())
             transition=getattr(self.faceplate,'_continuous_return',None)
             if isinstance(transition,dict):transition['stop']=True
             self.faceplate_router.fail(ticket, error)
@@ -1811,11 +1876,81 @@ class Engine:
             # A controlled same-background upload may temporarily replace the
             # GIF signature or lack a final ACK. It is not a new RGB background.
             delivery = getattr(self.faceplate, 'delivery', {}) or {}
-            if refresh['key'] and delivery.get('scene') in ('weather', 'dashboard', 'artwork', 'artwork-dashboard', 'player-city'):
+            if refresh['key'] and delivery.get('scene') in ('weather', 'dashboard', 'artwork', 'artwork-dashboard', 'player-city', 'clock'):
                 self._faceplate_extension_delivery_basis = {**refresh,
                     'signature': delivery.get('signature'), 'scene': delivery.get('scene')}
             if self._faceplate_extension_refresh is refresh:
                 self._faceplate_extension_refresh = None
+
+    @property
+    def clock_runtime(self):
+        value = getattr(self,'_clock_runtime',None)
+        if value is None:
+            from signalbar.faceplate.clocks import ClockRuntime
+            self._clock_runtime = value = ClockRuntime()
+        return value
+
+    def _clock_status(self, values=None, now=None):
+        from signalbar.faceplate.control import allows_output
+        values = self.settings.all() if values is None else values
+        context = 'game' if self._game.running else 'home'
+        selected = values.get('faceplate_clock_'+context, '')
+        eligible = (self.faceplate_preferences.read().scene_for(context) == 'clock'
+            and values.get('faceplate_lab_enabled') and allows_output(values)
+            and not self._faceplate_suspended and not self._display_panel_off(values)
+            and self._faceplate_power_target is not True and not self._assistant_holds_matrix()
+            and not self._screensaver_owns_matrix())
+        return self.clock_runtime.snapshot(selected,context,time.time() if now is None else now,eligible=eligible)
+
+    def _synchronize_clock(self, payload, ticket, request):
+        from signalbar.faceplate.timing import SYNC_MAX_BYTES
+        cancelled = request.get('_cancelled')
+        anchor_wall,anchor_mono = time.time(),time.monotonic()
+        def stale():
+            return (bool(cancelled and cancelled.is_set()) or self._stop.is_set()
+                or self._faceplate_suspended or self._display_faceplate_off
+                or self.faceplate_router.status()['generation'] != ticket.generation
+                or abs((time.time()-anchor_wall)-(time.monotonic()-anchor_mono))>.5
+                or not self.faceplate_control.permitted())
+        if stale(): return {'superseded':True}
+        data, manifest = self._render_faceplate_scene(payload,ticket)
+        if not 0 < len(data) <= SYNC_MAX_BYTES:
+            return {'error':'Clock exceeds the synchronized transfer budget'}
+        # Rotation is part of preparation, not an unmeasured delay after the
+        # scheduled send. The coordinator reuses this bounded transform cache.
+        if isinstance(self.faceplate,FaceplateCoordinator) and self.faceplate.rotate_180:
+            self.faceplate._orient_gif(data,max_frames=1024)
+        size = len(data)
+        if isinstance(self.faceplate,FaceplateCoordinator) and self.faceplate.rotate_180:
+            size = len(self.faceplate._orient_gif(data,max_frames=1024))
+        if size > SYNC_MAX_BYTES:
+            return {'error':'Rotated clock exceeds the synchronized transfer budget'}
+        estimate = (.5 + size/8192 if not self.clock_runtime.bytes else
+            1 + max(0,self.clock_runtime.transfer_seconds-1)*size/self.clock_runtime.bytes)
+        self.clock_runtime.transfer_seconds = min(25,max(.2,estimate))
+        estimate = self.clock_runtime.transfer_seconds
+        deadline = float(payload['display_at'])-estimate
+        if time.time() > deadline + .35:
+            return {'error':'Clock preparation missed its transfer window', 'retry_after':2}
+        if stale(): return {'superseded':True}
+        self.faceplate_router.mark_prepared(ticket)
+        # The isolated renderer already reduced the native clock, including its
+        # duration weights. A prepared palette never asserts USB confirmation.
+        self._publish_faceplate_extension_source(payload, ticket, {},
+            manifest.get('projection_source'), prepared=True)
+        self.clock_runtime.state = 'waiting'
+        # The only worker owns the timed handoff. No serial lock is held while
+        # waiting, and a newer route/Off/priority command cancels at <=50 ms.
+        while time.time() < deadline:
+            if stale(): return {'superseded':True}
+            self._stop.wait(min(.05,max(0,deadline-time.time())))
+        if stale(): return {'superseded':True}
+        # NTP/manual jumps during a wait must not send an old absolute timeline.
+        if time.time() > deadline + .35:
+            return {'error':'System time changed before the clock transfer', 'retry_after':2}
+        self.clock_runtime.state = 'transferring'
+        result = self._synchronize_faceplate_handoff(data,'clock',manifest,ticket,request)
+        return {**result,'clock_bytes':size, 'projection_source':manifest.get('projection_source')}
 
     def _synchronize_artwork_with_projection(self, payload, ticket, cancelled=None):
         keywords = {}
@@ -1833,6 +1968,12 @@ class Engine:
             keywords['source_ready'] = source_ready
         return self.faceplate.synchronize_artwork(payload.get('appid', 0),
             str(payload.get('source', 'hero')), **keywords)
+
+    def _independent_home_artwork(self):
+        library = getattr(self.faceplate, 'steamgriddb', None)
+        if getattr(library, 'supports_independent_creations', False) is True:
+            return library.independent_manifest(0, home=True)
+        return {}
 
     def _dashboard_background(self, appid, source="hero", *, home=False, mode="", draft=False):
         """Resolve only in a worker/explicit preview, never the game callback."""
@@ -1894,7 +2035,7 @@ class Engine:
         """Capture a validated source reference, never composed screen pixels."""
         source = None
         kind = payload.get('kind')
-        if kind in ('artwork', 'artwork-dashboard') and isinstance(projection_source, dict):
+        if kind in ('artwork', 'artwork-dashboard', 'clock') and isinstance(projection_source, dict):
             source = dict(projection_source)
         elif kind in ('weather', 'dashboard') and manifest.get('preset_id'):
             from signalbar.faceplate.weather_artwork import _preset
@@ -1959,7 +2100,7 @@ class Engine:
                 and source.get('background_generation', 0) <= target['generation'])
             refresh = getattr(self, '_faceplate_extension_refresh', None)
             basis = getattr(self, '_faceplate_extension_delivery_basis', None)
-            known_transfer = bool(delivery.get('scene') in ('weather', 'dashboard', 'artwork', 'artwork-dashboard', 'player-city')
+            known_transfer = bool(delivery.get('scene') in ('weather', 'dashboard', 'artwork', 'artwork-dashboard', 'player-city', 'clock')
                 and ((refresh and refresh['key'] in (source.get('background_key'), target['key']))
                      or (basis and basis['signature'] == delivery.get('signature')
                          and basis['scene'] == delivery.get('scene')
@@ -2650,12 +2791,14 @@ class Engine:
 
     def _write_faceplate_runtime_status(self):
         hardware = self.faceplate.status()
+        clock = getattr(self, '_clock_runtime', None)
         value = {
             "schema": 1, "updated_at": time.time(),
             "flash_protection": hardware.get("flash_protection", {}),
             "running": self._faceplate_runtime_running,
             "routing": self.faceplate_router.status(),
             "worker": self.faceplate_worker.status(),
+            "clock": clock.diagnostic_snapshot() if clock is not None else {},
             "weather": dict(self._faceplate_weather_summary),
             "player_city": self._player_city_status(),
             "device": {
@@ -2693,7 +2836,7 @@ class Engine:
             {"running": value["running"], "routing": value["routing"], "worker": value["worker"],
              "weather": {k:v for k,v in value["weather"].items() if k != 'age_s'}, "device": value["device"],
              "player_city": city_semantic,
-             "uploads": value["uploads"],
+             "uploads": value["uploads"], "clock": value["clock"],
              "steam_status": steam_status_semantic,
              "artwork_dashboard": value["artwork_dashboard"]},
             sort_keys=True, separators=(",", ":"),
@@ -2841,8 +2984,11 @@ class Engine:
         return True
 
     def _reconcile_faceplate(self, reason="periodic", force=False, hardware=None):
+        from signalbar.faceplate.control import allows_output
+        if not allows_output(self.settings.all()):
+            return 0
         self._configure_player_city(hardware)
-        if getattr(self, '_onboarding_applying', False) or getattr(self, '_onboarding_recovery_blocked', False):
+        if getattr(self, '_onboarding_applying', False):
             return 0
         preview_until = getattr(self, '_faceplate_preview_until', 0.)
         if preview_until > time.monotonic():
@@ -2888,10 +3034,19 @@ class Engine:
             game = self._game
         preferences = self.faceplate_preferences.read()
         scene = preferences.scene_for("game" if game.running else "home")
+        if scene != 'clock' and self.clock_runtime.key is not None:
+            self.clock_runtime.invalidate('Clock route inactive')
+            self.faceplate_worker.cancel_scene_class('clock')
+        library = getattr(self.faceplate, 'steamgriddb', None)
+        if library is not None:
+            library.home_library_entry = self.home_library.current(
+                values.get('faceplate_home_library_source', 'artwork') if getattr(library, 'independent_creations', None) is not None else 'artwork',
+                values.get('faceplate_home_library_shuffle', False),
+                values.get('faceplate_home_library_interval', 300)) if scene == 'library' else None
         # Coalesce before rendering as well as at the serial gate. A periodic
         # telemetry tick must not repeatedly encode a GIF while the shared
         # budget is empty. Explicit/new context requests still reach the gate.
-        if scene not in {"native-clock", "player-city"} and not force and reason == "periodic" and isinstance(self.faceplate, FaceplateCoordinator):
+        if scene not in {"native-clock", "player-city", "clock"} and not force and reason == "periodic" and isinstance(self.faceplate, FaceplateCoordinator):
             priority = self.faceplate._upload_priority(scene, reason)
             if self.faceplate.flash.delay(priority) > 0:
                 return 0
@@ -2902,7 +3057,7 @@ class Engine:
         if scene != "artwork-dashboard" or not game.running:
             self._faceplate_artwork_dashboard_target_minute = None
             self._faceplate_artwork_dashboard_battery = None
-        if scene not in {"weather", "dashboard", "native-clock"} and not game.running:
+        if scene not in {"weather", "dashboard", "native-clock", "library", "clock"} and not game.running:
             weather, _, _ = self._faceplate_weather_payload(values, game.running)
             if weather is not None:
                 artwork_revision = weather_artwork_cache_revision(
@@ -2926,7 +3081,41 @@ class Engine:
         background_fingerprint = ''
         background_layout = None
         error = ""
-        if scene == 'player-city':
+        if scene == 'clock':
+            from signalbar.faceplate.clocks import is_night
+            context = 'game' if game.running else 'home'
+            selected = values.get('faceplate_clock_'+context, '')
+            try:
+                solar = self.weather.solar_status(values)
+                # Sample one adjacent wall/monotonic pair AFTER potentially
+                # contended provider work. Its latency is not a clock jump.
+                clock_wall, clock_mono = time.time(), time.monotonic()
+                candidate = self.clock_runtime.plan(selected,context,clock_wall,
+                    is_night(clock_wall, solar), force=force, monotonic=clock_mono,
+                    cadence=values.get('faceplate_clock_cadence_'+context, 'conservative'),
+                    options={'palette': values.get('faceplate_clock_palette_'+context, 'amber'),
+                             'format': values.get('faceplate_clock_format_'+context, '24'),
+                             'language': values.get('ui_language', 'en')})
+                if candidate is None:
+                    return 0
+                payload.update(candidate)
+                content_key = 'clock:' + hashlib.sha256(json.dumps(candidate,sort_keys=True).encode()).hexdigest()
+            except ValueError as caught:
+                error = str(caught)
+                content_key = 'clock:unselected'
+        elif scene == 'library':
+            ready = self._independent_home_artwork()
+            if ready:
+                payload.update(kind='artwork', appid=0, home_artwork=True)
+                content_key = 'home-library:' + ready.get('sha256', '')
+                background_fingerprint = ready.get('dashboard_pack_sha256', '')
+            elif self.home_library.status()['loading'] or self.home_library.status()['count']:
+                self._faceplate_next_reconcile = time.monotonic() + .25
+                return 0
+            else:
+                error = 'No prepared GIFs in the selected library.'
+                content_key = 'home-library:empty'
+        elif scene == 'player-city':
             sample = self.current_players.status()
             weather, _, _weather_error = self._faceplate_weather_payload(values, game.running)
             candidate = self.player_city.plan(game.appid, sample, weather, restore=force)
@@ -3308,6 +3497,8 @@ class Engine:
             f"{scene}:{content_key[-32:]}", payload, metadata,
         )
         if not generation:
+            if scene == 'clock':
+                self.clock_runtime.receipt(payload, {'error':'Clock worker unavailable'}, time.time())
             rejection = self.faceplate_worker.status().get("last_rejection")
             self.faceplate_router.fail(
                 ticket, rejection or "Faceplate scene worker is unavailable",
@@ -3388,6 +3579,18 @@ class Engine:
                 self.countdown.end_action.cancel('user-disabled')
             return values
         if set(changes) == {"ui_language"}:
+            # Date labels follow the UI language, but a language-only edit must
+            # not reconfigure providers or perform serial I/O on this call.
+            from signalbar.faceplate.clocks import catalog
+            context = 'game' if getattr(getattr(self, '_game', None), 'running', False) else 'home'
+            selected = values.get('faceplate_clock_'+context)
+            preferences = getattr(self, 'faceplate_preferences', None)
+            if (preferences is not None and preferences.read().scene_for(context) == 'clock'
+                    and any(entry['id']==selected and not entry['private'] for entry in catalog())):
+                self.clock_runtime.invalidate('Clock language changed')
+                self.faceplate_router.invalidate('clock-language-changed')
+                self.faceplate_worker.cancel_scene_class('clock')
+                self._faceplate_next_reconcile = 0.0
             return values
         if set(changes) == {"gabe_assistant"}:
             return values
@@ -3516,7 +3719,65 @@ class Engine:
             self.faceplate.steamgriddb.set_preference("animated_any")
             return values
 
+    def _apply_faceplate_control(self, values):
+        from signalbar.faceplate.control import allows_integration, allows_output
+        changed = self.faceplate_control.configure(values)
+        if not allows_output(values):
+            self.faceplate_router.invalidate("control-released")
+            self.faceplate_worker.configure(False)
+            self._faceplate_power_target = None
+            self._faceplate_power_retry_at = 0.0
+            self._faceplate_resume_requested = False
+            self._display_faceplate_restore = False
+        if not allows_integration(values, "dva"):
+            self.faceplate_worker.cancel_scene_class("external")
+            self._assistant_detach_visuals("faceplate-control", matrix=True, bar=False)
+        adapter = getattr(self, "jsaux_broker_adapter", None)
+        if adapter is not None and not allows_integration(values, "das"):
+            adapter.release_for_control()
+        if changed:
+            # An independent app may have changed both the stored GIF and MCU
+            # clock while we were away. Reconcile instead of reusing an ACK.
+            self._faceplate_follow_key = None
+            self._faceplate_next_reconcile = 0.0
+            self._faceplate_control_retry_at = 0.0
+            if isinstance(self.faceplate, FaceplateCoordinator):
+                self.faceplate.invalidate_control_session()
+        self._service_faceplate_control()
+
+    def _service_faceplate_control(self, now=None):
+        """Reserve a tty without sending packets; retry away from the LED loop."""
+        now = time.monotonic() if now is None else now
+        control = self.faceplate_control
+        state = control.status()
+        adapter = getattr(self, "jsaux_broker_adapter", None)
+        if state["mode"] == "gca-priority" and not self._stop.is_set() and adapter is not None:
+            control.maintain(self._reserve_faceplate_port)
+        state = control.status()
+        if state["phase"] == "released" and adapter is not None:
+            adapter.ownership.release_claims()
+        if state["phase"] != self._faceplate_control_phase:
+            self._faceplate_control_phase = state["phase"]
+            callback = getattr(self, "faceplate_claim_refresh", None)
+            if callable(callback):
+                callback()
+
+    def _reserve_faceplate_port(self):
+        from signalbar.faceplate.transport import device_identity
+        control = self.faceplate_control
+        if not control.permitted() or control.status()["mode"] != "gca-priority" or self._stop.is_set():
+            return
+        port = self.faceplate.port_finder() if isinstance(self.faceplate, FaceplateCoordinator) else None
+        if not port:
+            control.failed("Faceplate not connected")
+            return
+        if control.current_reservation(port, device_identity(port)):
+            return
+        with self.faceplate.link_factory(port=port):
+            pass
+
     def _apply_settings(self, values, changes):
+        self._apply_faceplate_control(values)
         if isinstance(self.faceplate, FaceplateCoordinator):
             self.faceplate.flash.configure(values.get("faceplate_flash_protection_enabled", True))
             if "faceplate_flash_protection_enabled" in changes:
@@ -3545,9 +3806,9 @@ class Engine:
         )
         # These configure methods share the serial lock. A master/game toggle
         # must cancel/queue power immediately, not wait for an unrelated GIF.
-        if any(key in changes for key in ('faceplate_lab_enabled', 'faceplate_brightness')):
+        if any(key in changes for key in ('faceplate_lab_enabled', 'faceplate_brightness', 'faceplate_control_mode')):
             self.faceplate.configure(
-                values["faceplate_lab_enabled"], values["faceplate_brightness"],
+                values["faceplate_lab_enabled"] and self.faceplate_control.permitted(), values["faceplate_brightness"],
             )
         if hasattr(self.faceplate, "configure_artwork") and any(key in changes for key in (
                 'faceplate_artwork_style', 'faceplate_logo_position',
@@ -3565,7 +3826,7 @@ class Engine:
             self._faceplate_next_reconcile = 0.0
             if values["faceplate_lab_enabled"]:
                 self._reconcile_faceplate("faceplate-presentation-change", force=True)
-        self.faceplate_worker.configure(bool(values["faceplate_lab_enabled"] and not self._display_panel_off(values) and not self._faceplate_suspended))
+        self.faceplate_worker.configure(bool(values["faceplate_lab_enabled"] and self.faceplate_control.permitted() and not self._display_panel_off(values) and not self._faceplate_suspended))
         self._sync_display_power_policy()
         if not values["faceplate_lab_enabled"]:
             self._faceplate_follow_key = None
@@ -3577,6 +3838,25 @@ class Engine:
         elif "faceplate_lab_enabled" in changes:
             self._faceplate_next_reconcile = 0.0
             self._reconcile_faceplate("faceplate-enabled", force=True)
+        from signalbar.faceplate.clocks import catalog as clock_catalog
+        clock_context = 'game' if self._game.running else 'home'
+        if (any('faceplate_clock_'+name+clock_context in changes for name in ('', 'palette_', 'format_'))
+                or ('ui_language' in changes and any(entry['id']==values.get('faceplate_clock_'+clock_context)
+                    and not entry['private'] for entry in clock_catalog()))):
+            self.clock_runtime.invalidate('Clock selection changed')
+            self.faceplate_router.invalidate('clock-selection-changed')
+            self.faceplate_worker.cancel_scene_class('clock')
+            self._faceplate_next_reconcile = 0.0
+            self._reconcile_faceplate('clock-selection-change', force=True)
+        if 'faceplate_clock_cadence_'+clock_context in changes:
+            self.faceplate_router.invalidate('clock-cadence-changed')
+            self.faceplate_worker.cancel_scene_class('clock')
+            self._faceplate_next_reconcile = 0.0
+            self._reconcile_faceplate('clock-cadence-change', force=True)
+        if any(key in changes for key in ('faceplate_home_library_source' , 'faceplate_home_library_shuffle', 'faceplate_home_library_interval')):
+            self._faceplate_next_reconcile = 0.0
+            if values['faceplate_lab_enabled']:
+                self._reconcile_faceplate('home-library-settings', force=True)
         if any(key in changes for key in ('faceplate_player_city_row',
                 'faceplate_player_city_dashboard_row', 'faceplate_player_city_battery_style')):
             self._faceplate_next_reconcile = 0.0
@@ -3928,6 +4208,7 @@ class Engine:
             # the chosen display, or whether a Decky panel is open.
             self.performance.refresh(self.settings.all()["performance_smoothing"])
             now_monotonic = time.monotonic()
+            self._service_faceplate_control(now_monotonic)
             self._sync_display_power_policy()
             self._service_faceplate_power_retry(now_monotonic)
             if now_monotonic >= max(self._faceplate_next_reconcile, self._faceplate_maintenance_retry_at):
@@ -5024,6 +5305,10 @@ class Engine:
                 "weather_brightness": values["weather_brightness"],
                 "weather_shadow_cutoff": values["weather_shadow_cutoff"],
                 "faceplate_lab_enabled": values["faceplate_lab_enabled"],
+                "faceplate_control_mode": values["faceplate_control_mode"],
+                "faceplate_allow_das": values["faceplate_allow_das"],
+                "faceplate_allow_dva": values["faceplate_allow_dva"],
+                "faceplate_control": self.faceplate_control.status(),
                 "faceplate_configuration_error": self._faceplate_configuration_error,
                 "lab58_ux_enabled": values["lab58_ux_enabled"],
                 "ui_language": values["ui_language"],
@@ -5046,6 +5331,16 @@ class Engine:
                 "faceplate_dashboard_game_session": values["faceplate_dashboard_game_session"],
                 "faceplate_dashboard_contexts": values['faceplate_dashboard_contexts'],
                 "faceplate_player_city_row": values["faceplate_player_city_row"],
+                "faceplate_home_library_source": values['faceplate_home_library_source'],
+                "faceplate_home_library_shuffle": values['faceplate_home_library_shuffle'],
+                "faceplate_home_library_interval": values['faceplate_home_library_interval'],
+                "home_library": self.home_library.status(),
+                "faceplate_clock_home": values.get('faceplate_clock_home',''),
+                "faceplate_clock_game": values.get('faceplate_clock_game',''),
+                **{key: values[key] for key in ('faceplate_clock_palette_home', 'faceplate_clock_palette_game',
+                    'faceplate_clock_format_home', 'faceplate_clock_format_game',
+                    'faceplate_clock_cadence_home', 'faceplate_clock_cadence_game')},
+                "faceplate_clock": self._clock_status(values),
                 "faceplate_player_city_dashboard_row": values["faceplate_player_city_dashboard_row"],
                 "faceplate_player_city_battery_style": values["faceplate_player_city_battery_style"],
                 "faceplate_playtime_enabled": values["faceplate_playtime_enabled"],

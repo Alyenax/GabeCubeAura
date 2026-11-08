@@ -93,7 +93,7 @@ test('one additive selector keeps every prior row and gives new modes meaningful
   const home=ui.controls('home').find(n=>n.props?.label==='Bottom row content');
   assert.deepEqual(Array.from(home.props.rgOptions,(x:any)=>x.data),['next_hour','today','controllers']);
   for(const item of selector.props.rgOptions){
-    assert(!/^[ABCDE] [·—-]|Existing behavio/i.test(item.label));
+    assert(!/^[ABCDE] [·\-]|Existing behavio/i.test(item.label));
     assert.notEqual(translate(item.label,'fr'),item.label);
   }
   selector.props.onChange({data:'a'});await flush();

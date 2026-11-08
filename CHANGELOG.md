@@ -1,5 +1,47 @@
 # Changelog
 
+## 1.6.0 · 2026-11-08
+
+### Faceplate clocks
+
+- Add nine standalone clock faces: Meridian, Halo, Almanac, Quadrant, Cardinal markers, Horizon, Column, Week and Date card.
+- Offer six palettes, separate Home and in-game selections, 24-hour/AM-PM formats and English/French dates.
+- Add Conservative and Fixed minute transfer modes. Clock time advances inside scheduled GIF packets; each mode retains the normal USB and display protections.
+- Extend a standalone clock’s colours onto the light bar using Bottom edge or Whole image sampling.
+
+### Artwork and Home playback
+
+- Open the Faceplate artwork editor directly from a game’s Steam library menu when a Faceplate is detected.
+- List customized games in Artwork settings, with per-game layout choices and a confirmed return to the default. Keep prepared files, other games and the Home display intact.
+- Add Home playback of prepared library GIFs, in order or randomly, at 5-, 15-, 30- or 60-minute intervals. Playback performs no new download or conversion.
+- Reuse prepared artwork for a game, Home or both, with optional Dashboard information. Keep Home copies independent from later game changes.
+
+### Setup, control and performance
+
+- Make guided setup optional, including on first startup and after a settings reset.
+- Add a visible Restart setup action that starts a fresh guide while keeping active settings, keys, routes and prepared media.
+- Add Faceplate Priority controls: Automatic, GCA Priority and Other app, with separate allowances for Decky Animated Screensaver and Decky Vocal Assistant.
+- Reduce repeated work in Audio Sync, move slow Screen Sync registry checks away from frame handling and reuse bounded LED read sessions while keeping reads fresh.
+- Retry failed weather requests more quickly within a bounded recovery window, then return to the normal refresh schedule.
+
+
+### Fixed
+
+- Fix setup exceptions when an existing Home library or standalone clock is selected.
+- Prevent an interrupted setup from locking normal displays, quick controls, Settings or updates.
+- Fix Restart setup failures caused by an unusable draft, unexpected file owner/type or unavailable archive. Start fresh without resetting active settings, keys, routes or prepared media; keep progress for the current session if its file cannot be written.
+- Keep old setup journals from being replayed over current settings at startup. Restart setup and Keep my settings actions do not activate hardware or change the active display.
+- Keep setup headings, the restart action and the game artwork editor’s final controls clear of Steam’s top and bottom bars, with internal scrolling.
+- Fix the game-summary card extending beyond the other artwork controls and wrap long game titles. Remove the redundant Back bar while preserving Steam’s native return navigation.
+- Hide the game-menu Faceplate artwork entry when the device is absent or current detection is unavailable.
+- Restore light-bar colour extension for prepared Home artwork and library GIFs without a Steam AppID.
+- Preserve confirmed clock playback sessions when renewing packets, replanning playback or changing transfer mode. Avoid redundant power-on commands during normal renewal on the same confirmed connection.
+- Prevent slow daylight calculations from being mistaken for a system-clock jump.
+- Centre both analog hands on one shared pivot across all five dial designs, and invalidate older cached renders with offset hands.
+
+The clock gallery and usage guides are included in the [1.6.0 guide](https://github.com/Alyenax/GabeCubeAura/wiki/Release-1.6.0). These changes do not establish a fix for every Faceplate firmware/flash fault or stale weather after system sleep.
+
+
 ## 1.5.1 · 2026-10-26
 
 ### Fixed

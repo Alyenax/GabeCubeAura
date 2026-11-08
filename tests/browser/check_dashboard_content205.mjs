@@ -3,7 +3,7 @@ import {createRequire} from 'node:module';
 import assert from 'node:assert/strict';
 import {mkdirSync,writeFileSync} from 'node:fs';
 import {showSettingsTab} from './settings_tabs_helper.mjs';
-const require=createRequire(process.env.GCA_QA_PLAYWRIGHT||'/Users/C/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/package.json');
+const require=createRequire(process.env.GCA_QA_PLAYWRIGHT||import.meta.url);
 const {chromium}=require('playwright');
 const url=process.argv[2];assert.match(url||'',/^http:\/\/127\.0\.0\.1:\d+\/$/);
 const out='out/ui/dashboard-content207/browser';mkdirSync(out,{recursive:true});

@@ -4,8 +4,8 @@ This inventory identifies **197 shipped graphical asset files** covered by CC BY
 
 | Collection | Files | Delivered representation |
 | --- | ---: | --- |
-| Steam Players City — animated production bank | 72 | RGBZ animation banks |
-| Steam Players City — reference artwork | 72 | RGBZ reference images |
+| Steam Players City - animated production bank | 72 | RGBZ animation banks |
+| Steam Players City - reference artwork | 72 | RGBZ reference images |
 | Weather Artwork V1 | 23 | 22 RGBZ banks and 1 reference GIF |
 | Weather Artwork V2 | 28 | RGBZ animation banks |
 | Weather rain animations | 2 | GIF animations |

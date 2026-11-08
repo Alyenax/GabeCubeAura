@@ -49,7 +49,12 @@ Screen Sync. Screen colours + stereo field migrates to Stereo Field with Screen
 Sync.
 
 Every pattern uses a Blackman-windowed 2048-sample FFT every 60 ms and automatic
-source-level matching. Bass, mid, high and shared stereo ranges adapt to the
+source-level matching. The FFT operation plan and Blackman coefficients are
+prepared lazily and reused as immutable tables, with one cached analysis size.
+They contain no captured samples or animation state. The operation order,
+analysis cadence and rendered patterns remain the same.
+
+Bass, mid, high and shared stereo ranges adapt to the
 15th and 92nd percentiles of a bounded 10.2-second window. The 17-band Spectrum
 uses one shared dB reference for the full bar, so it follows programme loudness
 without flattening the real differences between its frequency bands. Positive
@@ -70,8 +75,8 @@ Restore recommended tuning reloads only those reference values without
 replacing the chosen palette.
 
 Pattern, palette and Custom colours are selected independently for Home and
-in-game use. Brightness, Reactivity and the Hi-Fi Crest Lab controls are
-shared. Selecting a pattern recommendation in either context therefore changes
+in-game use. Brightness and Reactivity are shared. Selecting a pattern
+recommendation in either context therefore changes
 the shared response values, while leaving both contextual palettes untouched.
 A settings migration copies the former single pattern, palette and custom
 colours to both contexts. Fresh installations use Slow Prism with Screen Sync
@@ -104,17 +109,9 @@ while PipeWire and the new contextual source restart. Once a fresh Screen Sync
 or Artwork palette arrives, the existing interpolation fades toward it. This
 prevents a temporary fallback frame from appearing between contexts.
 
-## Temporary Hi-Fi Crest Lab
+## Timing diagnostics
 
-The Decky Audio Sync tab exposes three live calibration controls only while
-Hi-Fi Crest is selected. Crest strength isolates the travelling wave, Edge
-reach controls how much of that wave remains at the outer LEDs and Background
-level controls the permanent three-band visualizer underneath it. All three
-default to 100%, which reproduces the reference renderer. These controls are a
-temporary physical-hardware lab and can be removed after the target values are
-validated.
-
-The Lab also reports the timing path directly: 50 ms requested PipeWire
+Audio Sync diagnostics report the timing path directly: 50 ms requested PipeWire
 latency, 42.7 ms FFT window, 60 ms analysis hop, measured blocks per second,
 sample age, residual buffer, queue depth, 60 ms LED request cadence and the
 renderer 50 ms floor. Calm, Balanced, Fast and Punchy expose their discrete

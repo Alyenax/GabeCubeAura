@@ -113,7 +113,7 @@ export function Tabs({tabs,activeTab,onShowTab,wrapAround=true}){
   return <div data-qa-tabs className={cx('Focusable',t.GamepadTabbedPage)} onKeyDown={shoulder}>
     <div className={cx(t.TabHeaderRowWrapper,t.Pinned)}><div className={t.TabRow}>
       <div className={cx(t.Glyphs,t.Show)}>L1</div><div className={t.TabRowTabs} role="tablist" aria-orientation="horizontal"><div className={t.TabsRowScroll}><div className={cx('Focusable',t.FixCenterAlignScroll)}>
-        <div className={t.TabRowSpacer}/>{tabs.map(tab=><div key={tab.id} id={id+tab.id} role="tab" tabIndex={tab.footer?.focusable===false?-1:0} aria-selected={tab===active} aria-controls={id+tab.id+'_Content'} className={cx('Focusable',t.Tab,tab===active&&t.Selected)}
+        <div className={t.TabRowSpacer}/>{tabs.map(tab=><div key={tab.id} id={id+tab.id} role="tab" style={tab.footer?.style} tabIndex={tab.footer?.focusable===false?-1:0} aria-selected={tab===active} aria-controls={id+tab.id+'_Content'} className={cx('Focusable',t.Tab,tab===active&&t.Selected)}
          onFocus={tab.footer?.onFocus??(()=>onShowTab(tab.id))} onClick={tab.footer?.onActivate??(()=>onShowTab(tab.id))}><span className={t.TabTitle}>{tab.title}</span></div>)}<div className={t.TabRowSpacer}/>
       </div></div></div><div className={cx(t.Glyphs,t.Show)}>R1</div>
     </div></div>

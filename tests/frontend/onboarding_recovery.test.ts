@@ -1,3 +1,4 @@
+import {STEAM_ROUTE_FRAME} from '../../src/steam_route_viewport';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import test from 'node:test';
@@ -79,33 +80,33 @@ test('every recovery category has a human FR/EN explanation without raw exceptio
 });
 
 // Run the actual component's native button callback, not an HTML recreation.
-function mount(reset:()=>Promise<SetupSnapshot>,initialSnapshot:SetupSnapshot=broken,language='en',initialStatus:Record<string,unknown>={}){
+function mount(reset:()=>Promise<SetupSnapshot>,initialSnapshot:SetupSnapshot=broken,language='en',initialStatus:Record<string,unknown>={},recoverCurrent?:()=>Promise<any>){
   const source=readFileSync(new URL('../../src/components/FirstRunOnboarding.tsx',import.meta.url),'utf8');
   const ast=ts.createSourceFile('guide.tsx',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
   const body=ast.statements.filter(node=>!ts.isImportDeclaration(node)).map(node=>node.getText(ast)).join('\n');
   const hooks:any[]=[],navigations:string[]=[],saved:any[]=[];let cursor=0;
-  const context=vm.createContext({FACEPLATE_HOME_OPTIONS,FACEPLATE_GAME_OPTIONS,homeFaceChoice,isDashboardChoice,quickFaceOptions,exports:{},React:{createElement},
+  const context=vm.createContext({STEAM_ROUTE_FRAME,FACEPLATE_HOME_OPTIONS,FACEPLATE_GAME_OPTIONS,homeFaceChoice,isDashboardChoice,quickFaceOptions,exports:{},React:{createElement},
     useState:(initial:any)=>{const i=cursor++;if(!(i in hooks))hooks[i]=i===0?initialSnapshot:i===1?{...(typeof initial==='function'?initial():initial),...initialSnapshot.draft}:typeof initial==='function'?initial():initial;
       return [hooks[i],(next:any)=>{hooks[i]=typeof next==='function'?next(hooks[i]):next;}];},
     useRef:(initial:any)=>{const i=cursor++;return hooks[i]??(hooks[i]={current:initial});},useEffect:()=>{},
     DialogBody:'body-native',DialogHeader:'header-native',gamepadDialogClasses:{},DialogButton:'button',Focusable:'focusable',ScrollPanel:'scroll',PanelSection:'section',PanelSectionRow:'row',
     DropdownItem:'select',SliderField:'slider',TextField:'input',ToggleField:'toggle',
     setupSteps,setupNeeds,recoverSetupDraft,setupReadGate,setupRecoveryMessage,
-    resetOnboardingDraft:reset,QUICK_CONTROL_CSS:'',
+    resetOnboardingDraft:reset,restartOnboarding:reset,recoverOnboardingCurrentSettings:recoverCurrent,QUICK_CONTROL_CSS:'',
     saveOnboardingDraft:async(value:any)=>{saved.push(value);return value;},
     Navigation:{CloseSideMenus(){},Navigate:(route:string)=>navigations.push(route)},
     window:{clearTimeout,setTimeout,clearInterval},
   });
   vm.runInContext(ts.transpileModule(body,{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React}}).outputText,context);
-  let closed=0;
+  let closed=0;const accepted:any[]=[];
   const render=()=>{cursor=0;return context.exports.FirstRunOnboarding({status:{ui_language:language,light_bar_day_brightness:9,
     night_mode_enabled:false,night_mode_brightness:35,weather_location:null,
-    faceplate:{routing:{routes:{home:'dashboard'}},steamgriddb:{}},...initialStatus},setStatus:()=>assert.fail('active settings changed'),
+    faceplate:{routing:{routes:{home:'dashboard'}},steamgriddb:{}},...initialStatus},setStatus:(value:any)=>{if(!recoverCurrent)assert.fail('active settings changed');accepted.push(value);},
     onClose:()=>closed++,openBrowser:()=>{}});};
   const walk=(node:any):any[]=>Array.isArray(node)?node.flatMap(walk):!node||typeof node!=='object'?[]:
     [node,...walk(node.props?.children)];
   const text=(node:any):string=>Array.isArray(node)?node.map(text).join(' '):node&&typeof node==='object'?text(node.props?.children):String(node??'');
-  return {render,walk,text,navigations,saved,closed:()=>closed};
+  return {render,walk,text,navigations,saved,accepted,closed:()=>closed};
 }
 
 test('calibrated fresh setup retains the supplied brightness and cannot skip to confirmation',()=>{
@@ -182,11 +183,42 @@ test('actual quick panel places incomplete setup before update notice and compac
   vm.runInContext(ts.transpileModule(`export function render(status:any){return ${branch.whenTrue.getText(ast)}}`,{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React}}).outputText,context);
   const children=context.exports.render({onboarding_completed:false}).props.children.filter(Boolean);
   assert.equal(children[0].type,'section');assert.equal(children[1].type,'faceplate-setup');assert.equal(children[2].type,'update');assert.equal(children[3].type,'compact');
-  assert.equal(children[2].props.disabled,true);
+  assert.notEqual(children[2].props.disabled,true);
   const button=children[0].props.children[0].props.children;
   assert.equal(button.type,'button');assert.equal(button.props.children,'Open guided setup');
   button.props.onClick();assert.deepEqual(navigations,['close','/gabecubeaura/setup']);
-  children[2].props.onOpen();assert.equal(navigations.length,2,'Update route is locked too');
+  children[2].props.onOpen();assert.deepEqual(navigations.slice(-2),['close','/gabecubeaura/settings/updates']);
   assert.equal(context.exports.render({onboarding_completed:true}).props.children.filter(Boolean)[1].props.disabled,false);
   assert.deepEqual(context.exports.render({onboarding_completed:true}).props.children.filter(Boolean).map((child:any)=>child.type),['faceplate-setup','update','compact']);
+});
+
+
+test('interrupted setup recovery is explicit and a double click calls it once',async()=>{
+ let calls=0;const pending=deferred<any>();
+ const mounted=mount(async()=>ready,{...ready,recovery_error:'ValueError',draft:{step:'review'}},'fr',{},()=>{calls++;return pending.promise;});
+ let tree=mounted.render();assert.equal(calls,0);
+ assert.match(mounted.text(tree),/commandes restent disponibles/);
+ const button=mounted.walk(tree).find(n=>n.type==='button'&&mounted.text(n)==='Conserver mes réglages et reprendre');
+ button.props.onClick();button.props.onClick();await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(calls,1);assert.equal(mounted.closed(),0);
+ pending.resolve({faceplate:'restoring'});await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(mounted.closed(),1);assert.equal(mounted.accepted[0].faceplate,'restoring');
+});
+
+test('failed recovery leaves the guide open with a retry and never reports success',async()=>{
+ let calls=0;const mounted=mount(async()=>ready,{...ready,recovery_error:'ValueError',draft:{step:'review'}},'en',{},async()=>{calls++;throw new Error('Backup failed');});
+ const button=()=>mounted.walk(mounted.render()).find(n=>n.type==='button'&&mounted.text(n)==='Keep my settings and resume');
+ button().props.onClick();await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(mounted.closed(),0);assert.equal(mounted.accepted.length,0);assert.match(mounted.text(mounted.render()),/Backup failed/);
+ button().props.onClick();await new Promise(resolve=>setImmediate(resolve));assert.equal(calls,2);
+});
+
+test('a persistent setup error exposes one prominent restart button and starts the guide fresh',async()=>{
+ let calls=0;const pending=deferred<SetupSnapshot>();
+ const mounted=mount(()=>{calls++;return pending.promise;},{...ready,bar_detected:true,recovery_error:'ValueError',draft:{step:'review'}},'en');
+ const tree=mounted.render();const button=mounted.walk(tree).find(n=>n.type==='button'&&mounted.text(n)==='Restart setup');
+ assert.ok(button);assert.equal(button.props.style.minHeight,48);assert.equal(button.props.style.fontWeight,700);
+ button.props.onClick();button.props.onClick();await new Promise(resolve=>setImmediate(resolve));assert.equal(calls,1);
+ pending.resolve({...ready,bar_detected:true,draft:{}});await new Promise(resolve=>setImmediate(resolve));
+ const after=mounted.text(mounted.render());assert.match(after,/Your experience/);assert.match(after,/Setup has restarted/);assert.doesNotMatch(after,/ValueError/);assert.equal(mounted.closed(),0);
 });

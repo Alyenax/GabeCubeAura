@@ -168,7 +168,9 @@ class PhysicalOwnership:
     location (not VID/PID alone); tty aliases resolve to the same lock key.
     Locks remain held while the owner closes/reopens the serial descriptor.
     """
-    def __init__(self, root):
+    def __init__(self, root, control=None):
+        from .control import FaceplateControl
+        self.usb_control = control if control is not None else FaceplateControl()
         self.root = Path(root)
         self.lock = threading.RLock()
         self.descriptors = {}
@@ -224,6 +226,10 @@ class PhysicalOwnership:
                 return False
 
     def close(self):
+        self.usb_control.close()
+        self.release_claims()
+
+    def release_claims(self):
         with self.lock:
             for fd in self.descriptors.values():
                 os.close(fd)
@@ -255,8 +261,31 @@ class Link:
         self.flash_manager = None
         self.flash_priority = "background"
         self.flash_scene = "scene"
+        self._usb_control = None
 
     def open(self):
+        control = getattr(_ownership_manager, "usb_control", None)
+        if control is None:
+            return self._open_new()
+        try:
+            control.begin()
+        except OSError as error:
+            raise LinkBusy(str(error)) from error
+        self._usb_control = control
+        try:
+            cached = control.reuse(self.port, device_identity(self.port))
+            if cached is not None:
+                self.fd = cached
+                termios.tcflush(self.fd, termios.TCIOFLUSH)
+                self.rx.clear()
+                return self
+            return self._open_new()
+        except Exception as error:
+            control.failed(error)
+            self.close()
+            raise
+
+    def _open_new(self):
         if not self.port:
             raise LinkError("faceplate not found (no JSAUX CH340 ttyUSB)")
         if _ownership_manager is not None and not _ownership_manager.claim(self.port):
@@ -264,7 +293,8 @@ class Link:
         owners = port_owner_details(self.port)
         if owners:
             raise LinkError("faceplate serial port owned by " + ", ".join(owners))
-        fd = os.open(self.port, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
+        flags = os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK
+        fd = self._usb_control.open_port(self.port, flags) if self._usb_control is not None else os.open(self.port, flags)
         # Cooperate with Pixel Faceplate's flock; /proc checks are advisory
         # diagnostics and cannot prevent simultaneous competing opens.
         try:
@@ -289,23 +319,34 @@ class Link:
                 raise LinkError(f'faceplate serial configuration failed: {error}') from error
             raise
         self.fd = fd
+        if self._usb_control is not None:
+            self._usb_control.retain(fd, self.port, device_identity(self.port))
         self.rx.clear()
         return self
 
     def close(self):
-        if self.fd is not None:
-            try:
-                os.close(self.fd)
-            finally:
-                self.fd = None
+        try:
+            if self.fd is not None:
+                try:
+                    os.close(self.fd)
+                finally:
+                    self.fd = None
+        finally:
+            if self._usb_control is not None:
+                control, self._usb_control = self._usb_control, None
+                control.end()
 
     def __enter__(self):
         return self.open()
 
-    def __exit__(self, *_):
+    def __exit__(self, exc_type=None, error=None, traceback=None):
+        if error is not None and self._usb_control is not None:
+            self._usb_control.failed(error)
         self.close()
 
     def write(self, data: bytes):
+        if self._usb_control is not None and not self._usb_control.permitted():
+            raise TransferCancelled("Faceplate access released to another app")
         if (len(data) >= 4 and (data[2], data[3]) in {
                 (protocol.TYPE_CONTROL, protocol.CMD_GIF_BEGIN),
                 (protocol.TYPE_CONTROL, protocol.CMD_GIF_END),
@@ -315,12 +356,17 @@ class Link:
         view = memoryview(data)
         deadline = time.monotonic() + 2.0
         while view:
+            if self._usb_control is not None and not self._usb_control.permitted():
+                raise TransferCancelled("Faceplate access released to another app")
             _, ready, _ = select.select([], [self.fd], [], 0.5)
             if not ready:
                 if time.monotonic() > deadline:
                     raise LinkError("serial write timed out")
                 continue
-            view = view[os.write(self.fd, view):]
+            if self._usb_control is not None and not self._usb_control.permitted():
+                raise TransferCancelled("Faceplate access released to another app")
+            written = self._usb_control.write_port(self.fd, view) if self._usb_control is not None else os.write(self.fd, view)
+            view = view[written:]
         try:
             termios.tcdrain(self.fd)
         except termios.error as error:

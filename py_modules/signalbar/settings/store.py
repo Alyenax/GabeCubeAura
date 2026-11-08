@@ -164,6 +164,9 @@ DEFAULTS = {
     # Product default; existing explicit Off remains authoritative on load.
     # Following is independent of completing the device's guided setup.
     "faceplate_lab_enabled": True,
+    "faceplate_control_mode": "automatic",
+    "faceplate_allow_das": True,
+    "faceplate_allow_dva": True,
     "faceplate_flash_protection_enabled": True,
     "faceplate_continuous_home_return": False,
     "faceplate_performance_interval_seconds": 5,
@@ -195,6 +198,17 @@ DEFAULTS = {
     "faceplate_dashboard_contexts": {},
     "faceplate_playtime_enabled": True,
     "faceplate_player_city_row": "count",
+    "faceplate_clock_home": "",
+    "faceplate_clock_game": "",
+    "faceplate_clock_cadence_home": "conservative",
+    "faceplate_clock_cadence_game": "conservative",
+    "faceplate_clock_palette_home": "amber",
+    "faceplate_clock_palette_game": "amber",
+    "faceplate_clock_format_home": "24",
+    "faceplate_clock_format_game": "24",
+    "faceplate_home_library_source": "artwork",
+    "faceplate_home_library_shuffle": False,
+    "faceplate_home_library_interval": 300,
     "faceplate_player_city_dashboard_row": "controllers",
     "faceplate_player_city_battery_style": "percent",
     # Lab 42 favours a trustworthy clock. The upload target is compensated by
@@ -1109,6 +1123,10 @@ class SettingsStore:
             except (TypeError, ValueError, OverflowError):
                 self._data[key] = DEFAULTS[key]
         self._data["faceplate_lab_enabled"] = bool(self._data["faceplate_lab_enabled"])
+        if self._data["faceplate_control_mode"] not in ("automatic", "gca-priority", "other-app"):
+            self._data["faceplate_control_mode"] = "automatic"
+        for key in ("faceplate_allow_das", "faceplate_allow_dva"):
+            self._data[key] = self._data[key] is True
         self._data["faceplate_continuous_home_return"] = self._data.get("faceplate_continuous_home_return", False) is True
         self._data["faceplate_flash_protection_enabled"] = self._data.get("faceplate_flash_protection_enabled", True) is not False
         from signalbar.faceplate.performance_policy import interval_seconds, CONSENT_REVISION
@@ -1135,6 +1153,20 @@ class SettingsStore:
                 ("faceplate_player_city_battery_style", {"percent", "bar"})):
             if not isinstance(self._data.get(key), str) or self._data[key] not in choices:
                 self._data[key] = DEFAULTS[key]
+        from signalbar.faceplate.clocks import catalog
+        clock_ids = {entry['id'] for entry in catalog()}
+        for key in ('faceplate_clock_home', 'faceplate_clock_game'):
+            if self._data.get(key) not in clock_ids:
+                self._data[key] = ''
+        from signalbar.faceplate.clock_standard import PALETTES
+        for context in ('home', 'game'):
+            for option, choices in (('palette', PALETTES), ('format', ('24', '12')), ('cadence', ('conservative', 'minute'))):
+                key = 'faceplate_clock_'+option+'_'+context
+                if self._data.get(key) not in choices: self._data[key] = DEFAULTS[key]
+        if not isinstance(self._data.get('faceplate_home_library_source'), str) or self._data['faceplate_home_library_source'] not in {'artwork', 'creations', 'both'}:
+            self._data['faceplate_home_library_source'] = 'artwork'
+        if type(self._data.get('faceplate_home_library_interval')) is not int or self._data['faceplate_home_library_interval'] not in {300, 900, 1800, 3600}:
+            self._data['faceplate_home_library_interval'] = 300
         self._data['faceplate_dashboard_contexts'] = validate_contexts(
             self._data.get('faceplate_dashboard_contexts'))
         if self._data.get("faceplate_dashboard_battery_style") not in {
@@ -1437,6 +1469,21 @@ class SettingsStore:
     def _update(self, changes: dict):
         with self._lock:
             changes = dict(changes)
+            from signalbar.faceplate.clocks import require_clock
+            for key in ('faceplate_clock_home', 'faceplate_clock_game'):
+                if key in changes:
+                    require_clock(changes[key])
+            from signalbar.faceplate.clock_standard import PALETTES
+            for context in ('home', 'game'):
+                for option, choices in (('palette', PALETTES), ('format', ('24', '12')), ('cadence', ('conservative', 'minute'))):
+                    key = 'faceplate_clock_'+option+'_'+context
+                    if key in changes and changes[key] not in choices:
+                        raise ValueError('Choose a supported clock '+option)
+            if "faceplate_control_mode" in changes and changes["faceplate_control_mode"] not in ("automatic", "gca-priority", "other-app"):
+                raise ValueError("Choose a supported Faceplate control mode")
+            for key in ("faceplate_allow_das", "faceplate_allow_dva"):
+                if key in changes and type(changes[key]) is not bool:
+                    raise ValueError("Faceplate integration permission must be a boolean")
             if 'screensaver_light_bar_mode' in changes:
                 changes['screen_sync_screensaver_enabled']=changes['screensaver_light_bar_mode']=='screen_sync'
             if 'screensaver_light_bar_mode' not in changes and 'screen_sync_screensaver_enabled' in changes:

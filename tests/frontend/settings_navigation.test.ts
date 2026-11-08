@@ -37,7 +37,7 @@ test('slow content registration is bounded; moving to sidebar or unmount cancels
 });
 test('content entry resets natively; headers/B are not captured and no DOM focus scan is shipped',()=>{
  const src=readFileSync(new URL('../../src/components/SimpleSettings.tsx',import.meta.url),'utf8');
- assert.match(src,/cancelSkipTabHeader/);assert.match(src,/footer:SETTINGS_TAB_INDICATOR/);
+ assert.match(src,/cancelSkipTabHeader/);assert.match(src,/footer:[^\n]*SETTINGS_TAB_INDICATOR/);
  assert.match(src,/resetNavOnEntry:true/);assert.match(src,/navEntryPreferPosition=\{NavEntryPositionPreferences.FIRST\}/);
  assert.doesNotMatch(src,/document\.querySelector|\.focus\(|onCancelButton|onGamepadDirection/);
  const css=readFileSync(new URL('../../src/settings_theme.ts',import.meta.url),'utf8');

@@ -1,3 +1,12 @@
+import {STEAM_ROUTE_FRAME} from './steam_route_viewport';
+import {GameArtworkOverview} from './components/GameArtworkOverview';
+import {GAME_ARTWORK_ROUTE,steamAppId,steamGameTitle} from './game_artwork_menu';
+import {startGameArtworkMenu} from './game_artwork_menu_patch';
+import {SETTINGS_CSS} from './settings_theme';
+import {FaceplateClockSettings,openClockPicker} from './components/FaceplateClocks';
+import {HomeLibrarySettings} from './components/HomeLibrarySettings';
+import {HOME_DISPLAY_OPTIONS} from './home_display_options';
+import {FaceplatePrioritySettings} from './components/FaceplatePrioritySettings';
 import {ArtworkLogoScale} from './components/ArtworkLogoScale';
 import {faceplateBrightnessNotice} from './faceplate_power';
 import {
@@ -33,18 +42,18 @@ import {gameDisplayOptions} from './game_display_options';
 import {FACEPLATE_HOME_OPTIONS,FACEPLATE_GAME_OPTIONS,homeFaceChoice,isDashboardChoice} from './faceplate_choices';
 import { UpdateAvailableButton } from './components/UpdateAvailableButton';
 import { statusRefreshGate } from './status_refresh_gate';
-import {publishQuickSetupStatus,quickSetupCompleted,subscribeQuickSetup} from './quick_setup_access';
+import {publishQuickSetupStatus,subscribeQuickSetup} from './quick_setup_access';
 import {QUICK_AMBIENCES,LEGACY_AMBIENCES,presetSummary} from './lighting_presets';
 import {EFFECTS_HELP,initialSettingsEffect} from './settings_navigation';
 import {SimpleSettings} from './components/SimpleSettings';
 import {FaceplateDashboardSettings} from './components/FaceplateDashboardSettings';
 import {SettingsDetails} from './components/SettingsDetails';
-import {SettingsPart,SettingsHelpText,useSettingsPresentation} from './settings_presentation';
+import {SettingsPart,SettingsHelpText,SettingsPresentation,useSettingsPresentation} from './settings_presentation';
 import {SETTINGS_ALIASES,SETTINGS_ROUTE_PATTERN,settingsSources,type SettingsSelection,type SettingsSourcePage} from './settings_structure';
 import { OpaqueColorPickerModal, ColorChoice, PreciseColorEditor } from "./components/PreciseColorEditor";
 import { AmbienceProfilesPanel } from "./components/AmbienceProfilesPanel";
 import { definePlugin, openFilePicker, routerHook } from "@decky/api";
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { TbCubeSpark, TbSettings } from "react-icons/tb";
 
 import {
@@ -55,7 +64,7 @@ import {
   cancelFaceplateArtwork,
   activateFaceplateArtwork,
   assignFaceplateDashboardArtwork, commitFaceplateDashboardArtwork,
-  deleteFaceplateArtwork,
+  deleteFaceplateArtwork, resetFaceplateGameArtwork, setFaceplateGameArtworkLayout,
   dismissUpdateError,
   importConfiguration,
   getArtwork,
@@ -136,15 +145,6 @@ declare const SteamClient: any;
 // Independent of the historical renderer/layout preference, kept for compatibility.
 const STUDIO_UX = true;
 
-const HOME_DISPLAY_OPTIONS: { data: HomeDisplay; label: string }[] = [
-  { data: "faceplate_extension", label: "Faceplate image extension" },
-  { data: "blackout", label: "Blackout (held off)" },
-  { data: "customization", label: "Customization+" },
-  { data: "performance", label: "Performance" },
-  { data: "audio_sync", label: "Audio Sync" },
-  { data: "weather", label: "Weather" },
-  { data: "controller", label: "Controller status" },
-];
 
 const FACEPLATE_DASHBOARD_SOURCE_OPTIONS = [
   { data: "weather", label: "Weather Dashboard · Realistic" },
@@ -1841,12 +1841,12 @@ function SetupFrame({ step, title, description, children, showScrollCue = false 
   }, [showScrollCue, step]);
 
   return <Focusable aria-label={`GabeCubeAura setup, step ${step} of 3`} style={{
-    width: "100%",
-    height: "100%",
-    maxHeight: "100%",
+    ...STEAM_ROUTE_FRAME,
+
+
     boxSizing: "border-box",
     overflow: "hidden",
-    position: "relative",
+
     background: "var(--gpSystemDarkestGrey,#0e141b)",
   }} onScrollCapture={() => setScrollCueVisible(false)}>
     <ScrollPanel><div style={{ width: "100%", maxWidth: 1040, margin: "0 auto", boxSizing: "border-box", padding: "40px clamp(32px, 6vw, 88px) 156px" }}>
@@ -1964,14 +1964,16 @@ const FACEPLATE_LOGO_POSITION_OPTIONS = [
   { data: "top", label: "Top · replaces clock" },
 ];
 
-function PixelStudioArtworkPanel({ status, setStatus }: {
+function PixelStudioArtworkPanel({ status, setStatus, initialGame, installedGames = [] }: {
   status: Status;
   setStatus: (next: Status) => void;
+  initialGame?: FaceplateInstalledGame;
+  installedGames?: FaceplateInstalledGame[];
 }) {
-  const [games, setGames] = useState<FaceplateInstalledGame[]>([]);
+  const [games, setGames] = useState<FaceplateInstalledGame[]>(installedGames);
   const [gameQuery, setGameQuery] = useState("");
-  const [selectedGame, setSelectedGame] = useState<FaceplateInstalledGame | null>(null);
-  const [choosingGame, setChoosingGame] = useState(true);
+  const [selectedGame, setSelectedGame] = useState<FaceplateInstalledGame | null>(initialGame ?? null);
+  const [choosingGame, setChoosingGame] = useState(!initialGame);
   const [preference, setPreference] = useState<"static" | "animated_any" | "hero_pan">("static");
   const [results, setResults] = useState<FaceplateArtworkAsset[]>([]);
   const [resultIndex, setResultIndex] = useState(0);
@@ -2006,6 +2008,8 @@ function PixelStudioArtworkPanel({ status, setStatus }: {
   const [useForDashboardHome, setUseForDashboardHome] = useState(false);
   type Destination = "game" | "game-dashboard" | "home" | "both";
   const [destination, setDestination] = useState<Destination>("game");
+  const [dashboardPresentation, setDashboardPresentation] = useState(false);
+  const withDashboard = destination === "game-dashboard" || (destination !== "game" && dashboardPresentation);
   const [draftPreviewKey, setDraftPreviewKey] = useState("");
   const [appliedDraftKey, setAppliedDraftKey] = useState("");
   const [loopCleanup, setLoopCleanup] = useState<"no" | "soft" | "medium" | "aggressive">("no");
@@ -2076,12 +2080,13 @@ function PixelStudioArtworkPanel({ status, setStatus }: {
     // A delete or a newer refresh may have changed the local list while the
     // backend was resolving Steam game names. Never restore that stale list.
     if (request !== libraryRequest.current) return;
-    setLibrary(value.entries);
-    setLibrarySelection((current) => current && value.entries.some(
+    const entries = selectedGame ? value.entries.filter(item => item.appid === selectedGame.appid) : [];
+    setLibrary(entries);
+    setLibrarySelection((current) => current && entries.some(
       (item) => `${item.appid}:${item.mode}` === current,
-    ) ? current : value.entries.length
-      ? `${value.entries[0].appid}:${value.entries[0].mode}` : "");
-  }, []);
+    ) ? current : entries.length
+      ? `${entries[0].appid}:${entries[0].mode}` : "");
+  }, [selectedGame?.appid]);
 
   useEffect(() => {
     void refreshLibrary().catch((error) => {
@@ -2103,11 +2108,11 @@ function PixelStudioArtworkPanel({ status, setStatus }: {
         if (target === "game" || target === "game-dashboard") {
           await activateFaceplateArtwork(appid, mode, true, prepared?.sha256,
             target === "game" ? "artwork" : "artwork-dashboard");
-        } else await commitFaceplateDashboardArtwork(appid, mode, true, target === "home", prepared?.sha256, false);
+        } else await commitFaceplateDashboardArtwork(appid, mode, true, target === "home", prepared?.sha256, false, dashboardPresentation ? "artwork-dashboard" : "artwork");
         await getStatus().then(setStatus).catch((error) => {
           console.warn("[GabeCubeAura] artwork applied; status refresh failed", error);
         });
-        setAppliedDraftKey(`${prepared?.sha256}:${target}`);
+        setAppliedDraftKey(`${prepared?.sha256}:${target}:${dashboardPresentation}`);
         if ((target === "home" && status.game.appid === 0) || target === "both"
             || (target.startsWith("game") && status.game.appid === appid)) {
           deliveryKey.current = "";
@@ -2177,7 +2182,7 @@ function PixelStudioArtworkPanel({ status, setStatus }: {
       applyingPrepared.current = false;
       setBusy(false);
     }
-  }, [refreshArtworkState, refreshLibrary, restoreArtworkFocus, setStatus, status, useForDashboardHome, destination]);
+  }, [refreshArtworkState, refreshLibrary, restoreArtworkFocus, setStatus, status, useForDashboardHome, destination, dashboardPresentation]);
 
   useEffect(() => {
     if (!deliveryWatch) return;
@@ -2218,7 +2223,7 @@ function PixelStudioArtworkPanel({ status, setStatus }: {
         || preparedIdentity.current !== preparationIdentity) return;
     let alive = true;
     setDraftPreviewKey("");
-    const dashboard = destination !== "game";
+    const dashboard = withDashboard;
     setNativePreview(""); setDashboardPreview("");
     setNativePreviewBusy(true);
     void (dashboard
@@ -2250,7 +2255,7 @@ function PixelStudioArtworkPanel({ status, setStatus }: {
       }
     });
     return () => { alive = false; };
-  }, [STUDIO_UX, selectedGame?.appid, artworkState?.job.state, artworkState?.job.prepared?.sha256, destination, preparationIdentity, status.faceplate_dashboard_show_clock, status.faceplate_dashboard_show_weather, status.faceplate_dashboard_contexts]);
+  }, [STUDIO_UX, selectedGame?.appid, artworkState?.job.state, artworkState?.job.prepared?.sha256, destination, preparationIdentity, status.faceplate_dashboard_show_clock, status.faceplate_dashboard_show_weather, status.faceplate_dashboard_contexts, withDashboard]);
 
   useEffect(() => {
     if (!selectedGame) return;
@@ -2320,18 +2325,8 @@ function PixelStudioArtworkPanel({ status, setStatus }: {
       setDashboardShowSession(false);
       setDashboardShowBattery(false);
     }
-    if (gameProfile && selectedGame) {
-      const id = String(selectedGame.appid);
-      const next = {
-        ...status.faceplate_artwork_profiles,
-        [id]: { ...gameProfile, [key]: value },
-      };
-      setStatus(await setSetting("faceplate_artwork_profiles", next));
-    } else {
-      setStatus(await setSetting(
-        key === "style" ? "faceplate_artwork_style" : "faceplate_logo_position",
-        value,
-      ));
+    if (selectedGame) {
+      setStatus(await setFaceplateGameArtworkLayout(selectedGame.appid, key, value));
     }
     restoreArtworkFocus(key === "style" ? "artwork-style" : "logo-position");
   };
@@ -2362,7 +2357,7 @@ function PixelStudioArtworkPanel({ status, setStatus }: {
   const weatherDashboardVariant = Number(status[
     `weather_${weatherDashboardCondition}_variant` as keyof Status
   ] ?? 0);
-  const resultPreview = (STUDIO_UX ? destination === "game" : previewTarget === "artwork")
+  const resultPreview = (STUDIO_UX ? !withDashboard : previewTarget === "artwork")
     ? nativePreview
     : STUDIO_UX || previewTarget === "dashboard" ? dashboardPreview : weatherDashboardPreview;
   const sourcePreview = candidate ? <ArtworkCropPreview asset={candidate}
@@ -2391,7 +2386,7 @@ function PixelStudioArtworkPanel({ status, setStatus }: {
   };
 
   const search = async () => {
-    if (!selectedGame) return;
+    if (!selectedGame || !status.faceplate.steamgriddb.configured) return;
     setDraftPreviewKey("");
     setBusy(true); setMessage("Searching SteamGridDB…"); setResults([]); setResultIndex(0); setSelectedAsset(null);
     try {
@@ -2578,7 +2573,22 @@ function PixelStudioArtworkPanel({ status, setStatus }: {
       }} />);
   };
 
-  return <Focusable ref={artworkPanelRef} preferredFocus
+  const resetCurrentGame = () => {
+    if (!selectedGame || busy || jobRunning) return;
+    let modal: ReturnType<typeof showModal> | undefined;
+    modal = showModal(<ConfirmModal strTitle="Use default Faceplate artwork?"
+      strDescription="This game will follow the default artwork. Prepared files and the Home display are kept."
+      strOKButtonText="Use default" strCancelButtonText="Cancel" onCancel={() => modal?.Close()}
+      onOK={() => {
+        modal?.Close(); if(applyingPrepared.current)return;applyingPrepared.current=true;setBusy(true);
+        void resetFaceplateGameArtwork(selectedGame.appid).then(async next => {
+          setStatus(next); await refreshArtworkState(selectedGame.appid); await refreshLibrary();
+          setMessage('Default artwork restored. Your prepared copies have been kept.');
+        }).catch(() => setMessage('The default could not be restored. Try again.'))
+          .finally(() => {applyingPrepared.current=false;setBusy(false);});
+      }}><p translate="no">{selectedGame.name}</p></ConfirmModal>);
+  };
+  return <Localized><Focusable ref={artworkPanelRef} preferredFocus
     navEntryPreferPosition={NavEntryPositionPreferences.PREFERRED_CHILD}
     style={{ width: "100%" }}>
     {library.length ? <PanelSection title="Saved artwork">
@@ -2621,26 +2631,34 @@ function PixelStudioArtworkPanel({ status, setStatus }: {
         disabled={libraryBusy || jobRunning || status.game.appid > 0}
         onClick={confirmLibraryDelete}>Delete</ButtonItem></PanelSectionRow>
     </PanelSection> : null}
+    {!status.faceplate.steamgriddb.configured ? <PanelSection title="SteamGridDB connection">
+      <PanelSectionRow><ButtonItem label="Connect SteamGridDB"
+        description="Connect to browse new artwork. Prepared copies remain available offline."
+        onClick={()=>Navigation.Navigate('/gabecubeaura/settings/pixel-artwork')}>Connection settings</ButtonItem></PanelSectionRow>
+    </PanelSection> : null}
     <PanelSection title="Game">
       {selectedGame && !choosingGame ? <>
         <PanelSectionRow><div style={{
-          width: "100%", padding: "12px 14px", borderRadius: 12,
+          width: "100%", boxSizing: "border-box", minWidth: 0, padding: "12px 14px", borderRadius: 12,
           background: "linear-gradient(135deg,rgba(40,215,255,.15),rgba(173,92,255,.12))",
         }}>
-          <div translate="no" style={{ fontSize: "1.05em", fontWeight: 700 }}>{selectedGame.name}</div>
+          <div translate="no" style={{ fontSize: "1.05em", fontWeight: 700, overflowWrap: "anywhere" }}>{selectedGame.name}</div>
           <div style={{ marginTop: 4, fontSize: ".76em", opacity: .68 }}>
             {artworkState?.selected?.asset_id
               ? `${artworkState.selected.animated ? "Animated" : "Static"} artwork active`
               : "No custom faceplate artwork yet"}
           </div>
         </div></PanelSectionRow>
-        <PanelSectionRow><Focusable data-artwork-focus="change-game" style={{ width: "100%" }}>
+        {!initialGame ? <PanelSectionRow><Focusable data-artwork-focus="change-game" style={{ width: "100%" }}>
           <ButtonItem label="Choose another game" disabled={jobRunning}
             onClick={() => {
               setChoosingGame(true); setGameQuery("");
               restoreArtworkFocus("game-search");
             }}>Change</ButtonItem>
-        </Focusable></PanelSectionRow>
+        </Focusable></PanelSectionRow> : null}
+        <PanelSectionRow><ButtonItem label="Use default artwork" disabled={busy || jobRunning}
+          description="Keep prepared copies and let this game follow the default artwork."
+          onClick={resetCurrentGame}>Use default</ButtonItem></PanelSectionRow>
       </> : <>
         {!games.length ? <PanelSectionRow><Focusable data-artwork-focus="choose-game" style={{ width: "100%" }}>
           <ButtonItem label="Choose a game"
@@ -2835,13 +2853,14 @@ function PixelStudioArtworkPanel({ status, setStatus }: {
         description="Preparing and previewing do not change either display."
         disabled={busy || jobRunning}
         rgOptions={[
-          { data: "game", label: "Game · artwork only" },
-          { data: "game-dashboard", label: "Game · illustrated Dashboard" },
-          { data: "home", label: "Home · illustrated Dashboard" },
-          { data: "both", label: "Home + game · illustrated Dashboard" },
+          { data: "game", label: "This game" },
+          ...(!initialGame ? [{ data: "home", label: "Home" },
+            { data: "both", label: "Home and this game" }] : []),
         ]}
-        selectedOption={destination}
-        onChange={(option) => { setDestination(option.data as typeof destination); setPreviewTarget(option.data === "game" ? "artwork" : "dashboard"); }} /></PanelSectionRow>
+        selectedOption={destination === "game-dashboard" ? "game" : destination}
+        onChange={(option) => {
+          setDestination(option.data === "game" && dashboardPresentation ? "game-dashboard" : option.data as typeof destination);
+        }} /></PanelSectionRow>
         : <PanelSectionRow><DropdownItem label="Dashboard Home after preparation"
         description={useForDashboardHome
           ? "Artwork Dashboard will use this game artwork behind the live information overlay."
@@ -2849,6 +2868,13 @@ function PixelStudioArtworkPanel({ status, setStatus }: {
         rgOptions={FACEPLATE_DASHBOARD_SOURCE_OPTIONS}
         selectedOption={useForDashboardHome ? "artwork" : "weather"}
         onChange={(option) => setUseForDashboardHome(option.data === "artwork")} /></PanelSectionRow>}
+      {STUDIO_UX ? <PanelSectionRow><ToggleField label="Show Dashboard information"
+        description="Uses the same prepared image, with your shared Dashboard settings."
+        checked={withDashboard} disabled={busy || jobRunning}
+        onChange={(value) => {
+          setDashboardPresentation(value);
+          if (destination === "game" || destination === "game-dashboard") setDestination(value ? "game-dashboard" : "game");
+        }} /></PanelSectionRow> : null}
       {preparationMode !== "static" || showAdjustments ? <PanelSectionRow><Focusable data-artwork-focus="use-artwork" style={{ width: "100%" }}>
         <ButtonItem label={preparationMode === "static" ? "Prepare preview" : "Prepare animation preview"}
           description={status.game.appid > 0 && artworkNeedsIdleGame(preparationMode)
@@ -2856,12 +2882,16 @@ function PixelStudioArtworkPanel({ status, setStatus }: {
             : "Creates a local 64 × 54 preview without sending it. Apply when ready."}
           disabled={status.game.appid > 0 && artworkNeedsIdleGame(preparationMode)}
           onClick={() => void prepare()}>{jobRunning ? "Preparing…" : STUDIO_UX ? "Prepare" : "Use"}</ButtonItem>
+        {status.game.appid > 0 && artworkNeedsIdleGame(preparationMode) ? <Localized><div
+          role="status" aria-live="polite" style={{marginTop:6,color:"#ffcf70",fontSize:".8em",lineHeight:1.4}}>
+          Close the game: processing an animation needs too many resources.
+        </div></Localized> : null}
       </Focusable>
       </PanelSectionRow> : null}
       {preparationMode === "static" ? <PanelSectionRow><Focusable data-artwork-focus={showAdjustments ? "use-static" : "use-artwork"} style={{ width: "100%" }}><ButtonItem label="Use this image"
         description="Prepares one static frame and applies your chosen display. Also works during a game."
         onClick={() => {
-          if (busy || jobRunning || appliedDraftKey === `${draftPreviewKey}:${destination}`) return;
+          if (busy || jobRunning || appliedDraftKey === `${draftPreviewKey}:${destination}:${dashboardPresentation}`) return;
           prepareFocus.current = showAdjustments ? "use-static" : "use-artwork";
           if (draftPreviewKey && job?.state === "ready" && job.mode && draftPreviewKey === job.prepared?.sha256) {
             void activatePrepared(selectedGame.appid, job.mode, job.prepared);
@@ -2874,10 +2904,10 @@ function PixelStudioArtworkPanel({ status, setStatus }: {
         {draftPreviewKey && resultPreview && !cropEditing ? <PanelSectionRow><img src={resultPreview}
           alt="Prepared Faceplate draft, not yet applied"
           style={{ display: "block", width: 256, maxWidth: "100%", imageRendering: "pixelated", aspectRatio: "64/54" }} /></PanelSectionRow> : null}
-        {preparationMode !== "static" ? <PanelSectionRow><Focusable data-artwork-focus="result-preview" style={{ width: "100%" }}><ButtonItem label={destination === "game" || destination === "game-dashboard" ? "Apply to this game" : destination === "home" ? "Apply to Dashboard Home" : "Apply to both"}
+        {preparationMode !== "static" ? <PanelSectionRow><Focusable data-artwork-focus="result-preview" style={{ width: "100%" }}><ButtonItem label={destination === "game" || destination === "game-dashboard" ? "Apply to this game" : destination === "home" ? "Apply to Home" : "Apply to both"}
           disabled={!draftPreviewKey || draftPreviewKey !== job.prepared?.sha256}
           description="Selects the requested display and sends it when its destination is active."
-          onClick={() => !busy && !jobRunning && appliedDraftKey !== `${draftPreviewKey}:${destination}` && job.mode && selectedGame && void activatePrepared(selectedGame.appid, job.mode, job.prepared)}>{appliedDraftKey === `${draftPreviewKey}:${destination}` ? "Applied" : "Apply"}</ButtonItem></Focusable></PanelSectionRow> : null}
+          onClick={() => !busy && !jobRunning && appliedDraftKey !== `${draftPreviewKey}:${destination}:${dashboardPresentation}` && job.mode && selectedGame && void activatePrepared(selectedGame.appid, job.mode, job.prepared)}>{appliedDraftKey === `${draftPreviewKey}:${destination}:${dashboardPresentation}` ? "Applied" : "Apply"}</ButtonItem></Focusable></PanelSectionRow> : null}
       </> : null}
       {job && ["queued", "running", "cancelling", "failed", "cancelled"].includes(job.state) ? <PanelSectionRow><div style={{ width: "100%", fontSize: ".8em", lineHeight: 1.5 }}>
         <div style={{ height: 10, borderRadius: 5, overflow: "hidden", background: "rgba(255,255,255,.12)" }}>
@@ -2989,15 +3019,14 @@ function PixelStudioArtworkPanel({ status, setStatus }: {
             }}>{dashboardPreviewBusy || nativePreviewBusy ? "Rendering…" : "Preview"}</ButtonItem>
         </Focusable></PanelSectionRow>
       </PanelSection> : null}
-  </Focusable>;
+  </Focusable></Localized>;
 }
 
 function QuickSettingsAction(){
-  const completed=useSyncExternalStore(subscribeQuickSetup,quickSetupCompleted,quickSetupCompleted);
-  return <DialogButton className="gca-quick-gear" aria-label="Settings" disabled={!completed}
+  return <DialogButton className="gca-quick-gear" aria-label="Settings"
     style={{ width: 30, height: 30, minWidth: 0, minHeight: 30, padding: 0,
       flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-    onClick={() => { if(!quickSetupCompleted())return;Navigation.CloseSideMenus(); Navigation.Navigate("/gabecubeaura/settings"); }}>
+    onClick={() => { Navigation.CloseSideMenus(); Navigation.Navigate("/gabecubeaura/settings"); }}>
     <TbSettings size={19} aria-hidden="true" />
   </DialogButton>;
 }
@@ -3293,8 +3322,8 @@ function Content({ active=true, page: sourcePage = "quick", settingsView, initia
     }
   };
   const changeFaceplateRoute = async (
-    home: "weather" | "dashboard" | "artwork" | "artwork-dashboard" | "native-clock",
-    game: "dashboard" | "artwork" | "artwork-dashboard" | "weather" | "player-city",
+    home: "weather" | "dashboard" | "artwork" | "artwork-dashboard" | "native-clock" | "library" | "clock",
+    game: "dashboard" | "artwork" | "artwork-dashboard" | "weather" | "player-city" | "clock",
   ) => {
     setFaceplateActionBusy(true); setFaceplateRoutingMessage("");
     try {
@@ -3421,12 +3450,12 @@ function Content({ active=true, page: sourcePage = "quick", settingsView, initia
       {page === "quick" ? <>
         {!status.onboarding_completed ? <PanelSection title="First-time setup"><PanelSectionRow><QuickAction
           onClick={() => { Navigation.CloseSideMenus(); Navigation.Navigate("/gabecubeaura/setup"); }}>Open guided setup</QuickAction></PanelSectionRow>
-          <PanelSectionRow><Localized><small role="status">Finish the guided setup to unlock the controls below.</small></Localized></PanelSectionRow></PanelSection> : null}
+          <PanelSectionRow><Localized><small role="status">Guided setup is optional. You can use the controls below.</small></Localized></PanelSectionRow></PanelSection> : null}
         <FaceplateSetupNotice status={status} onOpen={() => {
           Navigation.CloseSideMenus(); Navigation.Navigate("/gabecubeaura/setup/faceplate");
         }}/>
-        <UpdateAvailableButton update={update} disabled={!status.onboarding_completed} onOpen={() => {
-          if(!quickSetupCompleted())return;Navigation.CloseSideMenus(); Navigation.Navigate('/gabecubeaura/settings/updates');
+        <UpdateAvailableButton update={update} disabled={false} onOpen={() => {
+          Navigation.CloseSideMenus(); Navigation.Navigate('/gabecubeaura/settings/updates');
         }} />
         <CompactQuickPanel active={active} status={status} setStatus={setStatus} colors={shownColors??[]}
           onMutationChange={active => statusReads.current.writing(active)}
@@ -3844,9 +3873,10 @@ function Content({ active=true, page: sourcePage = "quick", settingsView, initia
 
       {showPage("weather") ? <WeatherPanel status={status} setStatus={setStatus} /> : null}
 
-      {showPage("pixel-artwork") && settingsView ? <PixelStudioArtworkPanel status={status} setStatus={setStatus} /> : null}
+      {showPage("pixel-artwork") && settingsView ? <GameArtworkOverview status={status} setStatus={setStatus} /> : null}
 
       {showPage("pixel-settings") ? <>
+        {settingsView?<SettingsPart slot="faceplate.priority"><FaceplatePrioritySettings status={status} setStatus={setStatus}/></SettingsPart>:null}
         {STUDIO_UX ? <FaceplateStatePanel status={status} /> : <PixelStudioWeatherCatalog status={status} setStatus={setStatus} />}
         <SettingsPart slot="faceplate.protection"><FlashProtectionPanel status={status} collapsible={!settingsView}
           onChange={async enabled=>setStatus(await setSetting('faceplate_flash_protection_enabled',enabled))}/></SettingsPart>
@@ -3868,8 +3898,9 @@ function Content({ active=true, page: sourcePage = "quick", settingsView, initia
             disabled={faceplateActionBusy}
             selectedOption={homeFaceChoice(status)}
             onChange={async (option) => {
+              if(option.data==='clock'){openClockPicker(status,setStatus,'home');return;}
               await changeFaceplateRoute(
-                option.data as "weather" | "dashboard" | "artwork" | "artwork-dashboard" | "native-clock",
+                option.data as "weather" | "dashboard" | "artwork" | "artwork-dashboard" | "native-clock" | "library" | "clock",
                 status.faceplate.routing.routes.game,
               );
             }}
@@ -3877,6 +3908,7 @@ function Content({ active=true, page: sourcePage = "quick", settingsView, initia
           {isDashboardChoice(homeFaceChoice(status)) ? <PanelSectionRow><Localized><div role="status" style={{color:'#ffd27a',fontSize:'.85em'}}>
             See the Dashboard tab to configure your choices.
           </div></Localized></PanelSectionRow> : null}
+          {status.faceplate.routing.routes.home === 'clock'?<FaceplateClockSettings status={status} setStatus={setStatus} context="home"/>:null}
           {status.faceplate.routing.routes.home === "native-clock" ? <PanelSectionRow>
             <div style={{ fontSize: ".78em", lineHeight: 1.4, opacity: .8 }}>
               <div>Uses the JSAUX firmware clock instead of repeatedly uploading GIFs. The panel keeps time autonomously. Blue 24-hour display; entering the mode may still update flash settings.</div>
@@ -3884,6 +3916,9 @@ function Content({ active=true, page: sourcePage = "quick", settingsView, initia
             </div>
           </PanelSectionRow> : null}
           </SettingsPart>
+          {status.faceplate.routing.routes.home === 'library' ? <SettingsPart slot="faceplate.display">
+            <HomeLibrarySettings status={status} setStatus={setStatus} sources={[{data:'artwork',label:'Artwork SteamGridDB'}]}/>
+          </SettingsPart> : null}
           <SettingsPart slot="faceplate.dashboard">
             <FaceplateDashboardSettings status={status} setStatus={setStatus} />
           </SettingsPart>
@@ -3894,14 +3929,17 @@ function Content({ active=true, page: sourcePage = "quick", settingsView, initia
             rgOptions={FACEPLATE_GAME_OPTIONS}
             disabled={faceplateActionBusy}
             selectedOption={status.faceplate.routing.routes.game}
-            onChange={async (option) => await changeFaceplateRoute(
+            onChange={async (option) => {
+              if(option.data==='clock'){openClockPicker(status,setStatus,'game');return;}
+              await changeFaceplateRoute(
               homeFaceChoice(status),
-              option.data as "dashboard" | "artwork" | "artwork-dashboard" | "weather" | "player-city",
-            )}
+              option.data as "dashboard" | "artwork" | "artwork-dashboard" | "weather" | "player-city" | "clock",
+            );}}
           /></PanelSectionRow>
           {isDashboardChoice(status.faceplate.routing.routes.game) ? <PanelSectionRow><Localized><div role="status" style={{color:'#ffd27a',fontSize:'.85em'}}>
             See the Dashboard tab to configure your choices.
           </div></Localized></PanelSectionRow> : null}
+          {status.faceplate.routing.routes.game==='clock'?<FaceplateClockSettings status={status} setStatus={setStatus} context="game"/>:null}
           {status.faceplate.routing.routes.game==='player-city'?<PanelSectionRow><small role="status">{playerCitySummary(status)}</small></PanelSectionRow>:null}
           {status.faceplate.routing.routes.game==='player-city'?<PlayerCityRowSettings status={status} setStatus={setStatus} disabled={faceplateActionBusy}/>:null}
           </SettingsPart>
@@ -4006,7 +4044,7 @@ function Content({ active=true, page: sourcePage = "quick", settingsView, initia
         </PanelSection></SettingsHelpText>
       </> : null}
 
-      {showPage("pixel-artwork") && !settingsView ? <PixelStudioArtworkPanel status={status} setStatus={setStatus} /> : null}
+      {showPage("pixel-artwork") && !settingsView ? <GameArtworkOverview status={status} setStatus={setStatus} /> : null}
 
       {showPage("updates") && update ? <>
         <SettingsPart slot="updates.install"><PanelSection title="Software updates">
@@ -4334,6 +4372,40 @@ function FaceplateStatePanel({ status }: { status: Status }) {
   </PanelSection></SettingsPart>;
 }
 
+function GameFaceplateArtworkRoute() {
+  const params=useParams<{appid?:string}>();
+  const appid=params.appid===undefined?null:steamAppId(params.appid);
+  const [data,setData]=useState<{status:Status;games:FaceplateInstalledGame[]}|null>(null);
+  const [error,setError]=useState('');
+  const alive=useRef(true),request=useRef(0);
+  const invalid=params.appid!==undefined&&appid===null;
+  const load=async()=>{const current=++request.current;setError('');
+    try{const [status,list]=await Promise.all([getStatus(),getFaceplateInstalledGames().catch(error=>{if(appid)return {games:[],count:0};throw error;})]);
+      if(alive.current&&request.current===current){setUILanguage(status.ui_language);setData({status,games:list.games});}
+    }catch{if(alive.current&&request.current===current)setError('Could not open Faceplate artwork. Try again.');}
+  };
+  useEffect(()=>{alive.current=true;setData(null);if(!invalid)void load();
+    return()=>{alive.current=false;request.current++;};},[params.appid]);
+  const game=appid?data?.games.find(item=>item.appid===appid)??{appid,name:steamGameTitle(appid,`App ${appid}`)}:undefined;
+  return <Focusable id="gca-settings-root" style={{...STEAM_ROUTE_FRAME,background:'var(--gpSystemDarkestGrey,#0e141b)'}}>
+    <style>{SETTINGS_CSS+`.gca-game-artwork-scroll > *{height:100%;min-height:0;max-height:100%}`}</style>
+    <div style={{padding:'28px clamp(24px,5vw,68px) 12px',flex:'0 0 auto'}}>
+      <DialogHeader>{translate('JSAUX Faceplate artwork',data?.status.ui_language)}</DialogHeader>
+      {game?<div translate="no" style={{marginTop:8,fontSize:'1.1em',fontWeight:700}}>{game.name}</div>:null}
+    </div>
+    <div className="gca-game-artwork-scroll" style={{flex:'1 1 0%',minHeight:0,overflow:'hidden'}}><ScrollPanel><div style={{width:'100%',maxWidth:1000,boxSizing:'border-box',margin:'0 auto',padding:'8px clamp(24px,5vw,68px) 100px'}}>
+      {invalid?<Localized><p>Invalid Steam game. Return to the library and open its game menu again.</p></Localized>
+        :data?<SettingsPresentation selection={{category:'faceplate',tab:'artwork'}} onOpen={()=>{}}>
+          {!data.status.faceplate.available?<Localized><p>Your Faceplate is not connected. You can prepare artwork now and apply it when it is connected.</p></Localized>:null}
+          <PixelStudioArtworkPanel key={appid??'choose'} initialGame={game} installedGames={data.games}
+            status={data.status} setStatus={status=>{setUILanguage(status.ui_language);retainedStatus=status;setData(previous=>previous?{...previous,status}:previous);}}/>
+        </SettingsPresentation>
+        :<Localized><p>{error||'Loading Faceplate artwork…'}</p></Localized>}
+      {error&&!invalid?<DialogButton onClick={()=>{load();}}>Try again</DialogButton>:null}
+    </div></ScrollPanel></div>
+  </Focusable>;
+}
+
 function GabeCubeAuraSettings({initialPage}:{initialPage?:SettingsSourcePage}={}) {
   const params=useParams<{source?:string}>();
   const source=initialPage??(params.source&&params.source in SETTINGS_ALIASES?params.source as SettingsSourcePage:undefined);
@@ -4355,8 +4427,13 @@ export default definePlugin(() => {
     .catch(() => undefined);
   const runtime = startGabeCubeAuraRuntime();
   const timerActions = startTimerActions();
-  const weatherTopBar = startWeatherTopBar();
+  const gameArtworkMenu = startGameArtworkMenu(state=>{void reportRuntimeDiagnostic('faceplate_menu_hook',0,state,0).catch(()=>undefined);});
+  // Reuse the existing five-second status poll, independently of the weather toggle.
+  const weatherTopBar = startWeatherTopBar(status=>{
+    gameArtworkMenu.setFaceplateAvailable(status?.faceplate?.available===true);
+  });
   const updateNotifications = startUpdateNotifications();
+  routerHook.addRoute(`${GAME_ARTWORK_ROUTE}/:appid?`, GameFaceplateArtworkRoute, {exact:true});
   routerHook.addRoute(SETTINGS_ROUTE_PATTERN, GabeCubeAuraSettings, {exact:true});
   routerHook.addRoute("/gabecubeaura/setup", FirstRunSetupRoute, { exact: true });
   routerHook.addRoute("/gabecubeaura/setup/faceplate", ()=><FirstRunSetupRoute faceplateOnly/>, {exact:true});
@@ -4378,6 +4455,8 @@ export default definePlugin(() => {
       timerActions.stop();
       weatherTopBar.stop();
       updateNotifications.stop();
+      gameArtworkMenu.stop();
+      routerHook.removeRoute(`${GAME_ARTWORK_ROUTE}/:appid?`);
       routerHook.removeRoute(SETTINGS_ROUTE_PATTERN);
       routerHook.removeRoute("/gabecubeaura/setup");
       routerHook.removeRoute("/gabecubeaura/setup/faceplate");

@@ -70,9 +70,19 @@ class CaptureEvidenceTests(unittest.TestCase):
 
     def test_empty_live_pipe_times_out_and_keeps_first_frame_evidence(self):
         clock = ManualClock(100)
+        class HealthyRegistry:
+            # This fixture advances eight simulated seconds without yielding
+            # real wall time to a worker. Keep its unrelated registry healthy;
+            # real asynchronous failures/stalls have their own tests.
+            def __init__(self, _read, initial, **_kwargs): self.initial = initial
+            def start(self): return self
+            def set_interval(self, _interval): pass
+            def snapshot(self): return self.initial, 0
+            def stop(self): pass
         with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
             process = SimpleNamespace(stdout=stdout, stderr=stderr, poll=lambda: None)
-            service = ScreenCaptureService(clock=clock, popen=lambda *_a, **_kw: process)
+            service = ScreenCaptureService(clock=clock, popen=lambda *_a, **_kw: process,
+                                           registry_factory=HealthyRegistry)
             service._active = True
             def advance(*_args):
                 clock.advance(1)

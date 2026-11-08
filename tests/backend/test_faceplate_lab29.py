@@ -1,4 +1,4 @@
-"""Lab 29 — serial exclusivity, power safety and explicit plugin handoff."""
+"""Lab 29 - serial exclusivity, power safety and explicit plugin handoff."""
 import errno
 import json
 import os

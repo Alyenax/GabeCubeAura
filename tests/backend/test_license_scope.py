@@ -21,7 +21,7 @@ class TestLicenseScope(unittest.TestCase):
         art = json.loads((ROOT / doc["asset_manifest"]).read_text())
         runtime = json.loads((ROOT / "scripts/runtime-files.json").read_text())
         paths = REQUIRED | {"package.json", "scripts/runtime-files.json"}
-        paths |= {p for p in runtime if p.startswith("licenses/") or p.startswith("assets/faceplate/")}
+        paths |= {p for p in runtime if p.startswith("licenses/") or p.startswith("assets/faceplate/") or p.startswith("assets/clocks/")}
         for group in ("gpl_source_paths", "inherited_bsd", "frontend_and_studio_source_paths"):
             paths.update(doc[group])
         paths.update(entry["source"] for entry in art["files"])

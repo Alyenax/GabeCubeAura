@@ -97,7 +97,7 @@ class FaceplateExtension:
             self.condition.notify_all()
 
     def _build(self, request):
-        if request['source'].get('kind') == 'artwork-strip':
+        if request['source'].get('kind') in ('artwork-strip', 'clock-strip'):
             # Already decoded on the existing Faceplate worker, not LED loop.
             name = request['mapping'] + ('-rotated' if request['rotate'] else '')
             return validate_frame(request['source']['colours'][name])

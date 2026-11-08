@@ -7,6 +7,7 @@ class PackagingTests(unittest.TestCase):
             root = Path(__file__).resolve().parents[2]
             panel = (root / "src/index.tsx").read_text(encoding="utf-8")
             engine = (root / "py_modules/signalbar/backend/engine.py").read_text(encoding="utf-8")
+            home_options = (root / "src/home_display_options.ts").read_text(encoding="utf-8")
             customization_catalog = (root / "src/customization_catalog.ts").read_text(encoding="utf-8")
             manifest = (root / "plugin.json").read_text(encoding="utf-8")
             package = (root / "package.json").read_text(encoding="utf-8")
@@ -145,7 +146,7 @@ class PackagingTests(unittest.TestCase):
             self.assertNotIn('label="Crest strength"', panel)
             self.assertNotIn('label="Edge reach"', panel)
             self.assertNotIn('label="Background level"', panel)
-            self.assertIn('{ data: "customization", label: "Customization+" }', panel)
+            self.assertIn("{data:'customization',label:'Customization+'}", home_options)
             self.assertIn('<CustomizationPanel status={status}', panel)
             self.assertIn('label="Brightness"', panel)
             self.assertIn('min={34} max={255} step={1}', panel)
@@ -201,7 +202,9 @@ class PackagingTests(unittest.TestCase):
             self.assertIn('label="Automatically check for updates"', panel)
             self.assertIn('label="Notify me when an update is available"', panel)
             self.assertIn('{ data: "private", label: "Private Lab" }', panel)
+            # Public releases retain local exports without private authorization UI.
             self.assertNotIn('<Disclosure title="Testing GitHub connection">', panel)
+            self.assertNotIn('{update.private_tools ? <SettingsPart', panel)
             self.assertNotIn('Detection is automatic. Use this to check immediately.', panel)
             self.assertNotIn('Update lab · TEST BUILD', panel)
             self.assertNotIn('stripmine_priority_screen_sync', panel)

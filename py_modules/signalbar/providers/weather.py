@@ -24,7 +24,8 @@ BLACK = (0, 0, 0)
 MAX_SAMPLE_AGE_SECONDS = 3600.0
 FACEPLATE_FALLBACK_AGE_SECONDS = 7200.0
 REFRESH_SECONDS = 900.0
-RETRY_SECONDS = 300.0
+RETRY_SECONDS = 30.0
+RETRY_WINDOW_SECONDS = 300.0
 CONDITIONS = (
     "clear_day", "clear_night", "rain", "cloud", "cloud_night",
     "breaks", "breaks_night", "snow", "storm",
@@ -355,6 +356,7 @@ class WeatherProvider:
         self._sample = None
         self._fetched_at = 0.0
         self._next_fetch = 0.0
+        self._retry_deadline = None
         self._error = ""
         self._fetching = False
         self._preview = None
@@ -424,6 +426,7 @@ class WeatherProvider:
                 self._sample = cached
                 self._fetched_at = cached_at
                 self._next_fetch = 0.0
+                self._retry_deadline = None
                 self._error = ""
                 self._fetching = False
                 self._generation += 1
@@ -470,6 +473,7 @@ class WeatherProvider:
                     if sample is not None:
                         self._sample = sample
                         self._fetched_at = self._clock()
+                        self._retry_deadline = None
                         self._persist_cached(self._location, sample)
                         self._error = ""
                         transition = sample.get("seconds_until_solar_transition")
@@ -482,7 +486,17 @@ class WeatherProvider:
                         )
                     else:
                         self._error = error or "weather unavailable"
-                        self._next_fetch = self._clock() + RETRY_SECONDS
+                        now = self._clock()
+                        if self._retry_deadline is None:
+                            self._retry_deadline = now + RETRY_WINDOW_SECONDS
+                        # One bounded recovery window per outage. Keep the
+                        # deadline after exhaustion so continued failures stay
+                        # on the normal cadence until success or reconfiguration.
+                        delay = (RETRY_SECONDS
+                                 if now + RETRY_SECONDS <= self._retry_deadline
+                                 else REFRESH_SECONDS)
+                        self._next_fetch = now + delay
+
 
     def preview(self, condition, variant, started_at=None, frame_step_seconds=None, *, is_day=None):
         condition, forced_daylight = weather_preview_condition(condition)

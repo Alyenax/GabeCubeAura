@@ -547,6 +547,37 @@ class SteamGridDBFaceplate:
         self._auth_lock = threading.RLock()
         self._auth_generation = 0
 
+    supports_independent_creations = True
+
+    def _valid_preparation_target(self, appid):
+        return appid > 0
+
+    def _finalize_prepared_manifest(self, manifest):
+        return manifest
+
+    def independent_manifest(self, appid=0, home=False):
+        item = getattr(self, 'home_library_entry', None) if home else None
+        if item is not None:
+            return {**item.manifest, 'appid': 0}
+        store = getattr(self, 'independent_creations', None)
+        if store is None:
+            return {}
+        active = _read_json(self.artwork_root / str(int(appid)) / 'active.json')
+        return store.selection(appid, home=home,
+            has_game_override=active.get('schema') == 1 and active.get('appid') == int(appid)
+                and active.get('mode') != 'default')
+
+    def _independent_selected(self, appid=0, home=False):
+        item = getattr(self, 'home_library_entry', None) if home else None
+        if item is not None:
+            return item.load()
+        record = self.independent_manifest(appid, home)
+        if not record:
+            return None
+        data, _, path = self.independent_creations.prepared(record['creation_id'])
+        return data, record, path
+
+
     def _open_with_system_trust(self, request, first_error, timeout=10):
         """Retry verified HTTPS against SteamOS's explicit CA bundle.
 
@@ -1261,6 +1292,72 @@ class SteamGridDBFaceplate:
             reverse=True,
         )[:64]
 
+    def game_override_entries(self):
+        """Read only active per-game metadata, without decoding saved media."""
+        entries = {}
+        try:
+            roots = sorted(self.artwork_root.iterdir(), key=lambda p: p.name)
+        except OSError:
+            roots = []
+        for root in roots[:512]:
+            if root.is_symlink() or not root.is_dir() or not root.name.isdecimal():
+                continue
+            appid = int(root.name)
+            if not 0 < appid <= 0xffffffff:
+                continue
+            active = _read_json(root / 'active.json')
+            mode = active.get('mode') if active.get('schema') == 1 and active.get('appid') == appid else ''
+            if mode == 'default':
+                continue
+            candidate = root / 'prepared' / mode if mode in ('static', 'animated', 'pan') else root
+            manifest = _read_json(candidate / 'manifest.json')
+            try:
+                size = (candidate / 'faceplate.gif').stat().st_size
+            except OSError:
+                continue
+            if (manifest.get('appid') != appid or manifest.get('schema') not in (1, 2)
+                    or not 0 < size <= MAX_GIF_BYTES):
+                continue
+            entries[appid] = {key: manifest.get(key) for key in ('mode', 'thumb', 'animated')}
+            entries[appid].update(appid=appid, source='artwork')
+        store = getattr(self, 'independent_creations', None)
+        if store is not None:
+            with store.lock:
+                assigned = dict(store.assignments.get('games', {}))
+            for raw, creation in list(assigned.items())[:512]:
+                try:
+                    appid = int(raw)
+                    if not 0 < appid <= 0xffffffff: continue
+                    value = store.metadata(creation)
+                    if value:
+                        entries[appid] = dict(appid=appid, mode='animated',
+                            animated=True, thumb=value.get('thumb', ''), source='creation')
+                except (ValueError, OSError):
+                    continue
+        return list(entries.values())
+
+    def game_override_root(self, appid):
+        appid = int(appid)
+        root = self.artwork_root / str(appid)
+        if (not 0 < appid <= 0xffffffff or root.is_symlink()
+                or root.resolve().parent != self.artwork_root.resolve()
+                or (root / 'active.json').is_symlink()):
+            raise SteamGridDBError('Invalid game artwork path')
+        return root
+
+    def reset_game_override(self, appid):
+        """Stop selecting one game's custom copy; retain all prepared files."""
+        appid = int(appid)
+        if not 0 < appid <= 0xffffffff:
+            raise SteamGridDBError('Invalid Steam game')
+        root = self.game_override_root(appid)
+        _atomic_json(root / 'active.json', {
+            'schema': 1, 'appid': appid, 'mode': 'default', 'activated_at': self.clock(),
+        }, 0o644)
+        store = getattr(self, 'independent_creations', None)
+        if store is not None:
+            store.clear_assignment('game', appid)
+
     def reset_user_data(self):
         """Explicit factory reset of this library's own data, never Steam files."""
         if self.root.is_symlink():
@@ -1344,10 +1441,15 @@ class SteamGridDBFaceplate:
         return {**prepared[1], "path": str(prepared[2]), "size": len(prepared[0])}
 
     def selected(self, appid):
+        independent = self._independent_selected(appid)
+        if independent is not None:
+            return independent
         destination = self.artwork_root / str(int(appid))
         active = _read_json(destination / "active.json")
         if active.get("schema") == 1 and active.get("appid") == int(appid):
             mode = str(active.get("mode", ""))
+            if mode == 'default':
+                return None
             if mode in {"static", "animated", "pan"}:
                 prepared = self.prepared(appid, mode)
                 if prepared is not None:
@@ -1368,6 +1470,9 @@ class SteamGridDBFaceplate:
         return data, manifest, compiled
 
     def selected_manifest(self, appid):
+        independent = self.independent_manifest(appid)
+        if independent:
+            return independent
         selected = self.selected(appid)
         return dict(selected[1]) if selected is not None else {}
 
@@ -1414,6 +1519,9 @@ class SteamGridDBFaceplate:
 
     def selected_dashboard_pack_reference(self, appid, mode=None, draft=False, home=False):
         """Return a validated lightweight pack reference for an isolated renderer."""
+        item = getattr(self, 'home_library_entry', None) if home and mode is None else None
+        if item is not None:
+            return item.pack_reference()
         if home and not _read_json(self.artwork_root / str(int(appid)) / "home.json"):
             home = False
         manifest = (self.prepared_dashboard_manifest(appid, mode, draft=draft, home=home)
@@ -1441,6 +1549,9 @@ class SteamGridDBFaceplate:
 
     def selected_dashboard_manifest(self, appid, home=False):
         """Cheap launch-time readiness check: small JSON/stat reads only."""
+        independent = self.independent_manifest(appid, home)
+        if independent:
+            return independent
         destination = self.artwork_root / str(int(appid))
         active = _read_json(destination / ("home.json" if home else "active.json"))
         if home and not active:
@@ -1448,6 +1559,8 @@ class SteamGridDBFaceplate:
         if active.get("schema") != 1 or active.get("appid") != int(appid):
             return {}
         mode = str(active.get("mode", ""))
+        if mode == 'default':
+            return {}
         return dict(self.prepared_dashboard_manifest(appid, mode, home=home))
 
     def assign_home(self, appid, mode, draft=False):
@@ -1461,6 +1574,9 @@ class SteamGridDBFaceplate:
         return self.prepared_dashboard_manifest(appid, mode, home=True)
 
     def home_selected(self, appid):
+        independent = self._independent_selected(appid, home=True)
+        if independent is not None:
+            return independent
         active = _read_json(self.artwork_root / str(int(appid)) / "home.json")
         if not active:
             return self.selected(appid)

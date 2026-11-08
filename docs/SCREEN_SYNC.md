@@ -1,4 +1,4 @@
-# Screen Sync in GabeCubeAura 1.3.0
+# Screen Sync
 
 Screen Sync is integrated into GabeCubeAura's normal display routing. It uses
 the same Providers to Arbiter to Renderer pipeline as Artwork, Performance,
@@ -31,16 +31,27 @@ GStreamer process without a shell and requests a 34 by 18 BGRx stream at 10
 frames per second. Only the newest frame is retained. Captured pixels are not
 saved, returned through Decky or sent over the network.
 
-Current PipeWire builds select the source by its stable `gamescope` target
-name, with a client name and a short keepalive for Gamescope's variable-rate
-stream. If that selector cannot start on an older build, supervision retries
-once with the discovered numeric node ID.
+During live capture, a separate worker checks complete PipeWire registry
+snapshots every two seconds, or every half-second during Preview. Waiting for
+an inventory no longer holds up video-frame reception. Failed or stale
+observations stop the current capture through the bounded recovery path;
+they are never treated as evidence that the graph is empty. The polling
+frequency and conflict policy remain unchanged.
+
+The preferred selector uses the stable `gamescope` target name, the dedicated
+GabeCubeAura client name and a short keepalive for Gamescope's variable-rate
+stream. If no frame arrives, supervision closes the failed client before
+trying the same target name without the keepalive property, then the discovered
+numeric node ID when one is available. This keeps compatibility with PipeWire
+builds that expose different source properties.
 
 `Selector (compatibility): Gamescope name` is an expected fallback when
 `pw-dump` cannot enumerate a numeric Gamescope node. If frames arrive, the
 Screen Sync page reports that the direct source is active and no action is
-required. If the pipeline cannot leave PAUSED, it instead reports that the
-current PipeWire session is not ready and keeps retrying automatically.
+required. A pipeline stuck in PAUSED is released before retry. A complete
+failed selector cycle or repeated short sessions pause automatic reconnection;
+the page reports the failure and an explicit Preview can request another try.
+Temporarily unavailable session discovery uses bounded backoff.
 
 Panorama maps 17 horizontal image zones to 17 LEDs. Ambient calculates one
 robust screen colour and repeats it across the bar. Processing includes linear
@@ -73,6 +84,13 @@ Steam keeps hard priority during startup, active downloads and repeated native
 LED writes. One isolated native transition receives a settle period before one
 automatic recovery. Genuine system activity can renew the priority lease, so
 GabeCubeAura does not fight Steam for the bar.
+
+While the renderer owns the bar, Linux sysfs reads reuse a bounded set of read
+descriptors. Every attribute is read again at offset zero, and its device,
+inode, permissions and ownership are checked before reuse. Each read obtains
+the current attribute contents. A changed identity or read error invalidates
+the hardware instance for rediscovery. Descriptors close on handoff, render failure,
+orientation change and suspend/resume; the write path remains unchanged.
 
 An AppID transition is also a capture-session boundary. GabeCubeAura terminates
 the current `gst-launch-1.0` process and creates a new supervisor if Screen Sync
@@ -113,3 +131,10 @@ uses bounded rediscovery instead of rapidly cycling GStreamer clients.
 - StripMine handoff and restoration
 
 Software checks cannot close these hardware items.
+
+## Capture pipeline and supervision
+
+The 10 fps videorate stage now precedes pixel conversion and scaling. Its input queue remains limited to one frame and leaky downstream. Final BGRx 34 × 18 caps, interpolation and colour processing are unchanged. A displayed 10 fps is the received Python rate; it does not establish the Gamescope producer rate or resolution. Software validation includes a native variable-rate synthetic producer and the real GCA capture supervisor. Gamescope GPU cost, source-side reduced-size negotiation and Steam game frame-time improvement remain target-system validation items.
+
+Capture v12 retains that pipeline and moves registry polling away from the
+frame-draining thread. It continues using complete inventories.

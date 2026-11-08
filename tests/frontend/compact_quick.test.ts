@@ -49,7 +49,7 @@ test('failed timer start keeps the editor open and permits a retry; busy editor 
  const busy=harness();nodes(busy.editor(true)).find(n=>n.type==='button'&&n.props.children==='Start').props.onClick();await flush();
  assert.equal(busy.started.length,0);
 });
-test('all four quick choices retain the shared native selector',()=>{
- assert.equal((source.match(/<QuickInlineChoice label=/g)||[]).length,4);
+test('both context-specific LED choices retain the shared native selector',()=>{
+ assert.equal((source.match(/<QuickInlineChoice label=/g)||[]).length,5);
  assert.doesNotMatch(source,/\bshowModal\b|<ConfirmModal|<Dropdown(?:Item)?\s/);
 });

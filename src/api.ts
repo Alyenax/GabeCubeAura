@@ -107,8 +107,8 @@ export const sendDiagnosticReport = callable<[], DiagnosticStatus>("send_diagnos
 export const setFaceplatePower = callable<[enabled: boolean], Status>("set_faceplate_power");
 export const resumeFaceplate = callable<[], Status>("resume_faceplate");
 export const setFaceplateRouting = callable<[
-  homeScene: "weather" | "dashboard" | "artwork" | "artwork-dashboard" | "native-clock",
-  gameScene: "dashboard" | "artwork" | "artwork-dashboard" | "weather" | "player-city",
+  homeScene: "weather" | "dashboard" | "artwork" | "artwork-dashboard" | "native-clock" | "library" | "clock",
+  gameScene: "dashboard" | "artwork" | "artwork-dashboard" | "weather" | "player-city" | "clock",
   expectedRevision: number,
 ], Status>("set_faceplate_routing");
 export const setFaceplateVisualTheme = callable<[
@@ -170,7 +170,7 @@ export const assignFaceplateDashboardArtwork = callable<[
 ], Status>("assign_faceplate_dashboard_artwork");
 /** Commit Home/game artwork independently of the full telemetry refresh. */
 export const commitFaceplateDashboardArtwork = callable<[
-  appid: number, mode: "static" | "animated" | "pan", draft: boolean, homeOnly: boolean, expectedSHA: string | undefined, includeStatus: false,
+  appid: number, mode: "static" | "animated" | "pan", draft: boolean, homeOnly: boolean, expectedSHA: string | undefined, includeStatus: false, presentation?: "artwork" | "artwork-dashboard",
 ], FaceplateArtworkManifest>("assign_faceplate_dashboard_artwork");
 export const setSteamGridDBPreference = callable<[preference: "animated" | "animated_any" | "static" | "both"], Status>("set_steamgriddb_preference");
 export const getUpdateStatus = callable<[], UpdateStatus>("get_update_status");
@@ -322,3 +322,10 @@ export interface FaceplateArtworkState {
 
 export const enableCaptureDiagnostic = callable<[], {seconds:number}>("enable_capture_diagnostic");
 export const exportCreation = callable<[number,string,string], ConfigurationBackupResult>("export_creation");
+export interface FaceplateGameArtworkOverride {
+  appid:number;name:string;thumb:string;mode:string;animated:boolean;source:'artwork'|'creation'|'layout';
+}
+export const getFaceplateGameArtworkOverrides=callable<[],{entries:FaceplateGameArtworkOverride[];count:number}>("get_faceplate_game_artwork_overrides");
+export const resetFaceplateGameArtwork=callable<[appid:number],Status>("reset_faceplate_game_artwork");
+
+export const setFaceplateGameArtworkLayout=callable<[appid:number,key:'style'|'position',value:string],Status>('set_faceplate_game_artwork_layout');

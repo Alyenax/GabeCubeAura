@@ -353,6 +353,7 @@ class ProjectionRoutingTests(unittest.TestCase):
 
     def make_engine(self):
         engine = Engine.__new__(Engine)
+        engine.settings = SimpleNamespace(all=lambda: {"faceplate_control_mode": "automatic"})
         engine._faceplate_suspended = False; engine._faceplate_extension_present = True
         engine._faceplate_extension_device = 'usb-a'
         engine.faceplate = SimpleNamespace(powered=True, last_synchronized=True, last_asset='confirmed', device_token='usb-a', delivery={'signature': 'abc'})

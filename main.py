@@ -92,18 +92,9 @@ class Plugin:
         self.onboarding_transaction = OnboardingTransaction(Path(decky.DECKY_PLUGIN_SETTINGS_DIR) / 'setup-transaction.json')
         self._onboarding_commit_lock = threading.RLock()
         self._onboarding_recovery_error = ''
-        try:
-            recovered = self.onboarding_transaction.recover(settings, faceplate_preferences)
-        except (OSError, ValueError, TypeError, RecursionError) as error:
-            # Keep all evidence. Runtime capture/display stays blocked until
-            # recovery is possible; never start with a half-applied setup.
-            self._onboarding_recovery_error = type(error).__name__
-            recovered = None
-        if recovered == 'committed':
-            try:
-                self.onboarding_draft.discard()
-            except (OSError, ValueError):
-                decky.logger.warning('[GabeCubeAura] Committed setup draft cleanup deferred')
+        # Setup is an optional guide. A prior guide must never replay over
+        # currently saved settings or block startup because its file is unsafe.
+        self.onboarding_transaction.start_guidance()
         self.engine = Engine(
             settings, cache_path, decky.logger,
             faceplate_preferences=faceplate_preferences,
@@ -132,6 +123,7 @@ class Plugin:
         await asyncio.get_running_loop().run_in_executor(None, self._start_jsaux_broker)
         self._jsaux_recovery_task = asyncio.create_task(self._recover_jsaux_startup())
         self.faceplate_settings_dir = decky.DECKY_PLUGIN_SETTINGS_DIR
+        self.engine.faceplate_claim_refresh = self._sync_faceplate_claim
         self._sync_faceplate_claim()
         try:
             self.engine.start()
@@ -283,6 +275,25 @@ class Plugin:
                     'recovery_error': getattr(self, '_onboarding_recovery_error', '')}
         return await asyncio.get_running_loop().run_in_executor(None, snapshot)
 
+    async def recover_onboarding_current_settings(self):
+        """User chose current settings over an interrupted setup, with backup."""
+        def recover():
+            with self._onboarding_commit_lock:
+                if getattr(self.engine, '_onboarding_applying', False):
+                    raise ValueError('Setup is being applied. Please wait.')
+                if not (getattr(self, '_onboarding_recovery_error', '')
+                        or getattr(self.engine, '_onboarding_recovery_blocked', False)):
+                    return self.engine.status()
+                # An optional guide cannot make archiving a prerequisite.
+                # Keep the old file untouched when it cannot be archived.
+                with self.engine.settings._lock:
+                    archived = self.onboarding_transaction.start_guidance()
+                    self._onboarding_recovery_error = ''
+                    self.engine._onboarding_recovery_blocked = False
+                self._onboarding_event('keep-current', 'archived' if archived else 'journal-absent')
+                return self.engine.status()
+        return await asyncio.get_running_loop().run_in_executor(None, recover)
+
     async def save_onboarding_draft(self, changes: dict):
         return await asyncio.get_running_loop().run_in_executor(None, self.onboarding_draft.remember, changes)
 
@@ -299,6 +310,36 @@ class Plugin:
         self._onboarding_event('archive', state.get('draft_error_code') or 'ready')
         return state
 
+    async def restart_onboarding(self):
+        """Restart only the guide; preserve active settings, routes and media."""
+        def restart():
+            if not self._onboarding_commit_lock.acquire(blocking=False):
+                return 'setup_busy'
+            try:
+                if getattr(self.engine, '_onboarding_applying', False):
+                    return 'setup_busy'
+                try:
+                    with self.engine.settings._lock:
+                        self.onboarding_transaction.start_guidance()
+                        self.onboarding_draft.start_over()
+                        self._onboarding_recovery_error = ''
+                        self.engine._onboarding_recovery_blocked = False
+                    return ''
+                except (OSError, ValueError) as error:
+                    return draft_error_code(error)
+            finally:
+                self._onboarding_commit_lock.release()
+        code = await asyncio.get_running_loop().run_in_executor(None, restart)
+        self._onboarding_event('restart', code or 'ready')
+        try:
+            state = await self.get_onboarding()
+        except Exception:
+            # Device metadata or polling must not turn a successful guide reset
+            # into a Python exception. Normal reads can fill this in later.
+            state = dict(draft={}, bar_detected=False, faceplate_detected=False,
+                         faceplate_busy=False, recovery_error=getattr(self, '_onboarding_recovery_error', ''))
+        return dict(state, **({'draft_reset_error': code} if code else {}))
+
     async def complete_onboarding(self, choices: dict):
         transaction_prepared = False
         def complete():
@@ -310,10 +351,11 @@ class Plugin:
                 self._onboarding_commit_lock.release()
         def persist_complete():
             nonlocal transaction_prepared
-            if getattr(self, '_onboarding_recovery_error', ''):
-                raise ValueError('Complete local setup recovery before applying new choices')
             self.onboarding_draft.resume()  # Progress storage cannot veto validated choices.
             selected = clean_draft(choices)
+            self.onboarding_transaction.start_guidance()
+            self._onboarding_recovery_error = ''
+            self.engine._onboarding_recovery_blocked = False
             changes = {'onboarding_completed': True}
             if self.engine._available:
                 for source, target in (('preset', 'display_preset'), ('brightness', 'light_bar_day_brightness'),
@@ -477,7 +519,7 @@ class Plugin:
         if key == "faceplate_lab_enabled" and type(value) is bool:
             changes["faceplate_setup_completed"] = True
         loop = asyncio.get_running_loop()
-        if key == "faceplate_lab_enabled":
+        if key in {"faceplate_lab_enabled", "faceplate_control_mode", "faceplate_allow_das", "faceplate_allow_dva"}:
             await loop.run_in_executor(
                 None, self._call_with_faceplate_claim_sync, self.engine.update_settings, changes,
             )
@@ -515,8 +557,12 @@ class Plugin:
         # is deliberately NOT a release: another plugin must not wake it up.
         lock = self.__dict__.setdefault('_faceplate_claim_lock', threading.RLock())
         with lock:
+            from signalbar.faceplate.control import wants_claim
+            control = getattr(self.engine, "faceplate_control", None)
+            state = control.status() if control is not None else {}
             enabled = (not getattr(self, '_gabe_unloading', False)
-                       and self.engine.settings.all().get("faceplate_lab_enabled"))
+                       and (wants_claim(self.engine.settings.all())
+                            or state.get("phase") == "releasing"))
             if enabled:
                 if not faceplate_claim.claim(self.faceplate_settings_dir):
                     decky.logger.warning("[GabeCubeAura] faceplate ownership claim unavailable")
@@ -894,6 +940,73 @@ class Plugin:
         ) if appid > 0 else {}
         return {"appid": appid, "ready": bool(manifest)}
 
+    async def get_faceplate_game_artwork_overrides(self):
+        def read():
+            library = self.engine.faceplate.steamgriddb
+            entries = {item['appid']: item for item in library.game_override_entries()}
+            profiles = self.engine.settings.all().get('faceplate_artwork_profiles', {})
+            for raw in profiles:
+                appid = int(raw)
+                entries.setdefault(appid, dict(appid=appid, source='layout', thumb='', animated=False, mode=''))
+            names = {int(game['appid']): game['name'] for game in installed_games()}
+            return {'entries': sorted(({**item, 'name': names.get(appid, '')}
+                for appid, item in entries.items()), key=lambda row: (row['name'].casefold(), row['appid'])),
+                'count': len(entries)}
+        return await asyncio.get_running_loop().run_in_executor(None, read)
+
+    async def set_faceplate_game_artwork_layout(self, appid: int, key: str, value: str):
+        appid = int(appid)
+        choices = {'style': {'art', 'logo', 'logo_dim', 'logo_only'},
+                   'position': {'top', 'centre', 'bottom', 'bottom_rail'}}
+        if not 0 < appid <= 0xffffffff or key not in choices or value not in choices[key]:
+            raise ValueError('Invalid game artwork layout')
+        def save():
+            with self.engine._faceplate_configuration_lock:
+                values = self.engine.settings.all()
+                profiles = dict(values.get('faceplate_artwork_profiles', {}))
+                current = profiles.get(str(appid), {})
+                profiles[str(appid)] = {'style': current.get('style', values['faceplate_artwork_style']),
+                    'position': current.get('position', values['faceplate_logo_position']), key: value}
+                self.engine.settings.update({'faceplate_artwork_profiles': profiles})
+                if self.engine.faceplate_game_snapshot().get('appid') == appid:
+                    self.engine.refresh_settings({'faceplate_artwork_profiles': profiles})
+                return self.engine.status()
+        return await asyncio.get_running_loop().run_in_executor(None, save)
+
+    async def reset_faceplate_game_artwork(self, appid: int):
+        appid = int(appid)
+        if not 0 < appid <= 0xffffffff:
+            raise ValueError('Invalid Steam game')
+        if self.faceplate_artwork_jobs.status().get('state') in {'queued', 'running', 'cancelling'}:
+            raise ValueError('Wait for artwork preparation to finish')
+        progress = {'stage': 'save-game'}
+        def reset():
+            with self.engine._faceplate_configuration_lock:
+                library = self.engine.faceplate.steamgriddb
+                library.game_override_root(appid)
+                values = self.engine.settings.all()
+                # Old Home assignments may still borrow the game's slot.
+                # Freeze that existing Home choice before changing only the game.
+                if (values.get('faceplate_dashboard_home_source') == 'artwork'
+                        and int(values.get('faceplate_dashboard_home_appid', 0) or 0) == appid
+                        and not (library.artwork_root / str(appid) / 'home.json').exists()):
+                    selected = library.selected_dashboard_manifest(appid, home=True)
+                    store = getattr(library, 'independent_creations', None)
+                    if selected.get('creation_id') and store is not None:
+                        store.assign(selected['creation_id'], 'home')
+                    elif selected.get('mode') in ('static', 'animated', 'pan'):
+                        library.assign_home(appid, selected['mode'])
+                library.reset_game_override(appid)
+                profiles = dict(values.get('faceplate_artwork_profiles', {}))
+                profiles.pop(str(appid), None)
+                self.engine.settings.update({'faceplate_artwork_profiles': profiles})
+                if self.engine.faceplate_game_snapshot().get('appid') == appid:
+                    self.engine._faceplate_follow_key = None
+                    self.engine.refresh_settings({'faceplate_artwork_profiles': profiles})
+        await self._run_faceplate_artwork_apply(('game-default', appid, 'default'), reset, progress)
+        self.diagnostics.record('faceplate_game_artwork_default', appid=appid)
+        return self.engine.status()
+
     async def get_faceplate_artwork_library(self):
         library, games = await asyncio.gather(
             asyncio.get_running_loop().run_in_executor(
@@ -1126,8 +1239,10 @@ class Plugin:
         if not expected_sha or prepared is None or prepared[1].get("sha256") != expected_sha:
             raise ValueError("The prepared artwork changed. Review its new preview before applying.")
 
-    async def assign_faceplate_dashboard_artwork(self, appid: int, mode: str, draft: bool = False, home_only: bool = False, expected_sha: str = "", include_status: bool = True):
+    async def assign_faceplate_dashboard_artwork(self, appid: int, mode: str, draft: bool = False, home_only: bool = False, expected_sha: str = "", include_status: bool = True, presentation: str = "artwork-dashboard"):
         """Atomically activate a prepared pack and make it Dashboard Home."""
+        if presentation not in {'artwork', 'artwork-dashboard'}:
+            raise ValueError('Unknown artwork presentation')
         appid = int(appid)
         mode = str(mode)
         job = self.faceplate_artwork_jobs.status()
@@ -1162,14 +1277,14 @@ class Plugin:
             self.engine.settings.update(assignment)
             progress['stage'] = 'select-display'
             self.engine.update_faceplate_routing(
-                "artwork-dashboard", preferences.game_scene if home_only else "artwork-dashboard",
+                presentation, preferences.game_scene if home_only else presentation,
                 preferences.revision,
             )
             return selected
 
         try:
             selected = await self._run_faceplate_artwork_apply(
-                ('home' if home_only else 'both', appid, mode, bool(draft), str(expected_sha)),
+                ('home' if home_only else 'both', appid, mode, bool(draft), str(expected_sha), presentation),
                 assign, progress)
         except (SteamGridDBError, ValueError, FaceplateRevisionConflict) as error:
             raise ValueError(str(error)) from error
@@ -1512,6 +1627,7 @@ class Plugin:
         )
         report["report"]["updates"] = self._update_diagnostic_snapshot()
         report["report"]["display_control"] = self.diagnostics._sanitize(self.engine.display_control_snapshot())
+        await asyncio.get_running_loop().run_in_executor(None, self._append_setup_recovery, report['report'])
         trace = getattr(self.engine, "screen_sync_trace", None)
         if isinstance(trace, ScreenSyncTrace):
             report["report"]["screen_sync_trace"] = trace.snapshot()
@@ -1520,6 +1636,22 @@ class Plugin:
         data = (json.dumps(report['report'], indent=2, ensure_ascii=False) + '\n').encode()
         await asyncio.get_running_loop().run_in_executor(None, write_private_bytes, destination, data)
         return {"path": str(destination)}
+
+
+    def _append_setup_recovery(self, report):
+        recovery = {'pending': bool(getattr(self.engine, '_onboarding_recovery_blocked', False)),
+                    'blocks_runtime': False,
+                    'applying': bool(getattr(self.engine, '_onboarding_applying', False)),
+                    'error': getattr(self, '_onboarding_recovery_error', '')}
+        transaction = getattr(self, 'onboarding_transaction', None)
+        if transaction is not None:
+            recovery['transaction'] = transaction.diagnostic_state(self.engine.faceplate_preferences)
+        from signalbar.onboarding import storage_metadata
+        draft = getattr(self, 'onboarding_draft', None)
+        if draft is not None:
+            recovery['draft_file'] = storage_metadata(draft.path)
+            recovery['draft_storage'] = 'memory' if draft.storage_error else 'disk'
+        report['setup_recovery'] = recovery
 
     def _update_diagnostic_snapshot(self):
         state = self.update_manager.status()

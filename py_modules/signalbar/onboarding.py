@@ -133,6 +133,12 @@ class OnboardingDraft:
                 self.storage_error = draft_error_code(error)
             self._persist_or_remember({})
 
+    def start_over(self):
+        """Start a fresh optional guide, even when its old draft cannot be archived."""
+        with self.lock:
+            self.recovery_code = ''
+            self.restart()
+
     def discard(self):
         with self.lock:
             try:
@@ -259,8 +265,31 @@ class OnboardingTransaction:
     def __init__(self, path):
         self.path = Path(path)
         self.lock = threading.RLock()
+        self._session_only = False
+        self._session_value = None
+        self.storage_error = ''
+
+    def start_guidance(self):
+        """Keep saved app settings authoritative; old guide storage is optional.
+
+        Only the current invocation's validated choices may be rolled back.
+        Never replay an earlier guide over settings at startup. Legacy files
+        are archived when possible, or left untouched, without gating the guide.
+        """
+        with self.lock:
+            self.storage_error = ''
+            try:
+                archived = self.keep_current()
+            except (OSError, ValueError) as error:
+                self.storage_error = draft_error_code(error)
+                archived = False
+            self._session_only = True
+            self._session_value = None
+            return archived
 
     def _read(self):
+        if self._session_only:
+            return json.loads(json.dumps(self._session_value))
         try:
             descriptor = os.open(self.path, os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0))
         except FileNotFoundError:
@@ -277,6 +306,10 @@ class OnboardingTransaction:
                 parse_constant=lambda _: (_ for _ in ()).throw(ValueError('Invalid setup number')))
         except (UnicodeError, RecursionError, TypeError) as error:
             raise ValueError('Setup transaction unavailable') from error
+        return self._validate(value)
+
+    @staticmethod
+    def _validate(value):
         fields = {'schema', 'stage', 'before_settings', 'after_settings', 'before_routes', 'after_routes'}
         if (not isinstance(value, dict) or set(value) != fields
                 or type(value['schema']) is not int or value['schema'] != 1
@@ -291,12 +324,22 @@ class OnboardingTransaction:
             routes = value[name]
             if not isinstance(routes, dict) or set(routes) != {'home', 'game'}:
                 raise ValueError('Invalid setup routes')
-            clean_draft({'home': routes['home'], 'game': routes['game']})
+            # This journal snapshots active routes, including library/clock,
+            # not the smaller set of choices offered by the setup wizard.
+            from signalbar.faceplate.routing import HOME_SCENES, GAME_SCENES
+            if (not isinstance(routes['home'], str) or routes['home'] not in HOME_SCENES
+                    or not isinstance(routes['game'], str) or routes['game'] not in GAME_SCENES):
+                raise ValueError('Invalid setup routes')
         return value
 
     def _write(self, value):
+        # Never persist a journal that recovery cannot read.
+        self._validate(value)
         encoded = json.dumps(value, allow_nan=False, separators=(',', ':')).encode()
         if len(encoded) > self.MAX_BYTES: raise ValueError('Setup transaction too large')
+        if self._session_only:
+            self._session_value = json.loads(encoded)
+            return
         self.path.parent.mkdir(parents=True, exist_ok=True)
         if self.path.is_symlink(): raise ValueError('Unsafe setup transaction')
         descriptor, name = tempfile.mkstemp(prefix='.setup-transaction-', dir=self.path.parent)
@@ -325,9 +368,39 @@ class OnboardingTransaction:
 
     def clear(self):
         with self.lock:
+            if self._session_only:
+                self._session_value = None
+                return
             if self.path.is_symlink(): raise ValueError('Unsafe setup transaction')
             self.path.unlink(missing_ok=True)
             if self.path.parent.is_dir(): _sync_directory(self.path.parent)
+
+    def keep_current(self):
+        """Explicit recovery only: archive the interrupted intent, apply nothing.
+
+        Reuse the owned-file, exclusive hard-link and fsync archive protocol.
+        Even an unreadable JSON journal is preserved byte-for-byte. Active
+        settings, display routes, drafts and prepared media are untouched.
+        """
+        with self.lock:
+            return OnboardingDraft(self.path).reset()
+
+    def diagnostic_state(self, preferences):
+        """Bounded metadata only; never include journal fields or paths."""
+        with self.lock:
+            if self._session_only:
+                return {'state': 'session-only', 'stage': (self._session_value or {}).get('stage', ''),
+                        'archive_error': self.storage_error,
+                        'legacy_file': storage_metadata(self.path)}
+            try:
+                value = self._read()
+                if value is None: return {'state': 'absent'}
+                current = preferences.read()
+                routes = {'home': current.home_scene, 'game': current.game_scene}
+                return {'state': 'readable', 'stage': value['stage'],
+                        'route_conflict': routes not in (value['before_routes'], value['after_routes'])}
+            except (OSError, ValueError, TypeError, RecursionError) as error:
+                return {'state': 'unreadable', 'error': type(error).__name__}
 
     def recover(self, settings, preferences):
         with self.lock, settings._lock:
@@ -344,3 +417,16 @@ class OnboardingTransaction:
                         game_scene=value['before_routes']['game'], expected_revision=current.revision)
             self.clear()
             return value['stage']
+
+
+def storage_metadata(path):
+    """Finite file-entry facts only, without opening or following the entry."""
+    try:
+        info = Path(path).lstat()
+    except FileNotFoundError:
+        return {'kind': 'absent'}
+    except OSError:
+        return {'kind': 'unavailable'}
+    kind = ('regular' if stat.S_ISREG(info.st_mode) else 'symlink' if stat.S_ISLNK(info.st_mode)
+            else 'directory' if stat.S_ISDIR(info.st_mode) else 'fifo' if stat.S_ISFIFO(info.st_mode) else 'special')
+    return {'kind': kind, 'owned': info.st_uid == os.geteuid(), 'links': min(info.st_nlink, 65)}

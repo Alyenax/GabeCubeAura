@@ -596,6 +596,8 @@ class Plugin:
                 self.engine.assistant.cancel('system-suspended')
         self.engine._assistant_wake_allowed = self.engine._assistant_wake_policy(values)
         if not automatic:
+            if not starting:
+                self.engine.weather.request_refresh("logind-resume")
             return  # A manual/off panel must not receive a power command.
         if starting:
             self.engine.suspend_faceplate(kind)
@@ -603,9 +605,11 @@ class Plugin:
             self.engine.resume_faceplate()
 
     async def set_faceplate_power(self, enabled: bool):
-        await asyncio.get_running_loop().run_in_executor(
+        result = await asyncio.get_running_loop().run_in_executor(
             None, self.engine.set_faceplate_power, bool(enabled), "Decky control",
         )
+        if isinstance(result, dict) and result.get('error'):
+            raise RuntimeError(result['error'])
         return self.engine.status()
 
     async def resume_faceplate(self):
@@ -1621,22 +1625,65 @@ class Plugin:
         # Existing capture lifecycle will use the detail level on its next start.
         return {'seconds': 300}
 
-    async def export_diagnostic_report(self):
-        report = await asyncio.get_running_loop().run_in_executor(
-            None, lambda: self.diagnostics.build_report(cinema=self._cinema_diagnostic_snapshot()),
-        )
-        report["report"]["updates"] = self._update_diagnostic_snapshot()
-        report["report"]["display_control"] = self.diagnostics._sanitize(self.engine.display_control_snapshot())
-        await asyncio.get_running_loop().run_in_executor(None, self._append_setup_recovery, report['report'])
-        trace = getattr(self.engine, "screen_sync_trace", None)
-        if isinstance(trace, ScreenSyncTrace):
-            report["report"]["screen_sync_trace"] = trace.snapshot()
-        destination = Path(self.configuration_export_path).parent / "GabeCubeAura-diagnostic.json"
-        from signalbar.safe_export import write_private_bytes
-        data = (json.dumps(report['report'], indent=2, ensure_ascii=False) + '\n').encode()
-        await asyncio.get_running_loop().run_in_executor(None, write_private_bytes, destination, data)
-        return {"path": str(destination)}
+    async def _diagnostic_document(self, frontend_version=""):
+        def capture():
+            try:cinema=self._cinema_diagnostic_snapshot()
+            except Exception:cinema={'available':False}
+            return self.diagnostics.build_report(cinema=cinema)
+        report = await asyncio.get_running_loop().run_in_executor(None,capture)
+        document=report['report']
+        for key,read in [('updates',self._update_diagnostic_snapshot),
+                         ('display_control',lambda:self.engine.display_control_snapshot())]:
+            try:document[key]=self.diagnostics._sanitize(await asyncio.get_running_loop().run_in_executor(None,read))
+            except Exception:document[key]={'available':False}
+        try:await asyncio.get_running_loop().run_in_executor(None,self._append_setup_recovery,document)
+        except Exception:document['setup_recovery']={'available':False}
+        document['setup_recovery']=self.diagnostics._sanitize(document.get('setup_recovery',{}))
+        from signalbar.support_snapshot import installation, system_facts, runtime
+        from signalbar import __version__
+        def support():
+            # Independent facts stay useful if another optional component failed.
+            result={}
+            for key,read in [('installation',lambda:installation(Path(__file__).resolve().parent,__version__,frontend_version)),
+                             ('system',lambda:system_facts(getattr(decky,'DECKY_VERSION',None))),
+                             ('runtime',lambda:runtime(self.engine))]:
+                try:result[key]=read()
+                except Exception:result[key]={'available':False}
+            return result
+        document['support']=self.diagnostics._sanitize(await asyncio.get_running_loop().run_in_executor(None,support))
+        trace=getattr(getattr(self,'engine',None),'screen_sync_trace',None)
+        if isinstance(trace,ScreenSyncTrace):document['screen_sync_trace']=trace.snapshot()
+        text=json.dumps(document,indent=2,ensure_ascii=False)+'\n'
+        if len(text.encode())>98304:
+            document['events']=document.get('events',[])[-24:]
+            document['pixel_studio_log_tail']=[]
+            document['report_reduced']=True
+            text=json.dumps(document,indent=2,ensure_ascii=False)+'\n'
+        if len(text.encode())>98304:
+            # Keep the actionable facts if accumulated history exceeds the RPC budget.
+            document={key:document[key] for key in ('schema','created_at','product','version','trigger',
+                'privacy','support','updates','setup_recovery') if key in document}
+            document['report_reduced']=True
+            text=json.dumps(document,indent=2,ensure_ascii=False)+'\n'
+        return text
 
+    async def export_diagnostic_report(self):
+        # Compatibility for the installed public frontend.
+        text=await self._diagnostic_document()
+        destination=Path(self.configuration_export_path).parent/'GabeCubeAura-diagnostic.json'
+        from signalbar.safe_export import write_private_bytes
+        await asyncio.get_running_loop().run_in_executor(None,write_private_bytes,destination,text.encode())
+        return {'path':str(destination)}
+
+    async def export_support_diagnostic(self, frontend_version: str = ""):
+        text=await self._diagnostic_document(frontend_version)
+        from signalbar.safe_export import write_private_bytes
+        try:
+            destination=Path(self.configuration_export_path).parent/'GabeCubeAura-diagnostic.json'
+            await asyncio.get_running_loop().run_in_executor(None,write_private_bytes,destination,text.encode())
+            return {'path':str(destination),'text':text,'saved':True}
+        except (OSError,ValueError,TypeError):
+            return {'path':'','text':text,'saved':False,'error_code':'file-unavailable'}
 
     def _append_setup_recovery(self, report):
         recovery = {'pending': bool(getattr(self.engine, '_onboarding_recovery_blocked', False)),

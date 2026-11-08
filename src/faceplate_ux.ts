@@ -12,6 +12,17 @@ export function faceplateUXState(status: Pick<Status, "faceplate" | "faceplate_l
   const router = panel.routing;
   if (!panel.available) return { label: "Faceplate not detected", detail: "Connect the JSAUX matrix to use automatic displays.", tone: "waiting" };
   if (panel.busy) return { label: "Faceplate in use", detail: "Another application holds the matrix. Your choice is saved.", tone: "waiting" };
+  if (panel.power_recovery?.manual_off) return {label:'Faceplate off by your choice',
+    detail:'The Faceplate stays off after sleep. Weather can still refresh. Use Power on when you want to turn it on.',tone:'waiting'};
+  if (panel.restoration?.stored_picture_resumed) return {label:'Power restored; image not confirmed',
+    detail:'Stored playback was requested without uploading another image. The requested replacement is still unconfirmed.',tone:'waiting'};
+  if (panel.restoration?.recovery_available) return {label:'Image update failed; Faceplate held off',
+    detail:'Automatic recovery stopped. Use Resume stored picture below to restore power without uploading another image.',tone:'error'};
+  if (panel.restoration?.held_dark && (panel.error || ['error','failed','unconfirmed'].includes(router.preparation.state)
+      || ['exhausted','unconfirmed','failed'].includes(panel.power_recovery?.route_state??'')))
+    return {label:'Display recovery needs attention',detail:'The image was not confirmed. Automatic attempts are limited; check the recovery action below.',tone:'error'};
+  if (panel.restoration?.held_dark) return {label:'Restoring the Faceplate display',
+    detail:'The Faceplate is temporarily off while its replacement image is checked. A failed attempt will show an error and a recovery action.',tone:'waiting'};
   if (panel.powered === false) return { label: "Faceplate powered off", detail: "Your display choice is saved for when the matrix is switched on.", tone: "waiting" };
   if (!status.faceplate_lab_enabled) return { label: "Automation off", detail: "The last saved image may remain on the matrix.", tone: "waiting" };
   if (panel.automation.busy && (/^(?:external|gabe):/.test(panel.automation.active_scene||'')))

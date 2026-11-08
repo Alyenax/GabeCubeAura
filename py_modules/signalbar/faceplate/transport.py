@@ -399,7 +399,9 @@ class Link:
     def command(self, data: bytes, timeout: float = 1.0, retries: int = 3):
         kind, command = data[2], data[3]
         self.last_command_first_sent_at = None
+        self.last_command_attempts = 0
         for _attempt in range(retries):
+            self.last_command_attempts += 1
             self.write(data)
             # The display can act as soon as the command has drained to the
             # serial device. Its reply may arrive much later, especially after
@@ -460,14 +462,20 @@ class Link:
     def _send_gif_once(self, data: bytes, timings: dict, profile: str,
                        cancelled=None) -> bool:
         self._check_cancelled(cancelled)
+        timings["transfer_stage"] = "preflight"
         if profile == PROFILE_VENDOR:
             self._vendor_preflight(timings)
         self._check_cancelled(cancelled)
         started = time.monotonic()
         timings["begin_attempted"] = True
-        begin = self.command(protocol.gif_begin(data), timeout=1.0, retries=3)
+        timings["transfer_stage"] = "begin"
+        timings["begin_status"] = None
+        try:
+            begin = self.command(protocol.gif_begin(data), timeout=1.0, retries=3)
+        finally:
+            timings["begin_ms"] += round((time.monotonic() - started) * 1000)
+            timings["begin_attempts"] += getattr(self, "last_command_attempts", 0)
         timings['begin_status'] = begin.status
-        timings["begin_ms"] += round((time.monotonic() - started) * 1000)
         timings["begin_ack_ms"] = self.last_command_ack_ms
         if begin.status == ALREADY_STORED:
             self._check_cancelled(cancelled)
@@ -478,6 +486,7 @@ class Link:
             activate = bool(getattr(self, 'activate_stored_gif', False))
             timings['stored_activation_required'] = activate
             if not activate:
+                timings["transfer_stage"] = "stored"
                 return False
             if getattr(self, 'restore_stored_gif', False):
                 # Lab147 reports show that stored BEGIN -> empty END can stay
@@ -495,8 +504,12 @@ class Link:
                 self.last_wire_data = data
                 self._check_cancelled(cancelled)
                 started = time.monotonic()
-                begin = self.command(protocol.gif_begin(data), timeout=1.0, retries=1)
-                timings['begin_ms'] += round((time.monotonic() - started) * 1000)
+                timings['begin_status'] = None
+                try:
+                    begin = self.command(protocol.gif_begin(data), timeout=1.0, retries=1)
+                finally:
+                    timings['begin_ms'] += round((time.monotonic() - started) * 1000)
+                    timings['begin_attempts'] += getattr(self, 'last_command_attempts', 0)
                 timings['begin_ack_ms'] = self.last_command_ack_ms
                 timings['begin_status'] = begin.status
                 timings['already_stored'] = begin.status == ALREADY_STORED
@@ -505,6 +518,7 @@ class Link:
                     raise LinkError('recovery GIF already stored; playback remains unconfirmed')
                 # Continue below, with one body reservation and one END only.
             else:
+                timings["transfer_stage"] = "end"
                 try:
                     end = self.command(protocol.gif_end(), timeout=gif_end_timeout(len(data)), retries=1)
                 except ReplyTimeout as error:
@@ -523,6 +537,7 @@ class Link:
         self.flash_manager.reserve_body(timings["identity"], self.flash_priority)
         timings["body_reserved"] = True
         started = time.monotonic()
+        timings["transfer_stage"] = "chunks"
         for sequence, chunk in enumerate(protocol.gif_chunks(data)):
             self._check_cancelled(cancelled)
             reply = self.command(chunk, timeout=1.0, retries=3)
@@ -537,6 +552,7 @@ class Link:
         self._check_cancelled(cancelled)
         started = time.monotonic()
         timings['payload_complete'] = True
+        timings['transfer_stage'] = 'end'
         final_timeout = gif_end_timeout(len(data))
         timings["end_timeout_seconds"] = final_timeout
         try:
@@ -575,6 +591,10 @@ class Link:
             "preflight_ms": 0,
             "begin_ms": 0,
             "begin_ack_ms": 0,
+            "begin_attempts": 0,
+            "transfer_stage": "admission",
+            "failure_stage": "",
+            "failure_kind": "",
             "chunks_ms": 0,
             "finalize_ms": 0,
             "end_ack_ms": 0,
@@ -604,6 +624,7 @@ class Link:
                         data, timings, profile, cancelled=cancelled,
                     )
                     timings["active_profile"] = profile
+                    timings["transfer_stage"] = "complete"
                     self.flash_manager.receipt(timings['identity'], wrote=result,
                                                scene=getattr(self, "flash_scene", "scene"))
                     return result
@@ -631,6 +652,15 @@ class Link:
                     self.rx.clear()
                     time.sleep(TRANSFER_RETRY_SECONDS)
             raise error or LinkError("faceplate GIF transfer failed")
+        except Exception as caught:
+            timings['failure_stage'] = timings['transfer_stage']
+            timings['failure_kind'] = (
+                'cancelled' if isinstance(caught, TransferCancelled) else
+                'timeout' if isinstance(caught, (ReplyTimeout, GifCommitUnconfirmed)) else
+                'rejected' if (timings['transfer_stage'] in ('begin', 'end')
+                    and timings.get(timings['transfer_stage'] + '_status') not in (None, 1, 2)) else
+                'link-error' if isinstance(caught, (OSError, LinkError)) else 'invalid')
+            raise
         finally:
             self._gif_transaction = False
             if (timings["body_reserved"] or timings["end_sent"]) and timings["active_profile"] == "":

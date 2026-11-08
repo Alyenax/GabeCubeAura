@@ -329,3 +329,5 @@ export const getFaceplateGameArtworkOverrides=callable<[],{entries:FaceplateGame
 export const resetFaceplateGameArtwork=callable<[appid:number],Status>("reset_faceplate_game_artwork");
 
 export const setFaceplateGameArtworkLayout=callable<[appid:number,key:'style'|'position',value:string],Status>('set_faceplate_game_artwork_layout');
+
+export const exportSupportDiagnostic = callable<[frontendVersion:string], {path:string;text:string;saved:boolean;error_code?:string}>("export_support_diagnostic");

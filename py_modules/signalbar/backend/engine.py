@@ -248,6 +248,7 @@ class Engine:
         self._player_city_screensaver_active = False
         self._faceplate_scene_retry_at = 0.0
         self._faceplate_suspended = False
+        self._faceplate_manual_off = False
         self._assistant_system_suspended = False
         self._onboarding_applying = False
         self._faceplate_power_target = None
@@ -647,6 +648,7 @@ class Engine:
                 "suspended": self._faceplate_suspended,
                 "retry_pending": self._faceplate_power_target is not None,
                 'route_state': getattr(self, '_faceplate_route_recovery', {}).get('state', 'idle'),
+                'manual_off': bool(getattr(self, '_faceplate_manual_off', False)),
                 'route_attempts': getattr(self, '_faceplate_route_recovery', {}).get('attempts', 0),
             },
             "apply_deferred_reason": paused,
@@ -951,6 +953,19 @@ class Engine:
         if enabled and self._display_panel_off():
             return {"ok": False, "powered": self.faceplate.powered,
                     "error": "Enable GabeCubeAura and select an active display before powering on the Faceplate"}
+        recovery = self.faceplate.restoration_status() if isinstance(self.faceplate, FaceplateCoordinator) else {}
+        if enabled and recovery.get('recovery_available'):
+            adapter = getattr(self, 'jsaux_broker_adapter', None)
+            worker = self.faceplate_worker.status()
+            if (not self.settings.all().get('faceplate_lab_enabled')
+                    or getattr(self, '_assistant_system_suspended', False)):
+                return {'ok': False, 'powered': self.faceplate.powered,
+                        'error': 'Faceplate recovery is disabled by the current power settings'}
+            if ((adapter is not None and adapter.holds_display())
+                    or worker.get('busy') or worker.get('queued')):
+                return {'ok': False, 'powered': self.faceplate.powered,
+                        'error': 'Faceplate recovery is unavailable while another display is active'}
+        self._faceplate_manual_off = not bool(enabled)
         self._faceplate_power_target = None
         if not enabled:
             self._display_faceplate_restore = False
@@ -970,6 +985,12 @@ class Engine:
             "error": str(result.get("error", ""))[:180],
             'deferred_to_route': bool(result.get('deferred_to_route')),
         }
+        if result.get('stored_picture_resumed'):
+            self._faceplate_route_recovery = {'state': 'stored-picture', 'attempts': 0}
+            self._faceplate_stored_picture_hold = self._faceplate_recovery_key()
+            self._faceplate_resume_requested = False
+            self._faceplate_power_target = None
+            return result
         if (result.get("ok") or result.get('deferred_to_route')) and enabled:
             if result.get('deferred_to_route') and isinstance(self.faceplate, FaceplateCoordinator):
                 self.faceplate.retry_uncertain_restore()
@@ -1013,6 +1034,9 @@ class Engine:
 
     def resume_faceplate(self):
         """Power on, re-enable the worker and reassert the current scene."""
+        # Weather is independent of matrix ownership, power mode and presence.
+        # This only invalidates/wakes its existing worker; it cannot relight USB.
+        self.weather.request_refresh("steam-resume")
         close_reads = getattr(getattr(self, "_renderer", None), "close_read_session", None)
         if callable(close_reads):
             close_reads()
@@ -1021,6 +1045,9 @@ class Engine:
         self.set_screen_sync_context('steam-screensaver',False,'waiting','resume')
         self._assistant_system_suspended = False
         self._assistant_wake_allowed = self._assistant_wake_policy(values)
+        if getattr(self, '_faceplate_manual_off', False):
+            self._faceplate_suspended = True
+            return {'ok': True, 'powered': self.faceplate.powered, 'skipped': True, 'error': ''}
         from signalbar.faceplate.control import allows_output
         if not allows_output(values):
             self.faceplate_worker.configure(False)
@@ -2923,6 +2950,11 @@ class Engine:
                 self._player_city_context = appid
             provider.configure(appid)
 
+    def _faceplate_recovery_key(self, hardware=None):
+        hardware = hardware if hardware is not None else self.faceplate.device_status()
+        return (getattr(self.settings, '_commit_serial', 0), self.faceplate_preferences.read().revision,
+                self._game.appid, hardware.get('device_identity', self.faceplate.device_token))
+
     def _admit_faceplate_route_recovery(self, reason, hardware=None):
         """Bound automatic replacement attempts while a delegated GIF is held dark.
 
@@ -2931,7 +2963,13 @@ class Engine:
         Off. Only the normal worker can commit and relight.
         """
         if not isinstance(self.faceplate, FaceplateCoordinator): return True
-        pending = self.faceplate.restoration_status().get('pending', False)
+        restoration = self.faceplate.restoration_status()
+        held = getattr(self, '_faceplate_stored_picture_hold', None)
+        if held is not None:
+            if restoration.get('stored_picture_resumed') and held == self._faceplate_recovery_key(hardware):
+                return False
+            self._faceplate_stored_picture_hold = None
+        pending = restoration.get('pending', False)
         if not pending:
             self._faceplate_route_recovery = {}
             return True
@@ -2952,6 +2990,10 @@ class Engine:
         if recovery.get('key') != key or reason == 'manual-power-on':
             recovery = {'key': key, 'attempts': 0, 'state': 'pending'}
             self._faceplate_route_recovery = recovery
+        if (restoration.get('failed') and restoration.get('automatic_retry_stopped')
+                and recovery['attempts'] and token == self.faceplate.device_token):
+            recovery['state'] = 'failed'
+            return False
         route = self.faceplate_router.status()
         state = route['preparation']['state']
         worker = self.faceplate_worker.status()
@@ -5358,6 +5400,7 @@ class Engine:
                         "suspended": self._faceplate_suspended,
                         "retry_pending": self._faceplate_power_target is not None,
                         'route_state': getattr(self, '_faceplate_route_recovery', {}).get('state', 'idle'),
+                'manual_off': bool(getattr(self, '_faceplate_manual_off', False)),
                         'route_attempts': getattr(self, '_faceplate_route_recovery', {}).get('attempts', 0),
                     },
                 },

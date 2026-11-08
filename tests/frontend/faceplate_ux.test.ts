@@ -127,3 +127,19 @@ test('native clock has explicit confirmed and unconfirmed copy without a GIF rec
   assert.match(faceplateUXState(value).detail, /No automatic repeat or GIF fallback/);
   assert.doesNotMatch(faceplateUXState(value).detail, /All GIF data/);
 });
+
+test('voluntary Off, failed dark restore and unknown Off are distinct visible states',()=>{
+ const s=fixture();s.faceplate.powered=false;
+ s.faceplate.power_recovery={manual_off:true} as any;
+ assert.equal(faceplateUXState(s).label,'Faceplate off by your choice');
+ s.faceplate.power_recovery.manual_off=false;
+ s.faceplate.restoration={pending:true,held_dark:true,power_off_confirmed:true,recovery_available:true};
+ assert.equal(faceplateUXState(s).tone,'error');assert.match(faceplateUXState(s).detail,/Resume stored picture/);
+ s.faceplate.restoration=undefined;
+ assert.equal(faceplateUXState(s).label,'Faceplate powered off');
+});
+test('an exhausted dark restore is actionable instead of an endless applying message',()=>{
+ const s=fixture();s.faceplate.restoration={pending:true,held_dark:true,power_off_confirmed:true};
+ s.faceplate.power_recovery={route_state:'exhausted'} as any;
+ assert.equal(faceplateUXState(s).tone,'error');assert.match(faceplateUXState(s).detail,/limited/);
+});

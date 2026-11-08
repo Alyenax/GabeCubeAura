@@ -301,6 +301,10 @@ class DiagnosticJournal:
         brightness = device.get("brightness_control", {})
         brightness = brightness if isinstance(brightness, dict) else {}
         uploads = value.get("uploads", {}) if isinstance(value.get("uploads"), dict) else {}
+        restoration = device.get('restoration')
+        restoration = restoration if isinstance(restoration, dict) else {}
+        transfer = device.get('last_transfer')
+        transfer = transfer if isinstance(transfer, dict) else {}
         preparation = routing.get("preparation", {})
         if not isinstance(preparation, dict):
             preparation = {}
@@ -337,6 +341,24 @@ class DiagnosticJournal:
                 "available": bool(device.get("available")),
                 "busy": bool(device.get("busy")),
                 "phase": device.get("phase", ""),
+                "restoration": {
+                    **{name: bool(restoration.get(name)) for name in
+                       ('pending', 'held_dark', 'power_off_confirmed', 'failed', 'automatic_retry_stopped',
+                        'recovery_available', 'stored_picture_resumed')},
+                    'failure_stage': restoration.get('failure_stage') if restoration.get('failure_stage') in
+                        ('admission', 'preflight', 'begin', 'chunks', 'end', 'unknown') else '',
+                },
+                "last_transfer": {
+                    **self._numeric_fields(transfer,
+                        ('begin_status', 'begin_attempts', 'chunks', 'begin_ms', 'total_ms')),
+                    **{name: transfer.get(name) if transfer.get(name) in allowed else ''
+                       for name, allowed in (('configured_profile', ('baseline','vendor','auto')),
+                         ('active_profile', ('baseline','vendor')),
+                         ('failure_stage', ('admission','preflight','begin','chunks','end')),
+                         ('failure_kind', ('rejected','timeout','cancelled','link-error','invalid')))},
+                    **{name: bool(transfer.get(name)) for name in
+                       ('begin_attempted', 'body_reserved', 'payload_complete', 'end_sent')},
+                },
                 "brightness_control": {
                     **self._numeric_fields(brightness, (
                         "requested_percent", "target_percent", "last_commanded_percent",
@@ -431,7 +453,8 @@ class DiagnosticJournal:
                     for name in (
                         "timestamp_utc", "reason", "scene", "size_bytes",
                         "failed_chunk", "chunk_status", "payload_bytes_confirmed",
-                        "ack_ms", "duration_ms", "outcome", "error",
+                        "ack_ms", "duration_ms", "outcome", "error", "begin_status", "begin_attempts",
+                        "failure_stage", "failure_kind",
                     )
                     if item.get(name) is not None
                 })

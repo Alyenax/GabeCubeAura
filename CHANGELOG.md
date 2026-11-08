@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.6.1-beta.1 · 2026-11-08
+
+### Fixed
+
+- Count system sleep when aging weather data and scheduling its next request. Ask the existing weather worker for a fresh request after Steam or logind resume, and discard a response started before that request.
+- Keep a Faceplate that you explicitly switched off in GCA off after system resume. Weather data can still refresh in the background.
+- Stop repeating the same failed image restoration when a GIF transfer is rejected before its payload starts. Show the failed stage instead of leaving recovery silently pending.
+- Offer **Resume stored picture** after a confirmed restoration failure when it is safe to try a power-only recovery. This action does not upload another GIF or confirm which picture the hardware displays. Transfers with an unconfirmed END keep their separate recovery rules.
+- Distinguish an intentional Off state, an image restoration in progress and a restoration requiring attention in the Faceplate status.
+
+### Local diagnostics
+
+- Export one diagnostic document with one action. Keep the same document available to copy if the file cannot be saved, without repeating the collection.
+- Include frontend, backend and package versions, integrity checks for key installed files, available OS/kernel information, explicit power intent, restoration state, GIF transfer stages and weather refresh timing.
+- Keep diagnostic export local. There is no automatic upload or private-repository sign-in. Firmware identity and flash health remain explicitly unmeasured when the device cannot report them.
+
+### Testing and known limits
+
+This beta targets the weather and recovery paths reported in [#14](https://github.com/Alyenax/GabeCubeAura/issues/14), [#15](https://github.com/Alyenax/GabeCubeAura/issues/15) and [#16](https://github.com/Alyenax/GabeCubeAura/issues/16). It does not establish why a Faceplate refuses a GIF BEGIN command, diagnose flash wear, or guarantee that every affected panel will accept new pictures. Physical confirmation on the affected machines is still needed.
+
+Install through the public **Beta** update channel. You can return to **Stable**, currently **1.6.0**, with a separate confirmation. Returning also restores that version's known limitations. See the [beta installation and diagnostic guide](docs/BETA_1.6.1.md).
+
 ## 1.6.0 · 2026-11-08
 
 ### Faceplate clocks

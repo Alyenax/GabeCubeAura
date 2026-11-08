@@ -1,3 +1,6 @@
+import {DiagnosticExport} from './components/DiagnosticExport';
+import {BUILD_VERSION} from './build_version';
+import {faceplatePowerAction} from './faceplate_power_action';
 import {STEAM_ROUTE_FRAME} from './steam_route_viewport';
 import {GameArtworkOverview} from './components/GameArtworkOverview';
 import {GAME_ARTWORK_ROUTE,steamAppId,steamGameTitle} from './game_artwork_menu';
@@ -57,7 +60,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { TbCubeSpark, TbSettings } from "react-icons/tb";
 
 import {
-  exportDiagnosticReport,
+  exportSupportDiagnostic,
   enableCaptureDiagnostic,
   checkForUpdates,
   clearSteamGridDBApiKey,
@@ -3078,7 +3081,6 @@ function Content({ active=true, page: sourcePage = "quick", settingsView, initia
   const [updateBusy, setUpdateBusy] = useState(false);
   const [updateInstallError, setUpdateInstallError] = useState("");
   const [, setDiagnostics] = useState<DiagnosticStatus | null>(null);
-  const [diagnosticBusy, setDiagnosticBusy] = useState(false);
   const [steamGridDbKey, setSteamGridDbKey] = useState("");
   const [faceplateActionBusy, setFaceplateActionBusy] = useState(false);
   const manualTimer = useRef<number | null>(null);
@@ -4023,17 +4025,16 @@ function Content({ active=true, page: sourcePage = "quick", settingsView, initia
             {status.faceplate.power_recovery.error ? ` · ${status.faceplate.power_recovery.error}` : ""}
           </div></PanelSectionRow> : null}
           <PanelSectionRow><ButtonItem
-            label={status.faceplate.powered === false ? "Turn faceplate on" : "Turn faceplate off"}
-            description={status.faceplate.powered === false
-              ? "Restores panel power and reapplies the current brightness; the stored GIF resumes."
-              : "Turns only the matrix off now. The stored GIF and flash contents are preserved."}
-            disabled={faceplateActionBusy || !status.faceplate.available || status.faceplate.busy}
+            label={faceplatePowerAction(status).label}
+            description={faceplatePowerAction(status).description}
+            disabled={faceplateActionBusy || !status.faceplate.available || status.faceplate.busy
+              || Boolean(status.faceplate.restoration?.recovery_available && (status.faceplate.automation.busy || status.faceplate.automation.queued))}
             onClick={() => {
               setFaceplateActionBusy(true);
-              void setFaceplatePower(status.faceplate.powered === false).then(setStatus)
+              void setFaceplatePower(faceplatePowerAction(status).enabled).then(setStatus)
                 .catch(actionFailed).finally(() => setFaceplateActionBusy(false));
             }}
-          >{status.faceplate.powered === false ? "Power on" : "Power off"}</ButtonItem></PanelSectionRow>
+          >{faceplatePowerAction(status).button}</ButtonItem></PanelSectionRow>
           </SettingsPart>
         </PanelSection>
         {STUDIO_UX ? <PixelStudioWeatherCatalog status={status} setStatus={setStatus} /> : null}
@@ -4134,16 +4135,7 @@ function Content({ active=true, page: sourcePage = "quick", settingsView, initia
         onChange={async (enabled) => setStatus(await setSetting("faceplate_flash_protection_enabled", enabled))} /> : null}
 
       {showPage("advanced") ? <SettingsPart slot="advanced.diagnostics"><PanelSection title="Troubleshooting">
-        <SettingsPart slot="advanced.diagnostics"><PanelSectionRow><ButtonItem label="Export a local diagnostic"
-          description="Creates a redacted report on your machine. Nothing is sent automatically."
-          disabled={diagnosticBusy} onClick={async () => {
-            setDiagnosticBusy(true);
-            try {
-              const result = await exportDiagnosticReport();
-              setConfigurationActionMessage(`Diagnostic saved to ${result.path}`);
-            } catch (error) { setConfigurationActionMessage(`Could not export diagnostic: ${String(error)}`); }
-            finally { setDiagnosticBusy(false); }
-          }}>Export</ButtonItem></PanelSectionRow></SettingsPart>
+        <SettingsPart slot="advanced.diagnostics"><DiagnosticExport create={()=>exportSupportDiagnostic(BUILD_VERSION)}/></SettingsPart>
         {configurationActionMessage?<SettingsPart slot="advanced.diagnostics"><PanelSectionRow><div role="status">{configurationActionMessage}</div></PanelSectionRow></SettingsPart>:null}
       </PanelSection></SettingsPart> : null}
 
@@ -4363,7 +4355,7 @@ function FaceplateStatePanel({ status }: { status: Status }) {
   return <SettingsPart slot="faceplate.status"><PanelSection title="JSAUX matrix · 64 × 54">
     <PanelSectionRow><div style={{ width: "100%", padding: "10px 12px", borderRadius: 10,
       background: compact ? 'transparent' : state.tone === "good" ? "rgba(71,222,145,.1)" : "rgba(255,190,80,.1)", fontSize: ".84em", lineHeight: 1.5 }}>
-      <b>{state.label}</b><div>{state.detail}</div>
+      <b><Localized>{state.label}</Localized></b><div><Localized>{state.detail}</Localized></div>
       <div style={{ marginTop: 5 }}>Saved at Home: {status.faceplate.routing.routes.home} · In game: {status.faceplate.routing.routes.game}</div>
       {weather.faceplate_weather_state !== "fresh" ? <div>Weather: {weather.faceplate_weather_state === "cached"
         ? `last known · ${formatAge(weather.age_s)}` : weather.faceplate_weather_state === "background-only"

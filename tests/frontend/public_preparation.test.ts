@@ -25,7 +25,7 @@ test("support capacity is explicit and public channels do not expose private aut
   assert.match(index, /option\.data !== "private" \|\| update\.private_tools/);
   assert.match(index, /Capture diagnostics · 5 minutes/);
   assert.doesNotMatch(index, /slot="updates.github"/);
-  assert.match(index, /exportDiagnosticReport\(\)/);
+  assert.match(index, /exportSupportDiagnostic\(BUILD_VERSION\)/);
 });
 test("normal weather metadata omits raw internal revisions without hiding diagnostic data", () => {
   const value = { data_uri: "", error: "", live_weather: true, visual_theme: "weather-artwork-v2" as const,

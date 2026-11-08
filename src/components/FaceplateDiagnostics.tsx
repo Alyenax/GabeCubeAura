@@ -21,11 +21,13 @@ export function FaceplateDiagnostics({status,summaryShown=false}:{status:Status;
     {row('USB connection','Connexion USB',!p.available?t('Not detected','Non détectée'):p.busy?t('Another app is using the Faceplate','Utilisée par une autre application'):t('Connected','Connectée'))}
     {row('USB port','Port USB',p.port||'-')}
     {row('Power','Alimentation',p.powered===true?t('On','Allumée'):p.powered===false?t('Off','Éteinte'):t('Not confirmed','Non confirmée'))}
-    {!p.power_recovery?.suspended&&p.power_recovery?.route_state&&p.power_recovery?.route_state!=='idle'?row('Display recovery','Récupération de l’affichage',
+    {!p.restoration?.stored_picture_resumed&&!p.power_recovery?.suspended&&p.power_recovery?.route_state&&p.power_recovery?.route_state!=='idle'?row('Display recovery','Récupération de l’affichage',
+      p.power_recovery?.route_state==='failed'?t('The image transfer failed. Automatic recovery stopped. Use Resume stored picture to restore power without uploading.','Le transfert de l’image a échoué. La reprise automatique est arrêtée. Utilisez Reprendre l’image enregistrée pour rétablir l’alimentation sans transfert.'):
       p.power_recovery?.route_state==='exhausted'?t('Automatic recovery stopped after three attempts. Retry with Power on.','Reprise automatique arrêtée après trois tentatives. Réessayez avec Allumer.'):
       p.power_recovery?.route_state==='retry-waiting'?t('Final USB confirmation missing. One automatic retry is scheduled.','Confirmation USB finale manquante. Un seul nouvel essai automatique est prévu.'):
       p.power_recovery?.route_state==='unconfirmed'?t('USB confirmation still missing. Automatic retry stopped. Use Power on to try again.','Confirmation USB toujours manquante. Reprise automatique arrêtée. Utilisez Allumer pour réessayer.'):
       t('Restoring the current image before powering on.','Restauration de l’image actuelle avant rallumage.')):null}
+    {p.restoration?.stored_picture_resumed?<div role="status">{t('Power restored; the requested image remains unconfirmed.','Alimentation rétablie ; l’image demandée reste non confirmée.')}</div>:null}
     {p.owners?.length?row('Used by','Utilisée par',p.owners.join(', ')):null}
     {p.detail&&!errors.includes(p.detail)?row('Device message','Message du périphérique',p.detail):null}
     {errors.map(message=><div key={message} role="alert" style={{color:'#ffb9ae'}}>{message}</div>)}
@@ -59,7 +61,9 @@ export function FaceplateDiagnostics({status,summaryShown=false}:{status:Status;
     {(x?.total_ms||p.last_upload_ms)?row('Last transfer time','Durée du dernier transfert',`${x?.total_ms||p.last_upload_ms} ms`):null}
     {p.last_start_ack_ms?row('Start confirmed after','Démarrage confirmé après',`${p.last_start_ack_ms} ms`):null}
     {w.ack_ema_ms?row('Average USB response','Réponse USB moyenne',`${w.ack_ema_ms} ms`):null}
-    {x?.total_ms?<>
+    {x&&(x.begin_attempted||x.failure_stage||x.total_ms!=null)?<>
+      {x.failure_stage?row('Failed stage','Étape en échec',`${x.failure_stage} · ${x.failure_kind??''}`):null}
+      {row('BEGIN response','Réponse BEGIN',x.begin_status==null?(x.begin_attempted?t('No reply','Aucune réponse'):t('Not sent','Non envoyé')):`0x${x.begin_status.toString(16).padStart(2,'0')}`)}
       {row('USB mode','Mode USB',x.active_profile||x.configured_profile||'baseline')}
       {row('Transfer stages (ms)','Étapes du transfert (ms)',`${t('Check','Vérification')} ${x.preflight_ms??0} · ${t('Open','Ouverture')} ${x.begin_ms??0} · ${t('Send','Envoi')} ${x.chunks_ms??0} · ${t('Confirm','Validation')} ${x.finalize_ms??0}`)}
       {row('Data blocks','Blocs de données',x.chunks??0)}

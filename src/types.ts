@@ -384,7 +384,13 @@ export interface Status {
     last_asset: string;
     last_upload_ms: number;
     last_start_ack_ms: number;
+    restoration?: {pending:boolean;held_dark:boolean;power_off_confirmed:boolean;failed?:boolean;
+      automatic_retry_stopped?:boolean;failure_stage?:string;recovery_available?:boolean;stored_picture_resumed?:boolean};
     last_transfer: {
+      begin_attempted?: boolean;
+      begin_attempts?: number;
+      failure_stage?: string;
+      failure_kind?: string;
       preflight_ms?: number;
       begin_ms?: number;
       chunks_ms?: number;
@@ -428,6 +434,7 @@ export interface Status {
     home_artwork_prepared?: boolean;
     powered: boolean | null;
     power_recovery: {
+      manual_off?: boolean;
       route_state?: string;
       route_attempts?: number;
       target: boolean | null;

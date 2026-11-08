@@ -339,11 +339,44 @@ def weather_frame(condition, variant, elapsed, values, *, is_day=True):
                                               values["weather_shadow_cutoff"]) for pixel in raw])
 
 
+def _weather_elapsed_clock(animation_clock, wall_clock):
+    """Keep freshness/deadlines separate from the animation timeline.
+
+    Linux BOOTTIME includes suspend and ignores civil-clock corrections. A
+    paired, nondecreasing fallback accounts for elapsed sleep on other hosts;
+    it can conservatively expire data early after a forward civil-clock step.
+    Explicit one-clock fixtures retain their supplied timeline.
+    """
+    if animation_clock is time.monotonic and hasattr(time, 'CLOCK_BOOTTIME'):
+        try:
+            time.clock_gettime(time.CLOCK_BOOTTIME)
+        except (OSError, ValueError):
+            pass
+        else:
+            def read_boot():return time.clock_gettime(time.CLOCK_BOOTTIME)
+            read_boot.weather_clock_kind = 'boottime'
+            return read_boot
+    if animation_clock is not time.monotonic and wall_clock is time.time:
+        return animation_clock
+    lock = threading.Lock()
+    previous = [animation_clock(), wall_clock()]
+    elapsed = [previous[0]]
+    def read():
+        with lock:
+            mono, wall = animation_clock(), wall_clock()
+            elapsed[0] += max(0.0, mono - previous[0], wall - previous[1])
+            previous[:] = mono, wall
+            return elapsed[0]
+    read.weather_clock_kind = 'paired-fallback'
+    return read
+
+
 class WeatherProvider:
     def __init__(self, clock=time.monotonic, fetch=fetch_current,
-                 cache_path=None, wall_clock=time.time):
+                 cache_path=None, wall_clock=time.time, elapsed_clock=None):
         self._clock = clock
         self._wall_clock = wall_clock
+        self._elapsed_clock = elapsed_clock or _weather_elapsed_clock(clock, wall_clock)
         self._fetch = fetch
         self._cache_path = str(cache_path) if cache_path else ""
         self._lock = threading.RLock()
@@ -360,6 +393,12 @@ class WeatherProvider:
         self._error = ""
         self._fetching = False
         self._preview = None
+        self._refresh_requests = 0
+        self._discarded_responses = 0
+        self._last_refresh_reason = 'configuration'
+        self._last_fetch_started = None
+        self._last_fetch_completed = None
+        self._last_error_category = ''
 
     @staticmethod
     def _location_key(location):
@@ -387,7 +426,7 @@ class WeatherProvider:
                     or sample.get("condition") not in CONDITIONS or saved_at <= 0):
                 return None, 0.0
             age = max(0.0, self._wall_clock() - saved_at)
-            return dict(sample), self._clock() - age
+            return dict(sample), self._elapsed_clock() - age
         except (OSError, ValueError, TypeError, OverflowError):
             return None, 0.0
 
@@ -432,6 +471,26 @@ class WeatherProvider:
                 self._generation += 1
                 self._wake.set()
 
+    def request_refresh(self, reason="resume"):
+        """Wake the existing worker and invalidate pre-refresh responses.
+
+        No network or panel command runs here. Repeated notifications do not
+        renew an exhausted outage's five-minute fast-retry allowance.
+        """
+        with self._lock:
+            if not self._enabled or not self._location:
+                return False
+            self._generation += 1
+            self._refresh_requests += 1
+            self._last_refresh_reason = reason if reason in ('steam-resume','logind-resume','resume') else 'manual'
+            self._next_fetch = 0.0
+            self._wake.set()
+            return True
+
+    def _sample_age(self):
+        # Caller holds _lock. Zero is a valid injected elapsed-clock timestamp.
+        return max(0.0, self._elapsed_clock() - self._fetched_at) if self._sample is not None else None
+
     def start(self):
         with self._lock:
             if self._thread and self._thread.is_alive():
@@ -451,28 +510,39 @@ class WeatherProvider:
     def _run(self):
         while not self._stop.is_set():
             with self._lock:
-                due = self._enabled and self._location and self._clock() >= self._next_fetch
+                due = self._enabled and self._location and self._elapsed_clock() >= self._next_fetch
                 location = dict(self._location) if due else None
                 generation = self._generation
                 if due:
                     self._fetching = True
-                wait = max(1.0, self._next_fetch - self._clock()) if self._enabled else 60.0
-            if not due:
-                self._wake.wait(min(wait, 60.0))
+                    self._last_fetch_started = self._elapsed_clock()
+                wait = max(1.0, self._next_fetch - self._elapsed_clock()) if self._enabled else 60.0
+                # Clear under the same lock as request_refresh/configure. A
+                # notification delivered before wait must remain observable.
                 self._wake.clear()
+            if self._stop.is_set():
+                break
+            if not due:
+                self._wake.wait(min(wait, 30.0) if self._enabled else 60.0)
                 continue
             try:
                 sample = self._fetch(location)
                 error = ""
+                category = '' if sample is not None else 'no-data'
             except Exception as caught:
                 sample = None
                 error = str(caught)[:180]
+                category = 'timeout' if isinstance(caught, TimeoutError) else 'network' if isinstance(caught, OSError) else 'request-failed'
             with self._lock:
+                self._last_fetch_completed = self._elapsed_clock()
+                if generation != self._generation:
+                    self._discarded_responses += 1
                 if not self._stop.is_set() and generation == self._generation:
+                    self._last_error_category = category
                     self._fetching = False
                     if sample is not None:
                         self._sample = sample
-                        self._fetched_at = self._clock()
+                        self._fetched_at = self._elapsed_clock()
                         self._retry_deadline = None
                         self._persist_cached(self._location, sample)
                         self._error = ""
@@ -481,12 +551,12 @@ class WeatherProvider:
                             max(10.0, float(transition) + 1.0)
                             if isinstance(transition, (int, float)) else REFRESH_SECONDS
                         )
-                        self._next_fetch = self._clock() + min(
+                        self._next_fetch = self._elapsed_clock() + min(
                             REFRESH_SECONDS, transition_wait
                         )
                     else:
                         self._error = error or "weather unavailable"
-                        now = self._clock()
+                        now = self._elapsed_clock()
                         if self._retry_deadline is None:
                             self._retry_deadline = now + RETRY_WINDOW_SECONDS
                         # One bounded recovery window per outage. Keep the
@@ -497,6 +567,21 @@ class WeatherProvider:
                                  else REFRESH_SECONDS)
                         self._next_fetch = now + delay
 
+
+    def diagnostic_status(self):
+        """Read-only clock/deadline evidence without city, raw exceptions or IO."""
+        with self._lock:
+            now=self._elapsed_clock()
+            ago=lambda value:max(0.0,now-value) if value is not None else None
+            return {'clock_kind':getattr(self._elapsed_clock,'weather_clock_kind','injected'),
+                'enabled':bool(self._enabled),'sample_present':self._sample is not None,
+                'sample_age_s':self._sample_age(),'next_fetch_in_s':max(0.0,self._next_fetch-now) if self._enabled else None,
+                'retry_window_in_s':max(0.0,self._retry_deadline-now) if self._retry_deadline is not None else None,
+                'fetching':bool(self._fetching),'worker_alive':bool(self._thread and self._thread.is_alive()),
+                'generation':self._generation,'refresh_requests':self._refresh_requests,
+                'last_refresh_reason':self._last_refresh_reason,'discarded_responses':self._discarded_responses,
+                'last_fetch_started_ago_s':ago(self._last_fetch_started),'last_fetch_completed_ago_s':ago(self._last_fetch_completed),
+                'error_category':self._last_error_category,'retry_seconds':RETRY_SECONDS,'retry_window_seconds':RETRY_WINDOW_SECONDS}
 
     def preview(self, condition, variant, started_at=None, frame_step_seconds=None, *, is_day=None):
         condition, forced_daylight = weather_preview_condition(condition)
@@ -538,7 +623,7 @@ class WeatherProvider:
         with self._lock:
             preview = self._preview
             sample = self._sample
-            fetched = self._fetched_at
+            age = self._sample_age()
         elapsed = now - preview["started_at"] if preview else 0.0
         if preview and elapsed < weather_loop_seconds(preview["condition"], preview["variant"]):
             frame_step = preview.get("frame_step_seconds", 0.0)
@@ -548,7 +633,7 @@ class WeatherProvider:
                 # its continuous clock reach between-frame rain events early.
                 elapsed = math.floor((elapsed + 1e-9) / frame_step) * frame_step
             return preview, preview["variant"], elapsed, True
-        if sample and fetched and now - fetched < MAX_SAMPLE_AGE_SECONDS:
+        if sample and age is not None and age < MAX_SAMPLE_AGE_SECONDS:
             condition = sample["condition"]
             variant = values.get(weather_variant_key(condition, sample.get("is_day", True)),
                                  values[f"weather_{condition}_variant"])
@@ -573,11 +658,12 @@ class WeatherProvider:
         return self._frame(sample, variant, elapsed, values) if sample else None
 
     def solar_status(self, values, now=None):
-        now = self._clock() if now is None else now
+        # Keep the caller's animation-time argument compatible; freshness uses
+        # the separate suspend-inclusive timeline, never that timestamp.
         with self._lock:
-            sample, fetched = self._sample, self._fetched_at
+            sample, age = self._sample, self._sample_age()
             location = self._location
-        fresh = bool(sample and fetched and now - fetched < MAX_SAMPLE_AGE_SECONDS)
+        fresh = bool(sample and age is not None and age < MAX_SAMPLE_AGE_SECONDS)
         enabled = bool(values.get("night_mode_enabled"))
         is_night = bool(fresh and not sample["is_day"])
         return {
@@ -595,13 +681,12 @@ class WeatherProvider:
     def status(self, values, game_running=False):
         now = self._clock()
         with self._lock:
-            sample, fetched = self._sample, self._fetched_at
+            sample, age = self._sample, self._sample_age()
             location, enabled, error, fetching = self._location, self._enabled, self._error, self._fetching
         current, variant, elapsed, preview = self._current(values, now)
         frame = (self._frame(current, variant, elapsed, values)
                  if current else None)
         solar = self.solar_status(values, now)
-        age = max(0.0, now - fetched) if fetched else None
         fresh = bool(sample and age is not None and age < MAX_SAMPLE_AGE_SECONDS)
         fallback = bool(
             sample and age is not None and age < FACEPLATE_FALLBACK_AGE_SECONDS
@@ -611,13 +696,13 @@ class WeatherProvider:
             else "background-only" if sample else "unavailable"
         )
         return {"location": location, "display": values["weather_display"],
-                "phase": "loading" if fetching else "ready" if sample and fetched and now - fetched < MAX_SAMPLE_AGE_SECONDS
+                "phase": "loading" if fetching else "ready" if fresh
                 else "error" if error else "waiting" if enabled else "off",
                 "error": error,
                 "condition": sample["condition"] if sample else None,
                 "is_day": sample["is_day"] if sample else None,
                 "weather_code": sample["weather_code"] if sample else None,
-                "temperature_c": sample.get("temperature_c") if sample and fetched and now - fetched < MAX_SAMPLE_AGE_SECONDS else None,
+                "temperature_c": sample.get("temperature_c") if fresh else None,
                 "cached_temperature_c": sample.get("temperature_c") if sample else None,
                 "faceplate_fallback_available": fallback,
                 "faceplate_background_only": bool(sample and not fallback),

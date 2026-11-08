@@ -1,5 +1,8 @@
 /** Stock backend UI messages. Never translate transcripts, names or file paths. */
 export const backendFrench:Readonly<Record<string,string>>={
+ 'Faceplate recovery is disabled by the current power settings':'La reprise de la Faceplate est désactivée par les réglages d’alimentation actuels.',
+ 'Faceplate recovery is unavailable while another display is active':'La reprise de la Faceplate est indisponible pendant un autre affichage ou transfert.',
+ 'Stored picture recovery power is unconfirmed':'L’alimentation de la Faceplate n’a pas confirmé la reprise de l’image enregistrée.',
  'Remove Decky Vocal Assistant before restoring a GabeCubeAura version with embedded voice':'Désinstalle Decky Vocal Assistant avant de restaurer une version de GabeCubeAura avec un assistant vocal intégré.',
  'Screen capture paused after repeated failures. Use Preview to retry.':'Capture écran suspendue après plusieurs échecs. Utilise l’aperçu pour réessayer.',
  'Assistant reset in progress.':'Réinitialisation de l’assistant en cours.',

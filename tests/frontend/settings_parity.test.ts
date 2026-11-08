@@ -60,6 +60,19 @@ test('every existing native control retains its callback and numeric limits exce
     if(field.owner==='Content'&&field.label==='"Choose an Artwork Dashboard"'){
       assert.match(dashboard,/presentation.open\(\{category: 'faceplate', tab\}\)/);continue;
     }
+    if(field.owner==='Content'&&field.label==='"Export a local diagnostic"'){
+      assert.match(source,/<DiagnosticExport create=\{\(\)=>exportSupportDiagnostic\(BUILD_VERSION\)\}/);
+      const exportView=readFileSync(new URL('../../src/components/DiagnosticExport.tsx',import.meta.url),'utf8');
+      assert.match(exportView,/label="Export a local diagnostic"/);assert.match(exportView,/result.text/);
+      continue;
+    }
+    // Failure recovery extends the existing power button with an explicit,
+    // no-upload action. The same RPC is used for ordinary On and Off.
+    if(field.owner==='Content'&&field.label?.includes('status.faceplate.powered === false')){
+      const action=controls.find(item=>item.owner==='Content'&&item.label==='{faceplatePowerAction(status).label}');
+      assert(action?.onClick?.includes('setFaceplatePower(faceplatePowerAction(status).enabled)'));
+      continue;
+    }
     // Lab174 localizes the language-switch label; its callback/value is unchanged.
     const label=(field.label==='"Français / English"'?'"French interface"':field.label)?.replace('Apply to Dashboard Home','Apply to Home');
     const matches=controls.filter(item=>item.owner===field.owner&&item.tag===field.tag&&item.label===label);

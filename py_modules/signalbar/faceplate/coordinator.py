@@ -158,6 +158,7 @@ class FaceplateCoordinator(ContinuousReturn):
         self._screensaver_exit_blank = self._delegated_gif_activation_pending
         self._restore_alias = None  # One bounded source -> wire representation.
         self._restore_uncertain = None
+        self._restore_failure = None
         self._continuous_return = None
         self._return_trace = {}
         self._return_trace_at = 0.0
@@ -298,6 +299,12 @@ class FaceplateCoordinator(ContinuousReturn):
 
     def _retained_restore(self, data, token):
         """Suppress an identical uncertain recovery, not new content/reconnects."""
+        failure = self._restore_failure
+        if failure and failure.get('suppress_retry') and failure['key'] == (hashlib.sha256(data).hexdigest(), token):
+            self.last_transfer = dict(failure['transfer'])
+            return {'attempted': False, 'synchronized': False, 'retry_suppressed': True,
+                    'error': failure['error'], 'transfer': dict(self.last_transfer),
+                    'sent_unconfirmed': False}
         uncertain = self._restore_uncertain
         if uncertain and uncertain['key'] == (hashlib.sha256(data).hexdigest(), token):
             self.last_transfer = dict(uncertain['transfer'])
@@ -324,6 +331,7 @@ class FaceplateCoordinator(ContinuousReturn):
                     and receipt.get('payload_complete') and receipt.get('end_sent')):
                 return False
             self._restore_uncertain = None
+            self._restore_failure = None
             return True
         finally:
             self.lock.release()
@@ -334,6 +342,13 @@ class FaceplateCoordinator(ContinuousReturn):
                 'power_off_confirmed': self.powered is False,
                 'retry_suppressed': self._restore_uncertain is not None,
                 'wire_alias_cached': self._restore_alias is not None,
+                'failed': self._restore_failure is not None,
+                'failure_stage': (self._restore_failure or {}).get('stage', ''),
+                'automatic_retry_stopped': bool((self._restore_failure or {}).get('suppress_retry')
+                    or (self._restore_failure or {}).get('stored_picture_resumed')),
+                'recovery_available': bool(self.enabled and self._screensaver_exit_blank and self._restore_failure
+                    and not self._restore_failure['transfer'].get('sent_unconfirmed')),
+                'stored_picture_resumed': bool((self._restore_failure or {}).get('stored_picture_resumed')),
                 'continuous_return': self.continuous_return_status(),
                 'physical_playback': 'not-measured'}
 
@@ -364,6 +379,7 @@ class FaceplateCoordinator(ContinuousReturn):
         token = self.identity_reader(port)
         changed = token != self.device_token
         if changed:
+            self._restore_failure = None
             self.known_epochs.clear()
             self.flash.invalidate()
             self.device_token = token
@@ -401,7 +417,15 @@ class FaceplateCoordinator(ContinuousReturn):
             try:
                 if scene != 'screensaver':self._prepare_return_link(link,len(data))
                 yield link
-            except Exception:
+            except Exception as error:
+                if scene != 'screensaver' and self._screensaver_exit_blank:
+                    receipt = dict(getattr(link, 'last_transfer_timings', {}) or {})
+                    self._restore_failure = {'key': (hashlib.sha256(data).hexdigest(), self.device_token),
+                        'stage': receipt.get('failure_stage', 'unknown'),
+                        'error': str(error)[:180], 'transfer': receipt,
+                        'suppress_retry': bool(not receipt.get('body_reserved')
+                            and not isinstance(error, TransferCancelled)),
+                        'stored_picture_resumed': False}
                 if self._continuous_return:
                     try:self._fail_continuous_return(link,'transfer-failed')
                     except (OSError,ValueError,LinkError):pass
@@ -531,8 +555,10 @@ class FaceplateCoordinator(ContinuousReturn):
             event['source_sha256'] = source_sha
         if error:
             event["error"] = str(error)[:180]
-        for key in ('failed_chunk', 'chunk_status', 'payload_bytes_confirmed'):
-            if key in transfer:
+        for field in ('failure_stage', 'failure_kind'):
+            if transfer.get(field):event[field] = str(transfer[field])[:24]
+        for key in ('failed_chunk', 'chunk_status', 'payload_bytes_confirmed', 'begin_attempts', 'begin_status'):
+            if transfer.get(key) is not None:
                 event[key] = int(transfer[key])
 
         observed = self.state["observability"]
@@ -652,6 +678,7 @@ class FaceplateCoordinator(ContinuousReturn):
             self._native_result = None
             self._restore_alias = None
             self._restore_uncertain = None
+            self._restore_failure = None
             self._continuous_return = None
             self._delegated_gif_activation_pending = True
             self.flash.invalidate()
@@ -930,7 +957,10 @@ class FaceplateCoordinator(ContinuousReturn):
                             'deferred_to_route': True}
             if enabled and self._continuous_return:
                 return {'ok':False,'powered':self.powered,'error':'','deferred_to_route':True}
-            if enabled and self._screensaver_exit_blank:
+            resume_stored = bool(enabled and reason == 'Decky control' and self.enabled
+                                 and self._screensaver_exit_blank and self._restore_failure
+                                 and not self._restore_failure['transfer'].get('sent_unconfirmed'))
+            if enabled and self._screensaver_exit_blank and not resume_stored:
                 # An old queued On must not undo the ACKed exit Off. Returning
                 # deferred (not success) lets Engine clear the stale power job
                 # and reconcile the current route, which owns the eventual On.
@@ -944,6 +974,8 @@ class FaceplateCoordinator(ContinuousReturn):
                 return {"ok": False, "powered": self.powered, "error": self.error}
             try:
                 self._observe_power_device(port)
+                if resume_stored and self._restore_failure is None:
+                    return {'ok': False, 'powered': self.powered, 'error': '', 'deferred_to_route': True}
                 with self.link_factory(
                     port=port, log=lambda message: self._log("debug", message),
                 ) as link:
@@ -952,12 +984,27 @@ class FaceplateCoordinator(ContinuousReturn):
                         level = safe_brightness(self.brightness)
                         self._write_brightness(link, level, force=True)
                         self.effective_brightness = level
-                    self._power_command(link, enabled, timeout=0.7)
+                    reply = self._power_command(link, enabled, timeout=0.7)
+                    if resume_stored and (not isinstance(reply, protocol.Reply)
+                            or reply.kind != protocol.TYPE_CONTROL or reply.command != protocol.CMD_POWER
+                            or reply.payload != b'\x01'):
+                        raise LinkError('Stored picture recovery power is unconfirmed')
                 self._native_attempt = None
                 self.native_clock["state"] = "idle"
                 self.powered = bool(enabled)
                 self.flash.invalidate()
                 self._brightness_command = None
+                if resume_stored:
+                    self._screensaver_exit_blank = False
+                    self._persist_delegated_pending(False)
+                    self._restore_uncertain = None
+                    self._restore_failure['stored_picture_resumed'] = True
+                    self._restore_failure['suppress_retry'] = False
+                    self.last_synchronized = False
+                    self.error = self._restore_failure['error']
+                    self.phase = 'error'
+                    self.detail = 'Power restored; the requested image remains unconfirmed'
+                    return {'ok': True, 'powered': True, 'stored_picture_resumed': True, 'error': ''}
                 self.error = ""
                 self.phase = "ready" if enabled else "powered-off"
                 self.detail = (
@@ -1298,6 +1345,7 @@ class FaceplateCoordinator(ContinuousReturn):
             if self._continuous_return:self._end_continuous_return('confirmed','replacement-ack')
             self._persist_delegated_pending(False)
             self._restore_uncertain = None
+            self._restore_failure = None
 
     def synchronize_native_clock(self, *, sync_key, reason="route", cancelled=None):
         """Activate a first-class scene under the sole serial lock, without GIF IO.

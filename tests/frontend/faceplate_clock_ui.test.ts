@@ -45,11 +45,19 @@ test('clock removed while modal is open cannot mutate settings or routing',async
 test('transfer mode opens without mutation and saves only its context with duplicate submits fenced',async()=>{
   const h=harness([{id:'standard',label:'Standard',private:false}],'game');
   const dropdown=h.renderTransfer().find(n=>n.type==='dropdown')!;
-  assert.equal(dropdown.props.selectedOption,'conservative');
+  assert.equal(dropdown.props.selectedOption,'minute');
   assert.equal(dropdown.props.rgOptions.length,2);
   assert.deepEqual(h.writes,[]);assert.deepEqual(h.routes,[]);assert.equal(h.reads,0);
-  dropdown.props.onChange({data:'minute'});dropdown.props.onChange({data:'conservative'});
+  dropdown.props.onChange({data:'conservative'});dropdown.props.onChange({data:'minute'});
   await new Promise(resolve=>setImmediate(resolve));
-  assert.deepEqual(h.writes,[['faceplate_clock_cadence_game','minute']]);
+  assert.deepEqual(h.writes,[['faceplate_clock_cadence_game','conservative']]);
   assert.equal(h.saved.length,1);assert.deepEqual(h.routes,[]);
+});
+
+test('saved Conservative clock cadence is shown without changing either context',()=>{
+  const h=harness([{id:'standard',label:'Standard',private:false}],'game');
+  h.current.faceplate_clock_cadence_game='conservative';
+  const dropdown=h.renderTransfer().find(n=>n.type==='dropdown')!;
+  assert.equal(dropdown.props.selectedOption,'conservative');
+  assert.deepEqual(h.writes,[]);assert.deepEqual(h.routes,[]);
 });

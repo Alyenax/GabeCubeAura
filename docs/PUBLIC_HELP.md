@@ -49,6 +49,6 @@ Home image extension also follows prepared Home library images without a Steam g
 
 Standalone clocks support Faceplate image extension. Bottom edge follows the bottom eight rows, which may be black; Whole image includes the dial, time and date. Prepared clock colours are independent of USB confirmation. Confirmed same-session clock renewals avoid an unnecessary Power On command; physical playback continuity still needs checking.
 
-Clock transfer mode is saved separately for Home and games: Conservative (default, about 15 transfers/hour) or Fixed minute (about 60/hour). Fixed minute keeps one time/date inside each GIF while animations continue. These rates are nominal; transfer timing and animation continuity require a physical check.
+Clock transfer mode is saved separately for Home and games: Fixed minute (default, about 60 transfers/hour) or Conservative (about 15/hour). Existing saved choices are kept. Fixed minute keeps one time/date inside each GIF while animations continue. These rates are nominal; transfer timing and animation continuity require a physical check.
 
 Analog clocks use thin hour and minute hands sharing one native pivot. The five dial styles retain their existing lengths, colours, dates and transfer modes.

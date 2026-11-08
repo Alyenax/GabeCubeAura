@@ -3134,7 +3134,7 @@ class Engine:
                 clock_wall, clock_mono = time.time(), time.monotonic()
                 candidate = self.clock_runtime.plan(selected,context,clock_wall,
                     is_night(clock_wall, solar), force=force, monotonic=clock_mono,
-                    cadence=values.get('faceplate_clock_cadence_'+context, 'conservative'),
+                    cadence=values.get('faceplate_clock_cadence_'+context, 'minute'),
                     options={'palette': values.get('faceplate_clock_palette_'+context, 'amber'),
                              'format': values.get('faceplate_clock_format_'+context, '24'),
                              'language': values.get('ui_language', 'en')})

@@ -54,14 +54,27 @@ class CadenceTests(unittest.TestCase):
     def test_settings_default_persist_independently_reject_and_repair_invalid_values(self):
         with tempfile.TemporaryDirectory() as folder:
             path=Path(folder)/'settings.json';store=SettingsStore(str(path))
-            for context in ('home','game'):self.assertEqual('conservative',store.all()['faceplate_clock_cadence_'+context])
-            store.update({'faceplate_clock_cadence_home':'minute'})
+            for context in ('home','game'):self.assertEqual('minute',store.all()['faceplate_clock_cadence_'+context])
+            store.update({'faceplate_clock_cadence_home':'conservative'})
             loaded=SettingsStore(str(path)).all()
-            self.assertEqual('minute',loaded['faceplate_clock_cadence_home'])
-            self.assertEqual('conservative',loaded['faceplate_clock_cadence_game'])
+            self.assertEqual('conservative',loaded['faceplate_clock_cadence_home'])
+            self.assertEqual('minute',loaded['faceplate_clock_cadence_game'])
             with self.assertRaises(ValueError):store.update({'faceplate_clock_cadence_home':'bad'})
             value=json.loads(path.read_text());value['faceplate_clock_cadence_home']='bad';path.write_text(json.dumps(value))
-            self.assertEqual('conservative',SettingsStore(str(path)).all()['faceplate_clock_cadence_home'])
+            self.assertEqual('minute',SettingsStore(str(path)).all()['faceplate_clock_cadence_home'])
+
+    def test_older_settings_gain_missing_defaults_without_overwriting_saved_cadence(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path=Path(folder)/'settings.json'
+            path.write_text(json.dumps({'faceplate_clock_cadence_home':'conservative','ui_language':'fr'}))
+            store=SettingsStore(str(path));values=store.all()
+            self.assertEqual('conservative',values['faceplate_clock_cadence_home'])
+            self.assertEqual('minute',values['faceplate_clock_cadence_game'])
+            self.assertEqual('fr',values['ui_language'])
+            store.update({'faceplate_clock_cadence_game':'conservative'})
+            restored=SettingsStore(str(path)).all()
+            self.assertEqual('conservative',restored['faceplate_clock_cadence_home'])
+            self.assertEqual('conservative',restored['faceplate_clock_cadence_game'])
 
     def test_inactive_mode_edit_keeps_current_job_and_active_edit_refreshes_only_clock(self):
         f=fixture.NativeSceneTests('test_stable_home_does_not_render_budget_or_send_per_second_minute_or_midnight')
@@ -69,9 +82,9 @@ class CadenceTests(unittest.TestCase):
         f.settings.update({'faceplate_clock_home':'horizon'});f.prefs.update(home_scene='clock')
         engine=f.engine;engine._reconcile_faceplate=Mock()
         pending=engine.clock_runtime.plan('horizon','home',1000,False,monotonic=1000)
-        engine.update_settings({'faceplate_clock_cadence_game':'minute'})
+        engine.update_settings({'faceplate_clock_cadence_game':'conservative'})
         self.assertEqual(pending,engine.clock_runtime.pending);engine._reconcile_faceplate.assert_not_called()
-        engine.update_settings({'faceplate_clock_cadence_home':'minute'})
+        engine.update_settings({'faceplate_clock_cadence_home':'conservative'})
         engine._reconcile_faceplate.assert_called_once_with('clock-cadence-change',force=True)
         engine.faceplate_worker.cancel_scene_class.assert_called_with('clock')
 

@@ -356,6 +356,7 @@
   "py_modules/signalbar/steam/dashboard_stats.py",
   "py_modules/signalbar/steam/quick_preview.py",
   "py_modules/signalbar/steam/quick_preview_process.py",
+  "py_modules/signalbar/support_environment.py",
   "py_modules/signalbar/support_snapshot.py",
   "py_modules/signalbar/thermal.py",
   "py_modules/signalbar/update_helper.py",

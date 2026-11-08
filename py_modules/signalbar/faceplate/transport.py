@@ -270,6 +270,8 @@ class Link:
         try:
             control.begin()
         except OSError as error:
+            from ..support_environment import observe_failure
+            observe_failure(self.port, {'failure_stage':'open', 'failure_kind':'ownership-unavailable'}, reason='ownership')
             raise LinkBusy(str(error)) from error
         self._usb_control = control
         try:
@@ -289,9 +291,13 @@ class Link:
         if not self.port:
             raise LinkError("faceplate not found (no JSAUX CH340 ttyUSB)")
         if _ownership_manager is not None and not _ownership_manager.claim(self.port):
+            from ..support_environment import observe_failure
+            observe_failure(self.port, {'failure_stage':'open', 'failure_kind':'ownership-unavailable'}, reason='ownership')
             raise LinkBusy("Faceplate physical ownership is unavailable")
         owners = port_owner_details(self.port)
         if owners:
+            from ..support_environment import observe_failure
+            observe_failure(self.port, {'failure_stage':'open', 'failure_kind':'port-owned'}, reason='port-open')
             raise LinkError("faceplate serial port owned by " + ", ".join(owners))
         flags = os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK
         fd = self._usb_control.open_port(self.port, flags) if self._usb_control is not None else os.open(self.port, flags)
@@ -587,6 +593,10 @@ class Link:
         self.flash_priority = getattr(self, "flash_priority", "background")
         wanted = self.flash_manager.preflight(data, self.flash_priority)
         timings = {
+            "expected_bytes": len(data),
+            "image_format": data[:6].decode('ascii', 'replace') if data[:6] in (b'GIF87a', b'GIF89a') else 'unknown',
+            "image_width": int.from_bytes(data[6:8], 'little') if len(data) >= 10 else None,
+            "image_height": int.from_bytes(data[8:10], 'little') if len(data) >= 10 else None,
             "identity": wanted, "body_reserved": False, "stored_display_restarted": False,
             "preflight_ms": 0,
             "begin_ms": 0,
@@ -670,3 +680,6 @@ class Link:
                 self.flash_manager.invalidate()
             timings["total_ms"] = round((time.monotonic() - total_started) * 1000)
             self.last_transfer_timings = timings
+            if timings.get('failure_kind') not in ('', 'cancelled'):
+                from ..support_environment import observe_failure
+                observe_failure(self.port, timings)

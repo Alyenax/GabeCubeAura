@@ -28,6 +28,13 @@ CREDENTIAL_ASSIGNMENT = re.compile(
 STEAMGRIDDB_KEY = re.compile(r"\b[A-Za-z0-9_-]{28,}\b")
 HOME_PATH = re.compile(r"/(?:home|Users)/[^/\s]+")
 EVENT_NAME = re.compile(r"[^A-Za-z0-9_.:-]+")
+TECHNICAL_KEYS = frozenset(('performance_activations_session', 'performance_attempts_session',
+    'screen_sync_screensaver_enabled', 'faceplate_clock_cadence_home', 'faceplate_clock_cadence_game',
+    'declared_power_is_measurement', 'failure_history_scope', 'normal_route_restoration'))
+VERSION_KEYS = frozenset(('kernel','backend_version','frontend_version','package_version',
+    'manifest_version','decky_version','os_version_id','os_build_id','python','version'))
+SAFE_VERSION = re.compile(r'^v?\d{1,4}\.\d{1,4}[A-Za-z0-9._+()-]{0,86}$')
+TECHNICAL_VALUES = frozenset(('up-to-32-retained-journal-events', 'up-to-two-existing-session-buses'))
 
 
 def _atomic_json(path: Path, value: dict):
@@ -98,7 +105,10 @@ class DiagnosticJournal:
         _atomic_json(self.state_path, self._state)
 
     def _clean_text(self, value):
-        text = str(value).replace(str(self.state_dir.parent.parent.parent), "$DECKY_USER_HOME")
+        ancestor = str(self.state_dir.parent.parent.parent)
+        text = str(value)
+        if ancestor != os.path.sep:
+            text = text.replace(ancestor, "$DECKY_USER_HOME")
         text = HOME_PATH.sub("$DECKY_USER_HOME", text)
         text = TOKEN_VALUE.sub("[redacted-token]", text)
         text = CREDENTIAL_ASSIGNMENT.sub("[redacted-credential]", text)
@@ -120,10 +130,14 @@ class DiagnosticJournal:
         if value is None or isinstance(value, (bool, int, float)):
             return value
         if isinstance(value, str):
+            if value in TECHNICAL_VALUES:
+                return value
+            if key in VERSION_KEYS and SAFE_VERSION.fullmatch(value):
+                return value
             return self._clean_text(value)
         if isinstance(value, dict):
             return {
-                self._clean_text(name)[:80]: self._sanitize(item, name)
+                (name if name in TECHNICAL_KEYS else self._clean_text(name)[:80]): self._sanitize(item, name)
                 for name, item in list(value.items())[:32]
             }
         if isinstance(value, (list, tuple)):
@@ -342,7 +356,7 @@ class DiagnosticJournal:
                 "busy": bool(device.get("busy")),
                 "phase": device.get("phase", ""),
                 "restoration": {
-                    **{name: bool(restoration.get(name)) for name in
+                    **{name: restoration.get(name) if isinstance(restoration.get(name), bool) else None for name in
                        ('pending', 'held_dark', 'power_off_confirmed', 'failed', 'automatic_retry_stopped',
                         'recovery_available', 'stored_picture_resumed')},
                     'failure_stage': restoration.get('failure_stage') if restoration.get('failure_stage') in
@@ -356,7 +370,7 @@ class DiagnosticJournal:
                          ('active_profile', ('baseline','vendor')),
                          ('failure_stage', ('admission','preflight','begin','chunks','end')),
                          ('failure_kind', ('rejected','timeout','cancelled','link-error','invalid')))},
-                    **{name: bool(transfer.get(name)) for name in
+                    **{name: transfer.get(name) if isinstance(transfer.get(name), bool) else None for name in
                        ('begin_attempted', 'body_reserved', 'payload_complete', 'end_sent')},
                 },
                 "brightness_control": {

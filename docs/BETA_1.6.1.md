@@ -1,13 +1,13 @@
 # GabeCubeAura 1.6.1 beta
 
-This is a public test release for weather after sleep and Faceplate image recovery. The stable release remains **1.6.0**. A test on an affected Faceplate is still needed to confirm the result.
+Beta 2 expands the local diagnostic for Faceplate transfer refusals. It keeps beta 1 weather and recovery fixes, existing settings and the current transfer protocol. The stable release remains **1.6.0**. A test on an affected Faceplate is still needed to confirm the result.
 
-## Install from 1.6.0
+## Install from 1.5.1, 1.6.0 or beta 1
 
 1. Open GabeCubeAura, then **Settings > Updates**.
 2. In **Preferences**, set **Update channel** to **Beta**.
-3. In **Update**, choose **Check now**, then **Download and verify** for **1.6.1-beta.1**.
-4. Choose **Update and restart Decky** and confirm. After Decky restarts, reopen GCA and check that the installed version is **1.6.1-beta.1**.
+3. In **Update**, choose **Check now**, then **Download and verify** for **1.6.1-beta.2**.
+4. Choose **Update and restart Decky** and confirm. After Decky restarts, reopen GCA and check that the installed version is **1.6.1-beta.2**.
 
 The plugin downloads and verifies its archive itself. There is no manual ZIP installation or private GitHub authorization to complete. Choosing Beta alone does not confirm an installation.
 
@@ -27,7 +27,21 @@ After reproducing the problem, open **Settings > Advanced > Diagnostics** and ch
 
 If saving the file fails, the same document remains visible. Choose **Copy diagnostic text** and paste it into the issue. If automatic copying is unavailable, select and copy the text directly. No second collection or separate test is required. You may review the document before sharing it.
 
-The report includes installed version consistency, selected operating modes, available OS/kernel information, power intent, restoration and transfer stages, and weather scheduling facts. It does not include API keys or perform an automatic upload. Unknown firmware or flash health is labelled as unknown or unmeasured, rather than inferred from a black display.
+The report includes version consistency, selected operating modes, OS/kernel information, power intent, restoration and transfer stages, weather scheduling, available service/process categories, serial-port holders and recent Linux USB events. Failed transfers capture a short passive process/USB observation while the failure is handled, limited to one per second and eight observations in the current plugin session. Exporting does not send an image or stop a process.
+
+USB descriptors and runtime power-management settings are observations, not measurements of voltage, current or cable quality. Host USB events without a matching device name are marked as unattributed. Process scans are time-limited; inaccessible processes or user service buses remain explicitly incomplete or unavailable. A USB bridge revision is not the panel revision. Confirmed new transfers, stored reuse and BEGIN refusals are recorded separately; no upload capacity or flash health is inferred.
+
+Only process categories and PIDs are exported, not full command lines, personal paths or raw kernel logs. API keys are excluded and nothing is uploaded automatically. Keep GCA running after the failure until the report is exported so the in-memory failure observations are retained.
+
+## Optional reset after keeping the report
+
+A reset is optional, not required to export diagnostics. First save the report and use the configuration and creation backup controls for anything you want to keep. Then open **Settings > Advanced > Data** and choose **Reset to defaults** if you want a clean GCA configuration. Read and confirm the deletion notice: it removes GCA settings, saved content and the SteamGridDB key. Keep the exported report outside GCA's data directories.
+
+**Reset settings only** keeps keys and saved creations and is a less destructive alternative. Neither reset repairs or reflashes the panel, changes a cable, or guarantees that another background application has stopped. If you try a reset and the problem remains, export one new report afterwards. There is no need to keep retrying failing uploads.
+
+## What happens after the report
+
+The next step is to compare process ownership at failure, USB reset/disconnect timing, power intent, installed files and accepted/refused sizes. That determines whether to address a competing service, USB/power behaviour, stale configuration or transfer compatibility. Different panel revisions or storage conditions remain hypotheses; beta 2 does not claim a hardware repair or change the transport to test that theory.
 
 ## Return to 1.6.0
 

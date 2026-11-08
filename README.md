@@ -1,6 +1,6 @@
 # GabeCubeAura
 
-**1.6.1 beta:** weather after sleep, clearer Faceplate recovery and a one-action local diagnostic. [Install, test or return to 1.6.0](docs/BETA_1.6.1.md). The stable release remains **1.6.0**.
+**1.6.1 beta 2:** broader local diagnostics for Faceplate transfer refusals, competing processes and USB/power events, plus the beta 1 weather and recovery fixes. [Install, test or return to 1.6.0](docs/BETA_1.6.1.md). The stable release remains **1.6.0**.
 
 GabeCubeAura is a Decky Loader plugin for the Steam Machine's light bar and
 optional JSAUX Pixel Matrix Faceplate. Configure game artwork colours,

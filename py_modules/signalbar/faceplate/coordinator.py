@@ -352,6 +352,17 @@ class FaceplateCoordinator(ContinuousReturn):
                 'continuous_return': self.continuous_return_status(),
                 'physical_playback': 'not-measured'}
 
+    def passive_diagnostic_snapshot(self):
+        """One consistent memory snapshot; never probe or wait on an upload."""
+        if not self.lock.acquire(blocking=False):
+            return {'available': False, 'reason': 'transfer-in-progress'}
+        try:
+            return {'available': True, 'captured_at_unix_s': self.wall_clock(),
+                    'powered': self.powered, 'restoration': self.restoration_status(),
+                    'last_transfer': dict(self.last_transfer)}
+        finally:
+            self.lock.release()
+
     @staticmethod
     def _utc_day(timestamp: float) -> str:
         return time.strftime("%Y-%m-%d", time.gmtime(timestamp))
@@ -557,7 +568,8 @@ class FaceplateCoordinator(ContinuousReturn):
             event["error"] = str(error)[:180]
         for field in ('failure_stage', 'failure_kind'):
             if transfer.get(field):event[field] = str(transfer[field])[:24]
-        for key in ('failed_chunk', 'chunk_status', 'payload_bytes_confirmed', 'begin_attempts', 'begin_status'):
+        for key in ('failed_chunk', 'chunk_status', 'payload_bytes_confirmed', 'begin_attempts', 'begin_status',
+                    'image_width', 'image_height'):
             if transfer.get(key) is not None:
                 event[key] = int(transfer[key])
 

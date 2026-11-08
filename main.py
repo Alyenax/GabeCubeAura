@@ -1640,17 +1640,27 @@ class Plugin:
         except Exception:document['setup_recovery']={'available':False}
         document['setup_recovery']=self.diagnostics._sanitize(document.get('setup_recovery',{}))
         from signalbar.support_snapshot import installation, system_facts, runtime
+        from signalbar.support_environment import capture as capture_environment
         from signalbar import __version__
         def support():
             # Independent facts stay useful if another optional component failed.
             result={}
             for key,read in [('installation',lambda:installation(Path(__file__).resolve().parent,__version__,frontend_version)),
                              ('system',lambda:system_facts(getattr(decky,'DECKY_VERSION',None))),
-                             ('runtime',lambda:runtime(self.engine))]:
+                             ('runtime',lambda:runtime(self.engine)),
+                             ('environment',lambda:capture_environment(self.engine))]:
                 try:result[key]=read()
                 except Exception:result[key]={'available':False}
             return result
         document['support']=self.diagnostics._sanitize(await asyncio.get_running_loop().run_in_executor(None,support))
+        # The cached file may precede the last transfer. Use one live snapshot
+        # for both device sections, with explicit unknowns while the worker owns it.
+        live=document['support'].get('runtime',{})
+        device=document.get('faceplate_runtime',{}).get('device')
+        if isinstance(device,dict):
+            device['snapshot']=live.get('snapshot',{'available':False})
+            device['restoration']=live.get('restoration',{'available':False})
+            device['last_transfer']=live.get('last_transfer',{'available':False})
         trace=getattr(getattr(self,'engine',None),'screen_sync_trace',None)
         if isinstance(trace,ScreenSyncTrace):document['screen_sync_trace']=trace.snapshot()
         text=json.dumps(document,indent=2,ensure_ascii=False)+'\n'

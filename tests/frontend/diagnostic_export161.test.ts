@@ -8,7 +8,7 @@ import {createElement,Fragment} from 'react';
 function mount(create:()=>Promise<any>,clipboard?:{writeText:(text:string)=>Promise<void>}){
  const slots:any[]=[];let cursor=0;const events:string[]=[];
  const source=readFileSync(new URL('../../src/components/DiagnosticExport.tsx',import.meta.url),'utf8').replace(/^import .*;\n/gm,'');
- const context=vm.createContext({exports:{},React:{createElement,Fragment},BUILD_VERSION:'1.6.1-beta.1',
+ const context=vm.createContext({exports:{},React:{createElement,Fragment},BUILD_VERSION:'1.6.1-beta.2',
   ButtonItem:'button',PanelSectionRow:'row',Localized:'localized',navigator:{clipboard},document:{execCommand:()=>false},
   useState:(initial:any)=>{const i=cursor++;if(!(i in slots))slots[i]=initial;return[slots[i],(value:any)=>slots[i]=value];},
   useRef:(initial:any)=>{const i=cursor++;return slots[i]??={current:initial};}});
@@ -23,7 +23,7 @@ test('one action makes one document and a write failure still exposes the same c
  let calls=0,resolve!:(r:any)=>void;const app=mount(()=>{calls++;return new Promise(done=>resolve=done);});
  const first=button(app.render(),'Export a local diagnostic');first.props.onClick();first.props.onClick();assert.equal(calls,1);
  assert.equal(button(app.render(),'Export a local diagnostic').props.disabled,undefined);
- const text=JSON.stringify({version:'1.6.1-beta.1',power:'unknown'});resolve({saved:false,path:'',text});await flush();
+ const text=JSON.stringify({version:'1.6.1-beta.2',power:'unknown'});resolve({saved:false,path:'',text});await flush();
  const tree=app.render();assert.equal(nodes(tree).find(n=>n.type==='textarea').props.value,text);
  assert(button(tree,'Copy diagnostic text'));assert.equal(calls,1);
 });
@@ -45,13 +45,13 @@ test('an unavailable backend still produces a client report without copying raw 
  const app=mount(async()=>{throw new Error('/home/private-user secret-token');});
  button(app.render(),'Export a local diagnostic').props.onClick();await flush();
  const text=nodes(app.render()).find(n=>n.type==='textarea').props.value;
- assert.equal(JSON.parse(text).backend_report_available,false);assert.match(text,/1.6.1-beta.1/);assert.doesNotMatch(text,/private-user|secret-token/);
+ assert.equal(JSON.parse(text).backend_report_available,false);assert.match(text,/1.6.1-beta.2/);assert.doesNotMatch(text,/private-user|secret-token/);
 });
 
 test('the frontend identity matches the package and backend versions',()=>{
  const root=new URL('../../',import.meta.url);
  const version=JSON.parse(readFileSync(new URL('package.json',root),'utf8')).version;
- assert.equal(version,'1.6.1-beta.1');
+ assert.equal(version,'1.6.1-beta.2');
  assert.match(readFileSync(new URL('src/build_version.ts',root),'utf8'),new RegExp("BUILD_VERSION = '"+version.replaceAll('.','\\.')+"'"));
  assert.match(readFileSync(new URL('py_modules/signalbar/__init__.py',root),'utf8'),new RegExp('__version__ = "'+version.replaceAll('.','\\.')+'"'));
 });

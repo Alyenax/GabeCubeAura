@@ -75,14 +75,23 @@ def runtime(engine):
         'display_observation':'not-measured'}
     panel=getattr(engine,'faceplate',None)
     if panel is not None:
-        result['power_intent']['last_confirmed_power']=getattr(panel,'powered',None)
-        snapshot=getattr(panel,'restoration_status',None)
-        if callable(snapshot):result['restoration']=snapshot()
-        transfer=getattr(panel,'last_transfer',{})
+        capture=getattr(panel,'passive_diagnostic_snapshot',None)
+        if callable(capture):
+            state=capture()
+        else:
+            snapshot=getattr(panel,'restoration_status',None)
+            state={'available':True,'powered':getattr(panel,'powered',None),
+                'restoration':snapshot() if callable(snapshot) else {},
+                'last_transfer':getattr(panel,'last_transfer',{})}
+        result['snapshot']={key:state[key] for key in ('available','reason','captured_at_unix_s') if key in state}
+        result['power_intent']['last_confirmed_power']=state.get('powered')
+        if 'restoration' in state:result['restoration']=state['restoration']
+        transfer=state.get('last_transfer',{})
         if isinstance(transfer,dict):
             allowed=('begin_attempted','begin_status','begin_attempts','chunks','payload_complete','end_sent',
                 'configured_profile','active_profile','attempt_profiles','failure_stage','failure_kind',
-                'begin_ms','begin_ack_ms','end_ack_ms','total_ms','already_stored','sent_unconfirmed')
+                'begin_ms','begin_ack_ms','end_ack_ms','total_ms','already_stored','sent_unconfirmed',
+                'body_reserved','expected_bytes','image_format','image_width','image_height')
             result['last_transfer']={name:transfer[name] for name in allowed if name in transfer}
     weather=getattr(engine,'weather',None);snapshot=getattr(weather,'diagnostic_status',None)
     if callable(snapshot):result['weather']=snapshot()

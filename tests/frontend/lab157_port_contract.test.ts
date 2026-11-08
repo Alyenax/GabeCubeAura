@@ -77,6 +77,6 @@ test('historical shells stay excluded and GCA no longer renders a vocal settings
   assert.equal(existsSync(new URL('src/components/GabeAssistantPanel.tsx',root)),false);
   assert.doesNotMatch(read('src/index.tsx').toString(),/GabeAssistantPanel|GabeSettingsSession/);
   const pkg=JSON.parse(read('package.json').toString());
-  assert.equal(pkg.version,'1.6.1-beta.1');
+  assert.equal(pkg.version,'1.6.1-beta.2');
   assert.equal(pkg.gabecubeaura_test_build,undefined);
 });

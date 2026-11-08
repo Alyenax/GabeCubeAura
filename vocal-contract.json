@@ -2,7 +2,7 @@
   "protocol": 1,
   "legacy_voice": false,
   "files": {
-    "main.py": "390120e3a11262f106231153f9adb0f0b9dce126fe26b0b8a789e0b4df3278db",
-    "py_modules/signalbar/backend/engine.py": "ac22a2dd44ac5b63e3e649c488ac5fa601793a1f46fa7923ed46e4ae8707ba9b"
+    "main.py": "1c5c4bbd68d3c121e2babd2161cd488a07ddfba9a020760cd561d588f083959d",
+    "py_modules/signalbar/backend/engine.py": "1cf1043c8f13f70d4e4b0249540788692b7810bd9911778f67b3d720c549b1e1"
   }
 }

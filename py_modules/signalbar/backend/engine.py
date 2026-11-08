@@ -2834,6 +2834,8 @@ class Engine:
                 "busy": bool(hardware.get("busy")),
                 "phase": str(hardware.get("phase", "")),
                 "brightness_control": hardware.get("brightness_control", {}),
+                "restoration": hardware.get("restoration", {}),
+                "last_transfer": dict(getattr(self.faceplate, 'last_transfer', {})),
             },
             "uploads": hardware.get("upload_observability", {}),
             "steam_status": self.faceplate_steam_state.snapshot().as_dict(),

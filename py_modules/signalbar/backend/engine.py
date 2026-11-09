@@ -3583,10 +3583,10 @@ class Engine:
                 and not self._faceplate_manual_off and self._faceplate_power_target is not False
                 and self._weather_preview_allowed())
 
-    def run_faceplate_gif_size_test(self, size_kib):
-        from signalbar.faceplate.gif_probe import build
+    def run_faceplate_gif_size_test(self, size):
+        from signalbar.faceplate.gif_probe import EXACT_SIZES_BYTES, build
         try:
-            data, frames = build(size_kib)
+            data, frames = build(size)
         except ValueError:
             return {"state": "invalid"}
         if not self._faceplate_gif_test_lock.acquire(blocking=False):
@@ -3597,9 +3597,10 @@ class Engine:
             if not self.faceplate.device_status().get("available"):
                 return {"state": "unavailable"}
             cancelled = threading.Event()
+            target = {"target_bytes": size} if size in EXACT_SIZES_BYTES else {"target_kib": size}
             generation = self.faceplate_worker.submit(
                 "gif-size-test", {"kind": "gif-size-test", "data": data, "frames": frames,
-                                  "size_kib": size_kib, "test_cancelled": cancelled},
+                                  "target": target, "test_cancelled": cancelled},
                 {"reason": "GIF size test", "scene_class": "gif-size-test"},
                 only_if_idle=True,
             )
@@ -3636,7 +3637,7 @@ class Engine:
                   "failure_stage", "failure_kind", "already_stored", "body_reserved",
                   "configured_profile", "active_profile", "attempt_profiles")
         self._faceplate_gif_tests = (self._faceplate_gif_tests + [{
-            "at_unix_s": round(time.time()), "target_kib": payload["size_kib"],
+            "at_unix_s": round(time.time()), **payload["target"],
             "size_bytes": len(data), "frames": payload["frames"], "state": state,
             "transfer": {name: raw[name] for name in fields if name in raw},
         }])[-16:]

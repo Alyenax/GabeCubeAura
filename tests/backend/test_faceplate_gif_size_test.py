@@ -1,5 +1,6 @@
 """Test an explicit GIF probe through the real worker and serial packet path."""
 from io import BytesIO
+import hashlib
 import threading
 import unittest
 from types import SimpleNamespace
@@ -8,7 +9,7 @@ from unittest.mock import patch
 from PIL import Image, ImageSequence
 from signalbar.backend.engine import Engine
 from signalbar.faceplate import gif, protocol
-from signalbar.faceplate.gif_probe import SIZES_KIB, build
+from signalbar.faceplate.gif_probe import EXACT_SIZES_BYTES, SIZES_KIB, build
 from signalbar.faceplate.gif_transform import rotate_gif
 from signalbar.faceplate.service import FaceplateWorker
 from signalbar.support_snapshot import runtime
@@ -58,6 +59,18 @@ class LosslessGifTests(unittest.TestCase):
             self.assertLess(len(data), protocol.MAX_GIF_BYTES)
             previous = len(data)
 
+    def test_exact_probes_decode_to_identical_frames_and_delays(self):
+        data_at_limit, count_at_limit = build(EXACT_SIZES_BYTES[0])
+        data_over_limit, count_over_limit = build(EXACT_SIZES_BYTES[1])
+        self.assertEqual((len(data_at_limit), len(data_over_limit)), (32768, 32769))
+        loop, frames = decoded(data_at_limit)
+        self.assertIsNone(loop)
+        self.assertEqual(count_at_limit, len(frames))
+        self.assertEqual(count_over_limit, len(frames))
+        self.assertEqual((loop, frames), decoded(data_over_limit))
+        self.assertEqual((loop, frames), decoded(rotate_gif(data_at_limit)))
+        self.assertEqual((loop, frames), decoded(rotate_gif(data_over_limit)))
+
 
 class GifSizeTestWorkerTests(unittest.TestCase):
     def setUp(self):
@@ -96,6 +109,31 @@ class GifSizeTestWorkerTests(unittest.TestCase):
         wire = records[-1]["transfer"]
         self.assertEqual(refused["size_bytes"], wire["expected_bytes"])
         self.assertEqual((0, 0, False), (wire["begin_status"], wire["chunks"], wire["end_sent"]))
+
+    def test_exact_sizes_reach_usb_with_rotation_and_a_cached_recovery_alias(self):
+        engine = self.engine
+        engine.faceplate.rotate_180 = True
+        at_limit, over_limit = EXACT_SIZES_BYTES
+        exact_data, _ = build(at_limit)
+        engine.faceplate._restore_alias = (
+            hashlib.sha256(exact_data).hexdigest(), rotate_gif(exact_data))
+        accepted = engine.run_faceplate_gif_size_test(at_limit)
+        self.serial.panel.refuse_begin = True
+        refused = engine.run_faceplate_gif_size_test(over_limit)
+
+        self.assertEqual(accepted, {"state": "confirmed", "size_bytes": 32768})
+        self.assertEqual(refused, {"state": "begin-refused", "size_bytes": 32769})
+        self.assertEqual(self.serial.panel.stored, exact_data)
+        self.assertEqual(self.serial.panel.commits, 1)
+        begins = [payload for kind, cmd, payload in self.serial.panel.events if (kind, cmd) == (1, 4)]
+        self.assertEqual([int.from_bytes(payload[:4], "big") for payload in begins], [32768, 32769])
+        records = runtime(engine)["gif_size_tests"]
+        self.assertEqual([r["target_bytes"] for r in records], [32768, 32769])
+        self.assertEqual([r["transfer"]["expected_bytes"] for r in records], [32768, 32769])
+        self.assertGreater(records[0]["transfer"]["chunks"], 0)
+        self.assertTrue(records[0]["transfer"]["end_sent"])
+        self.assertEqual(records[1]["transfer"]["chunks"], 0)
+        self.assertFalse(records[1]["transfer"]["end_sent"])
 
     def test_explicit_off_or_foreign_owner_never_sends_a_usb_command(self):
         engine = self.engine

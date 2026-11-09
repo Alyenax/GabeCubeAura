@@ -38,14 +38,23 @@ test('the collapsed size test sends only after the user confirms a selected size
 
   assert.equal(button('Send one test GIF'), undefined);
   button('Faceplate GIF transfer test').props.onClick();
-  render().find(node => node.type === 'dropdown').props.onChange({data: 64});
+  const dropdown = () => render().find(node => node.type === 'dropdown');
+  const choices = Array.from(dropdown().props.rgOptions, (option: {data: number}) => option.data);
+  assert.deepEqual(choices, [1, 4, 32768, 32769, 32, 56, 64, 80]);
+  dropdown().props.onChange({data: 32768});
   assert.deepEqual(calls, []);
   const send = button('Send one test GIF');
   send.props.onClick();
   send.props.onClick();
-  assert.deepEqual(calls, [64]);
+  assert.deepEqual(calls, [32768]);
   assert.equal(button('Send one test GIF').props.disabled, true);
-  complete({state: 'begin-refused', size_bytes: 65932});
+  complete({state: 'confirmed', size_bytes: 32768});
+  await new Promise(resolve => setImmediate(resolve));
+  dropdown().props.onChange({data: 32769});
+  assert.deepEqual(calls, [32768]);
+  button('Send one test GIF').props.onClick();
+  assert.deepEqual(calls, [32768, 32769]);
+  complete({state: 'begin-refused', size_bytes: 32769});
   await new Promise(resolve => setImmediate(resolve));
   assert(render().some(node => node.type === 'text' && node.props.children.includes('before any image data')));
   assert.equal(button('Send one test GIF').props.disabled, false);

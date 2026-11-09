@@ -2,7 +2,16 @@ import {useRef, useState} from "react";
 import {callable} from "@decky/api";
 import {ButtonItem, DropdownItem, Localized, PanelSectionRow} from "../localized_ui";
 
-const sizes = [1, 4, 32, 56, 64, 80];
+const sizes = [
+  {data: 1, label: "1 KiB"},
+  {data: 4, label: "4 KiB"},
+  {data: 32768, label: "32,768 bytes (exact)"},
+  {data: 32769, label: "32,769 bytes (exact)"},
+  {data: 32, label: "32 KiB (approx.)"},
+  {data: 56, label: "56 KiB"},
+  {data: 64, label: "64 KiB"},
+  {data: 80, label: "80 KiB"},
+];
 const messages: Record<string, string> = {
   confirmed: "Faceplate confirmed the new GIF.",
   "already-stored": "This GIF was already stored. No new write was confirmed.",
@@ -17,11 +26,11 @@ const messages: Record<string, string> = {
   failed: "The test could not finish. Export the diagnostic.",
 };
 type Result = {state: string; size_bytes?: number};
-const send = callable<[sizeKiB: number], Result>("run_faceplate_gif_size_test");
+const send = callable<[size: number], Result>("run_faceplate_gif_size_test");
 
 export function FaceplateGifSizeTest() {
   const [open, setOpen] = useState(false);
-  const [size, setSize] = useState(sizes[0]);
+  const [size, setSize] = useState(sizes[0].data);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<Result | null>(null);
   const inFlight = useRef(false);
@@ -42,8 +51,8 @@ export function FaceplateGifSizeTest() {
       <PanelSectionRow><Localized>
         Start with the smallest size. Each send may briefly replace the picture with a dim test pattern. Try one larger size if requested, then export one local diagnostic.
       </Localized></PanelSectionRow>
-      <PanelSectionRow><DropdownItem label="Approximate GIF size" selectedOption={size} disabled={busy}
-        rgOptions={sizes.map(value => ({data: value, label: String(value) + " KiB"}))}
+      <PanelSectionRow><DropdownItem label="GIF size" selectedOption={size} disabled={busy}
+        rgOptions={sizes}
         onChange={option => {setSize(Number(option.data)); setResult(null);}}/></PanelSectionRow>
       <PanelSectionRow><ButtonItem label="Send one test GIF" onClick={() => void run()} disabled={busy}>
         {busy ? "Sending test GIF…" : "Send"}

@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.6.1-beta.4
+
+### Local diagnostics
+
+- Add exact 32,768-byte and 32,769-byte Faceplate GIF transfer tests with the same visible pattern and timing. Record the requested size and the transfer result in the local report.
+
 ## 1.6.1-beta.3 · 2026-11-09
 
 ### Fixed

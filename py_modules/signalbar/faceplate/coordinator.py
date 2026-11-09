@@ -453,7 +453,7 @@ class FaceplateCoordinator(ContinuousReturn):
         priority = self._upload_priority(scene, reason)
         if isinstance(link, Link):
             source_sha = hashlib.sha256(data).hexdigest()
-            if scene != 'screensaver' and self._restore_alias and self._restore_alias[0] == source_sha:
+            if scene not in ('screensaver', 'gif-size-test') and self._restore_alias and self._restore_alias[0] == source_sha:
                 data = self._restore_alias[1]
             link.flash_manager = self.flash
             link.flash_priority = priority
@@ -1477,7 +1477,11 @@ class FaceplateCoordinator(ContinuousReturn):
         panel CRC remains the final protection against rewriting an identical
         GIF, while the persisted journal records whether a real write occurred.
         """
-        data = bytes(data) if delegated else self._orient_gif(bytes(data), max_frames=1024 if scene == "clock" else 192)
+        data = bytes(data)
+        # The generated test motif is symmetric. Re-encoding it would
+        # normalize its GIF sub-blocks and lose the exact test length.
+        if not delegated and scene != "gif-size-test":
+            data = self._orient_gif(data, max_frames=1024 if scene == "clock" else 192)
         # The saved brightness is the command. No media decode, RGB profile
         # lookup or unknown-content dimming runs on this delivery path.
         if not delegated:

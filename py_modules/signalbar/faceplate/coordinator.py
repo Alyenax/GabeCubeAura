@@ -1492,6 +1492,10 @@ class FaceplateCoordinator(ContinuousReturn):
         with self.lock:
             if not self.enabled:
                 return {"attempted": False, "wrote": False, "scene": scene}
+            if scene == "gif-size-test" and (self.powered is False or
+                    self._screensaver_exit_blank or self._continuous_return or
+                    self._delegated_gif_activation_pending):
+                return {"attempted": False, "test_state": "unavailable"}
             if delegated and (not isinstance(peak_load, (float, int))
                               or not math.isfinite(peak_load) or not 0 <= peak_load <= 1):
                 return {"attempted": False, "wrote": False, "scene": scene,
@@ -1515,6 +1519,8 @@ class FaceplateCoordinator(ContinuousReturn):
                 port = self.port_finder()
                 if not port:
                     raise LinkError("faceplate not found (no JSAUX CH340 ttyUSB)")
+                if scene == "gif-size-test" and port_owner_details(port):
+                    return {"attempted": False, "test_state": "busy"}
                 token = self.identity_reader(port)
                 keep_clock_running = bool(not delegated and scene == 'clock'
                     and token == self.device_token and self.powered is True
@@ -1523,7 +1529,7 @@ class FaceplateCoordinator(ContinuousReturn):
                     and not self._screensaver_exit_blank
                     and not self._delegated_gif_activation_pending
                     and self._native_attempt is None and not self._continuous_return)
-                retained = None if delegated or scene == 'player-city' else self._retained_restore(data, token)
+                retained = None if delegated or scene in ("player-city", "gif-size-test") else self._retained_restore(data, token)
                 if retained:
                     return retained
                 if token != self.device_token:
@@ -1638,6 +1644,7 @@ class FaceplateCoordinator(ContinuousReturn):
                     "attempted": True, "wrote": False, "scene": scene,
                     "signature": signature, "synchronized": False,
                     "error": self.error,
+                    "transfer": dict(self.last_transfer) if upload_started is not None else {},
                 }
 
     def synchronize_weather(self, condition: str, variant: int, loop_seconds: float):

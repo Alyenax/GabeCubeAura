@@ -107,10 +107,12 @@ class FaceplateWorker:
                     cancelled.set()
             self.condition.notify_all()
 
-    def submit(self, scene: str, payload, metadata=None):
+    def submit(self, scene: str, payload, metadata=None, *, only_if_idle=False):
         """Queue one scene and return its generation, or zero when disabled."""
         with self.condition:
             if not self.enabled or self.stopping:
+                return 0
+            if only_if_idle and (self.pending is not None or self.active_request is not None):
                 return 0
             metadata = dict(metadata or {})
             rejection = self._gate_request(str(scene or ""), metadata)
@@ -323,7 +325,7 @@ class FaceplateWorker:
                     self.completion_receipts[request["generation"]] = {
                         "generation": request["generation"], "scene": request["scene"],
                         "error": error, "result": {
-                            key: result[key] for key in ("synchronized", "error", "superseded")
+                            key: result[key] for key in ("synchronized", "error", "superseded", "gif_test_state")
                             if isinstance(result, dict) and key in result
                         },
                     }

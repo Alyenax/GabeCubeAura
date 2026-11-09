@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.6.1-beta.3 · 2026-11-09
+
+### Fixed
+
+- Compress Weather and Dashboard GIFs without changing the decoded pixels, frame timing or loops. Refresh cached GIFs when these displays are next used.
+
+### Local diagnostics
+
+- Add a collapsed, optional Faceplate transfer test with six GIF sizes and one explicit send per attempt. Keep flash protection and record the result in the existing local report.
+- For issues [#14](https://github.com/Alyenax/GabeCubeAura/issues/14) and [#15](https://github.com/Alyenax/GabeCubeAura/issues/15), first try the display that failed. See the [beta guide](docs/BETA_1.6.1.md) for the size test and return to 1.6.0.
+
 ## 1.6.1-beta.2 · 2026-11-08
 
 ### Local diagnostics

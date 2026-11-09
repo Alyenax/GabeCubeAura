@@ -153,8 +153,9 @@ class SceneResult:
     delays_cs: tuple[int, ...] = ()
     revision: str = SCENE_REVISION
 
-    def gif(self) -> bytes:
-        return encode_rgb_gif(self.frames, self.delays_cs or self.delay_cs)
+    def gif(self, *, reuse_pixels=False) -> bytes:
+        return encode_rgb_gif(self.frames, self.delays_cs or self.delay_cs,
+                              reuse_pixels=reuse_pixels)
 
 
 @dataclass(frozen=True)
@@ -165,8 +166,8 @@ class SnapshotResult:
     signature: str
     revision: str = SCENE_REVISION
 
-    def gif(self) -> bytes:
-        return encode_rgb_gif(self.frames, 100, loop=False)
+    def gif(self, *, reuse_pixels=False) -> bytes:
+        return encode_rgb_gif(self.frames, 100, loop=False, reuse_pixels=reuse_pixels)
 
 
 def _as_datetime(value, name):
@@ -644,7 +645,7 @@ def render_dashboard_frame(
 
 def encode_rgb_gif(frames: Iterable[bytes], delay_cs, *, loop=True,
                    colours=32, max_frames=MAX_HOUR_PACK_FRAMES,
-                   max_bytes=MAX_SCENE_GIF_BYTES):
+                   max_bytes=MAX_SCENE_GIF_BYTES, reuse_pixels=False):
     frames = tuple(bytes(frame) for frame in frames)
     max_frames = int(max_frames)
     if not frames or len(frames) > max_frames:
@@ -665,6 +666,7 @@ def encode_rgb_gif(frames: Iterable[bytes], delay_cs, *, loop=True,
                       for offset in range(0, len(indexed), frame_size)]
     payload = encode_indexed_gif(
         WIDTH, HEIGHT, palette, indexed_frames, delays, loop=bool(loop),
+        reuse_pixels=reuse_pixels,
     )
     if len(payload) > int(max_bytes):
         raise ValueError("faceplate scene GIF exceeds the software safety limit")

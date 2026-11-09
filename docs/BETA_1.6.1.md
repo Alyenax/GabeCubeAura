@@ -1,13 +1,13 @@
 # GabeCubeAura 1.6.1 beta
 
-Beta 2 expands the local diagnostic for Faceplate transfer refusals. It keeps beta 1 weather and recovery fixes, existing settings and the current transfer protocol. The stable release remains **1.6.0**. A test on an affected Faceplate is still needed to confirm the result.
+Beta 3 sends smaller Weather and Dashboard GIFs with the same picture, timing and loop. It keeps the weather and recovery fixes, existing settings, local diagnostics and the current transfer protocol. The stable release remains **1.6.0**. A test on an affected Faceplate is still needed to confirm the result.
 
-## Install from 1.5.1, 1.6.0 or beta 1
+## Install from 1.5.1, 1.6.0 or an earlier 1.6.1 beta
 
 1. Open GabeCubeAura, then **Settings > Updates**.
 2. In **Preferences**, set **Update channel** to **Beta**.
-3. In **Update**, choose **Check now**, then **Download and verify** for **1.6.1-beta.2**.
-4. Choose **Update and restart Decky** and confirm. After Decky restarts, reopen GCA and check that the installed version is **1.6.1-beta.2**.
+3. In **Update**, choose **Check now**, then **Download and verify** for **1.6.1-beta.3**.
+4. Choose **Update and restart Decky** and confirm. After Decky restarts, reopen GCA and check that the installed version is **1.6.1-beta.3**.
 
 The plugin downloads and verifies its archive itself. There is no manual ZIP installation or private GitHub authorization to complete. Choosing Beta alone does not confirm an installation.
 
@@ -20,6 +20,16 @@ An explicit Off action in GCA remains respected at resume. Weather can refresh w
 A panel waiting for an image replacement can briefly be off while the replacement is checked. If restoration fails, GCA shows that it needs attention and limits repeated attempts. This is different from an intentional Off state. When **Resume stored picture** is available, it attempts only to turn the panel on with its existing content; a power acknowledgement cannot prove that the picture is visible or up to date.
 
 This release does not prove that a firmware or flash problem has been repaired. The reason some devices reject GIF BEGIN commands is still under investigation.
+
+## Optional GIF transfer test
+
+First try the Weather preview or Dashboard that was failing. If it still fails, open **Settings > Advanced > Diagnostics**, then **Faceplate GIF transfer test > Test**.
+
+1. With the Faceplate connected and its GCA display enabled, select **1 KiB** and choose **Send**. A successful transfer may replace the picture briefly with a dim test pattern. GabeCubeAura will try to restore the normal display afterwards.
+2. If the small test succeeds, try **64 KiB** once. If 64 KiB is refused and you want to narrow the range, try **56 KiB** once. The other sizes are available if requested. Stop if the smallest GIF fails, the final confirmation is missing, or flash protection pauses the test.
+3. Export one local diagnostic after the last test. The same report contains the exact sizes, transfer stages and results.
+
+The larger GIFs repeat the same dim picture in more frames. The Faceplate receives the encoded size and checksum in the BEGIN command, before it sees any GIF frame. A confirmed transfer gives one observation for that size; stored reuse does not prove a new write. A refusal, timeout or missing final reply does not by itself diagnose the firmware, flash or USB power.
 
 ## Send one local diagnostic
 
@@ -41,7 +51,7 @@ A reset is optional, not required to export diagnostics. First save the report a
 
 ## What happens after the report
 
-The next step is to compare process ownership at failure, USB reset/disconnect timing, power intent, installed files and accepted/refused sizes. That determines whether to address a competing service, USB/power behaviour, stale configuration or transfer compatibility. Different panel revisions or storage conditions remain hypotheses; beta 2 does not claim a hardware repair or change the transport to test that theory.
+The next step is to compare process ownership at failure, USB reset/disconnect timing, power intent, installed files and accepted/refused sizes. That determines whether to address a competing service, USB/power behaviour, stale configuration or transfer compatibility. Different panel revisions or storage conditions remain hypotheses. Compare the results for the normal scene and the small and large test GIFs on the same device before drawing conclusions.
 
 ## Return to 1.6.0
 

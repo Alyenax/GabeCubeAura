@@ -20,6 +20,7 @@
     "py_modules/signalbar/faceplate/coordinator.py",
     "py_modules/signalbar/faceplate/creation_transfer.py",
     "py_modules/signalbar/faceplate/flash.py",
+    "py_modules/signalbar/faceplate/gif_probe.py",
     "py_modules/signalbar/faceplate/gif_transform.py",
     "py_modules/signalbar/faceplate/home_library.py",
     "py_modules/signalbar/faceplate/library.py",

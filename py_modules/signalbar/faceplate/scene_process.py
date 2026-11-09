@@ -218,7 +218,10 @@ def main(argv) -> int:
                 }
             else:
                 raise ValueError("unknown generated Faceplate scene")
-            payload = result.gif()
+            if kind in ("weather", "dashboard", "artwork-dashboard"):
+                payload = result.gif(reuse_pixels=True)
+            else:
+                payload = result.gif()
         _write_bytes(gif_path, payload)
         _write_json(result_path, {
             "ok": True, "kind": kind, "signature": result.signature,

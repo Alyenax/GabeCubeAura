@@ -33,10 +33,10 @@ class ArtworkDashboardResult:
     signature: str
     compression: str = "compatible"
 
-    def gif(self):
+    def gif(self, *, reuse_pixels=False):
         # Every quality level remains a canonical hardware GIF: one global
-        # palette, full 64 x 54 opaque frames and no partial-frame disposal
-        # state. Compatible is the Lab 56 hardware-proven fixed 3-3-2 path.
+        # palette and full 64 x 54 frame bounds. Optional reuse keeps the
+        # previous frame's unchanged pixels. Compatible is the fixed 3-3-2 path.
         # The two higher-fidelity levels add deterministic spatial dithering
         # while keeping that same global table. They never introduce local
         # palettes, temporal noise or extra frames.
@@ -56,7 +56,7 @@ class ArtworkDashboardResult:
             indexed = tuple(_index_332_error_diffusion(frame) for frame in self.frames)
         payload = gif.encode(
             WIDTH, HEIGHT, PALETTE_332, indexed, self.delay_cs,
-            loop=len(indexed) > 1,
+            loop=len(indexed) > 1, reuse_pixels=reuse_pixels,
         )
         if len(payload) > MAX_ARTWORK_GIF_BYTES:
             raise ValueError("Artwork Dashboard GIF exceeds the software safety limit")

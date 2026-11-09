@@ -11,6 +11,10 @@ FROZEN=json.loads((ROOT/'tests/fixtures/weather-day-breaks253-preserved.json').r
 THEME='weather-artwork-v2'
 sha=lambda data:hashlib.sha256(data).hexdigest()
 
+def current_namespace(previous, kind):
+    return (previous.replace('artwork-dashboard-26-umbrella-lowered', dashboard.REVISION)
+            .replace(f':{kind}:', f':{kind}:lossless-frame-reuse-1:', 1))
+
 class DayBreaks253Tests(unittest.TestCase):
     def test_every_unaffected_native_gif_and_weather_bank_keeps_its_exact_hash(self):
         for path,digest in FROZEN['assets'].items():
@@ -35,7 +39,7 @@ class DayBreaks253Tests(unittest.TestCase):
                 self.assertEqual(sha(b''.join(result.frames)),expected['rgb'])
                 self.assertEqual(sha(result.gif()),expected['gif'])
                 self.assertEqual(result.signature,expected['signature'])
-                self.assertEqual(faceplate_scene_cache_namespace(dict(kind=kind,visual_theme=theme,condition=condition)),expected['cache_namespace'].replace('artwork-dashboard-26-umbrella-lowered',dashboard.REVISION))
+                self.assertEqual(faceplate_scene_cache_namespace(dict(kind=kind,visual_theme=theme,condition=condition)),current_namespace(expected['cache_namespace'], kind))
 
     def test_both_day_breaks_regain_source_exposure_and_keep_the_loop_timing(self):
         for variant in (0,1):
@@ -54,4 +58,4 @@ class DayBreaks253Tests(unittest.TestCase):
             current=faceplate_scene_cache_namespace(dict(kind=kind,visual_theme=theme,condition=condition))
             if theme==THEME and condition=='breaks':
                 self.assertNotEqual(current,previous['cache_namespace']);self.assertIn('breaks-day-source-exposure-1',current)
-            else:self.assertEqual(current,previous['cache_namespace'].replace('artwork-dashboard-26-umbrella-lowered',dashboard.REVISION))
+            else:self.assertEqual(current,current_namespace(previous['cache_namespace'], kind))

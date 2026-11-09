@@ -51,7 +51,7 @@ test('an unavailable backend still produces a client report without copying raw 
 test('the frontend identity matches the package and backend versions',()=>{
  const root=new URL('../../',import.meta.url);
  const version=JSON.parse(readFileSync(new URL('package.json',root),'utf8')).version;
- assert.equal(version,'1.6.1-beta.2');
+ assert.equal(version,'1.6.1-beta.3');
  assert.match(readFileSync(new URL('src/build_version.ts',root),'utf8'),new RegExp("BUILD_VERSION = '"+version.replaceAll('.','\\.')+"'"));
  assert.match(readFileSync(new URL('py_modules/signalbar/__init__.py',root),'utf8'),new RegExp('__version__ = "'+version.replaceAll('.','\\.')+'"'));
 });

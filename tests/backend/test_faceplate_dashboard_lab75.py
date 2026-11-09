@@ -246,7 +246,13 @@ class Lab75DashboardTests(unittest.TestCase):
                     request["sunrise"], request["sunset"], visual_theme="weather-artwork-v2",
                     **{key: value for key, value in common.items() if key != "display_at"},
                 )[0]
-                self.assertEqual(expected.gif(), payload)
+                original = expected.gif()
+                with Image.open(BytesIO(original)) as before, Image.open(BytesIO(payload)) as after:
+                    self.assertEqual(before.info.get("loop"), after.info.get("loop"))
+                    def playback(image):
+                        return [(frame.info.get("duration"), frame.convert("RGB").tobytes())
+                                for frame in ImageSequence.Iterator(image)]
+                    self.assertEqual(playback(before), playback(after))
                 with Image.open(BytesIO(payload)) as image:
                     frames.append(image.convert("RGB").tobytes())
                     self.assertEqual(24 if request["kind"] == "dashboard" else 1,

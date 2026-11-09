@@ -5,6 +5,9 @@ Eli Hodapp. See licenses/Pixel-Faceplate-BSD-3-Clause.txt.
 """
 
 
+from collections import Counter
+
+
 def _lzw(indices, min_code_size):
     clear = 1 << min_code_size
     end = clear + 1
@@ -65,12 +68,15 @@ def _sub_blocks(data):
     return bytes(out)
 
 
-def encode(width, height, palette, frames, delay_cs=10, loop=True, transparent_index=None):
+def encode(width, height, palette, frames, delay_cs=10, loop=True, transparent_index=None,
+           *, reuse_pixels=False):
     """Encode full indexed frames with a global palette and keep-frame disposal.
 
     A transparent index can reuse unchanged pixels from the preceding frame.
     A per-frame list can borrow indices absent from each frame's changed pixels.
     Callers must draw the complete first frame, including on each loop.
+    With reuse_pixels, select a smaller keep-frame encoding independently for
+    each opaque input frame, without changing its palette, bounds or delay.
     """
     frames = list(frames)
     transparency = list(transparent_index) if isinstance(transparent_index, (list, tuple)) else [transparent_index]*len(frames)
@@ -101,6 +107,22 @@ def encode(width, height, palette, frames, delay_cs=10, loop=True, transparent_i
     minimum_code_size = max(2, bits)
     for frame_index, indices in enumerate(frames):
         transparent = transparency[frame_index]
+        indices = bytes(indices)
+        compressed = _lzw(indices, minimum_code_size)
+        if reuse_pixels and frame_index and transparent_index is None:
+            previous = frames[frame_index - 1]
+            changed = {value for old, value in zip(previous, indices) if old != value}
+            # Borrow a global index only when no new pixel needs that index.
+            # Prefer one already frequent in the opaque frame.
+            available = set(range(len(palette))) - changed
+            if available and any(old == value for old, value in zip(previous, indices)):
+                counts = Counter(indices)
+                borrow = max(available, key=lambda index: (counts[index], -index))
+                delta = bytes(borrow if old == value else value
+                              for old, value in zip(previous, indices))
+                candidate = _lzw(delta, minimum_code_size)
+                if len(candidate) < len(compressed):
+                    transparent, compressed = borrow, candidate
         if len(frames) > 1 or transparent is not None:
             flags = 4 if transparent is None else 5
             out += (b"\x21\xF9\x04" + bytes((flags,))
@@ -111,7 +133,7 @@ def encode(width, height, palette, frames, delay_cs=10, loop=True, transparent_i
             + height.to_bytes(2, "little") + b"\x00"
         )
         out.append(minimum_code_size)
-        out += _sub_blocks(_lzw(bytes(indices), minimum_code_size))
+        out += _sub_blocks(compressed)
     out.append(0x3B)
     data = bytes(out)
     return data

@@ -1685,6 +1685,11 @@ class Plugin:
         await asyncio.get_running_loop().run_in_executor(None,write_private_bytes,destination,text.encode())
         return {'path':str(destination)}
 
+    async def run_faceplate_gif_size_test(self, size_kib: int):
+        return await asyncio.get_running_loop().run_in_executor(
+            None, self.engine.run_faceplate_gif_size_test, size_kib,
+        )
+
     async def export_support_diagnostic(self, frontend_version: str = ""):
         text=await self._diagnostic_document(frontend_version)
         from signalbar.safe_export import write_private_bytes

@@ -60,7 +60,7 @@ class WeatherArtworkSelection:
 class WeatherArtworkResult(SceneResult):
     """Scene result retaining the collection's intended shared palette."""
 
-    def gif(self) -> bytes:
+    def gif(self, *, reuse_pixels=False) -> bytes:
         # V2 source GIFs and the catalogue showcase are authored with a shared
         # 256-colour palette.  Keeping that precision in the hardware renderer
         # preserves the deliberately subtle lunar/cloud breathing instead of
@@ -78,7 +78,7 @@ class WeatherArtworkResult(SceneResult):
         )
         payload = encode_indexed_gif(
             WIDTH, HEIGHT, palette, indexed_frames,
-            self.delays_cs or self.delay_cs, loop=True,
+            self.delays_cs or self.delay_cs, loop=True, reuse_pixels=reuse_pixels,
         )
         if len(payload) > 512 * 1024:
             raise ValueError("Weather Artwork GIF exceeds the software safety limit")

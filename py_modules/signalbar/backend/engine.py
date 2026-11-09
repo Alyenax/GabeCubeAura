@@ -82,6 +82,8 @@ def faceplate_scene_cache_namespace(payload):
     visual_theme = str(payload.get("visual_theme", ""))
     # Preserve the Lab183 pixel-cache generation; only the gain policy changed.
     parts = ["gabecubeaura", "encoded-rgb-peak-1", kind or "scene"]
+    if kind in ("weather", "dashboard", "artwork-dashboard"):
+        parts.append("lossless-frame-reuse-1")
     if kind == "clock":
         parts.append("native-clock-projection-v2-fine-centred")
     if kind == "player-city":
@@ -237,6 +239,8 @@ class Engine:
         self._faceplate_follow_key = None
         self._faceplate_next_reconcile = 0.0
         self._faceplate_preview_until = 0.0
+        self._faceplate_gif_test_lock = threading.Lock()
+        self._faceplate_gif_tests = []
         self._faceplate_timer_end = None
         self._faceplate_timer_finished_id = ""
         self._faceplate_runtime_serialized = ""
@@ -1646,6 +1650,8 @@ class Engine:
                     bool(payload["powered"]), "Pixel Studio",
                 )
             return {"ok": False, "error": "empty Faceplate control"}
+        if payload.get("kind") == "gif-size-test":
+            return self._handle_gif_size_test(payload, request.get("_cancelled"))
         if payload.get('kind') == 'weather-preview':
             if not self._weather_preview_allowed():
                 return {'attempted': False, 'superseded': True, 'error': 'Display priority changed'}
@@ -3034,6 +3040,9 @@ class Engine:
         self._configure_player_city(hardware)
         if getattr(self, '_onboarding_applying', False):
             return 0
+        gif_test_lock = getattr(self, "_faceplate_gif_test_lock", None)
+        if gif_test_lock is not None and gif_test_lock.locked():
+            return 0
         preview_until = getattr(self, '_faceplate_preview_until', 0.)
         if preview_until > time.monotonic():
             return 0
@@ -3565,8 +3574,82 @@ class Engine:
             pass
         return 0
 
+    def _gif_size_test_allowed(self):
+        from signalbar.faceplate.control import allows_output
+        values = self.settings.all()
+        return (allows_output(values) and values.get("faceplate_lab_enabled")
+                and not self._stop.is_set() and not self._display_panel_off(values)
+                and not self._onboarding_applying and not self._faceplate_suspended
+                and not self._faceplate_manual_off and self._faceplate_power_target is not False
+                and self._weather_preview_allowed())
+
+    def run_faceplate_gif_size_test(self, size_kib):
+        from signalbar.faceplate.gif_probe import build
+        try:
+            data, frames = build(size_kib)
+        except ValueError:
+            return {"state": "invalid"}
+        if not self._faceplate_gif_test_lock.acquire(blocking=False):
+            return {"state": "busy"}
+        try:
+            if not self._gif_size_test_allowed():
+                return {"state": "unavailable"}
+            if not self.faceplate.device_status().get("available"):
+                return {"state": "unavailable"}
+            cancelled = threading.Event()
+            generation = self.faceplate_worker.submit(
+                "gif-size-test", {"kind": "gif-size-test", "data": data, "frames": frames,
+                                  "size_kib": size_kib, "test_cancelled": cancelled},
+                {"reason": "GIF size test", "scene_class": "gif-size-test"},
+                only_if_idle=True,
+            )
+            if not generation:
+                return {"state": "busy"}
+            try:
+                receipt = self.faceplate_worker.wait_for_completion(generation, cancelled, timeout=45.0)
+            except TimeoutError:
+                cancelled.set()
+                self.faceplate_worker.cancel_scene_class("gif-size-test")
+                return {"state": "timeout", "size_bytes": len(data)}
+            except RuntimeError:
+                return {"state": "cancelled", "size_bytes": len(data)}
+            return {"state": receipt["result"].get("gif_test_state", "cancelled" if
+                    receipt["result"].get("superseded") else "failed"),
+                    "size_bytes": len(data)}
+        finally:
+            self._faceplate_gif_test_lock.release()
+
+    def _handle_gif_size_test(self, payload, worker_cancelled):
+        from signalbar.faceplate.gif_probe import outcome
+        def cancelled():
+            return (payload["test_cancelled"].is_set()
+                    or bool(worker_cancelled and worker_cancelled.is_set())
+                    or not self._gif_size_test_allowed())
+        data = payload["data"]
+        result = ({"test_state": "cancelled"} if cancelled() else
+                  self.faceplate.synchronize_scene(data, "gif-size-test",
+                      hashlib.sha256(data).hexdigest(), reason="GIF size test", cancelled=cancelled))
+        state = outcome(result)
+        raw = result.get("transfer") or {}
+        fields = ("expected_bytes", "begin_attempted", "begin_status", "begin_attempts",
+                  "begin_ack_ms", "chunks", "end_sent", "end_status", "end_ack_ms",
+                  "failure_stage", "failure_kind", "already_stored", "body_reserved",
+                  "configured_profile", "active_profile", "attempt_profiles")
+        self._faceplate_gif_tests = (self._faceplate_gif_tests + [{
+            "at_unix_s": round(time.time()), "target_kib": payload["size_kib"],
+            "size_bytes": len(data), "frames": payload["frames"], "state": state,
+            "transfer": {name: raw[name] for name in fields if name in raw},
+        }])[-16:]
+        if state in ("confirmed", "already-stored", "unconfirmed") or raw.get("body_reserved"):
+            # Only a possible display change needs the ordinary route restored.
+            # Leave a brief observation window and keep normal write limits.
+            self._faceplate_preview_until = time.monotonic() + 10.
+        return {**result, "gif_test_state": state}
+
     def preview_weather(self, condition, variant, visual_theme=None):
-        if not self._weather_preview_allowed():
+        gif_test_lock = getattr(self, "_faceplate_gif_test_lock", None)
+        if ((gif_test_lock is not None and gif_test_lock.locked())
+                or not self._weather_preview_allowed()):
             return False
         values = self.settings.all()
         base_condition, preview_daylight = weather_preview_condition(condition)

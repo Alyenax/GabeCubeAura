@@ -93,6 +93,7 @@ def runtime(engine):
                 'begin_ms','begin_ack_ms','end_ack_ms','total_ms','already_stored','sent_unconfirmed',
                 'body_reserved','expected_bytes','image_format','image_width','image_height')
             result['last_transfer']={name:transfer[name] for name in allowed if name in transfer}
+    result["gif_size_tests"] = list(getattr(engine, "_faceplate_gif_tests", ()))
     weather=getattr(engine,'weather',None);snapshot=getattr(weather,'diagnostic_status',None)
     if callable(snapshot):result['weather']=snapshot()
     return result

@@ -1,4 +1,5 @@
 import {DiagnosticExport} from './components/DiagnosticExport';
+import {FaceplateGifSizeTest} from './components/FaceplateGifSizeTest';
 import {BUILD_VERSION} from './build_version';
 import {faceplatePowerAction} from './faceplate_power_action';
 import {STEAM_ROUTE_FRAME} from './steam_route_viewport';
@@ -4136,6 +4137,7 @@ function Content({ active=true, page: sourcePage = "quick", settingsView, initia
 
       {showPage("advanced") ? <SettingsPart slot="advanced.diagnostics"><PanelSection title="Troubleshooting">
         <SettingsPart slot="advanced.diagnostics"><DiagnosticExport create={()=>exportSupportDiagnostic(BUILD_VERSION)}/></SettingsPart>
+        <FaceplateGifSizeTest />
         {configurationActionMessage?<SettingsPart slot="advanced.diagnostics"><PanelSectionRow><div role="status">{configurationActionMessage}</div></PanelSectionRow></SettingsPart>:null}
       </PanelSection></SettingsPart> : null}
 

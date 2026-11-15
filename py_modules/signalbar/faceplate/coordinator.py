@@ -23,7 +23,8 @@ from . import gif, protocol
 from .power import POWER_BUDGET
 from .flash import FlashWearProtection, UploadDeferred, install_manager
 from .performance_policy import CONSENT_REVISION, interval_seconds
-from .gif_transform import rotate_gif
+from signalbar import FACEPLATE_GIF_LIMIT
+from .gif_transform import prepare_gif, rotate_gif
 from .artwork_layout import validate_layout
 from .steamgriddb import SteamGridDBFaceplate
 from .scenes import WEATHER_VARIANTS
@@ -728,15 +729,20 @@ class FaceplateCoordinator(ContinuousReturn):
                 profile.get("position", self.logo_position))
 
     def _orient_gif(self, data, *, max_frames=192):
-        """Cached 180° transform of all frames, with no external media decoder."""
-        if not self.rotate_180:
+        """Cache orientation and fit legacy artwork when it exceeds the cap."""
+        if not self.rotate_180 and (FACEPLATE_GIF_LIMIT is None or len(data) <= FACEPLATE_GIF_LIMIT):
             return data
         digest = (hashlib.sha256(data).digest(), max_frames)
         cached = self.rotated_gif_cache.get(digest)
         if cached is not None:
             self.rotated_gif_cache.move_to_end(digest)
             return cached
-        converted = rotate_gif(data, max_frames=max_frames)
+        if FACEPLATE_GIF_LIMIT is not None and len(data) > FACEPLATE_GIF_LIMIT:
+            data = prepare_gif(data, limit=FACEPLATE_GIF_LIMIT, max_frames=max_frames)
+        converted = rotate_gif(data, max_frames=max_frames) if self.rotate_180 else data
+        if FACEPLATE_GIF_LIMIT is not None and len(converted) > FACEPLATE_GIF_LIMIT:
+            fitted = prepare_gif(data, limit=FACEPLATE_GIF_LIMIT, max_frames=max_frames)
+            converted = rotate_gif(fitted, max_frames=max_frames)
         self.rotated_gif_cache[digest] = converted
         while len(self.rotated_gif_cache) > 6:
             self.rotated_gif_cache.popitem(last=False)
@@ -1101,7 +1107,8 @@ class FaceplateCoordinator(ContinuousReturn):
             if rgb is None:
                 return None, "not-found"
             data = encode_frame(rgb)
-        validate_gif(data)
+        if FACEPLATE_GIF_LIMIT is None:
+            validate_gif(data)
         result = self._orient_gif(data)
         validate_gif(result)
         return result, origin
@@ -1188,7 +1195,8 @@ class FaceplateCoordinator(ContinuousReturn):
                         project_backgrounds((rgb,), mapping, rotated)
                         for mapping in ('bottom', 'whole') for rotated in (False, True)}}
             check_current()
-            validate_gif(data)
+            if FACEPLATE_GIF_LIMIT is None:
+                validate_gif(data)
             data = self._orient_gif(data)
             validate_gif(data)
             if callable(source_ready) and projection_source is not None:
@@ -1516,6 +1524,9 @@ class FaceplateCoordinator(ContinuousReturn):
                 if callable(cancelled) and cancelled():
                     return {"attempted": False, "wrote": False, "scene": scene,
                             "superseded": True, "cancelled_before_serial": True}
+                if FACEPLATE_GIF_LIMIT is not None and len(data) > FACEPLATE_GIF_LIMIT:
+                    return {"attempted": False, "scene": scene, "synchronized": False,
+                            "policy_reason": "CONTENT_INVALID", "error": "GIF exceeds the Faceplate edition limit"}
                 validate_gif(data)
                 if scene == "performance":
                     raise ValueError("CPU/GPU display has been removed from the Faceplate")

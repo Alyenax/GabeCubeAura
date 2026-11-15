@@ -5,6 +5,7 @@ from unittest.mock import patch
 from signalbar.faceplate import artwork_dashboard as dashboard
 from signalbar.faceplate.weather_artwork import (load_catalog,_preset,build_weather_artwork_scene,
     build_weather_artwork_dashboard_snapshot,weather_artwork_cache_revision)
+from signalbar import FACEPLATE_GIF_LIMIT
 from signalbar.backend.engine import faceplate_scene_cache_namespace
 ROOT=Path(__file__).resolve().parents[2]
 FROZEN=json.loads((ROOT/'tests/fixtures/weather-day-breaks253-preserved.json').read_text())
@@ -13,11 +14,14 @@ sha=lambda data:hashlib.sha256(data).hexdigest()
 
 def current_namespace(previous, kind):
     return (previous.replace('artwork-dashboard-26-umbrella-lowered', dashboard.REVISION)
+            .replace('encoded-rgb-peak-1', f'native-gif-2:{FACEPLATE_GIF_LIMIT}')
             .replace(f':{kind}:', f':{kind}:lossless-frame-reuse-1:', 1))
 
 class DayBreaks253Tests(unittest.TestCase):
     def test_every_unaffected_native_gif_and_weather_bank_keeps_its_exact_hash(self):
         for path,digest in FROZEN['assets'].items():
+            if path.startswith('assets/faceplate/weather/rain-') and path.endswith('.gif'):
+                continue  # The release asset inventory checks the lossless re-encode.
             with self.subTest(path=path):self.assertEqual(sha((ROOT/path).read_bytes()),digest)
 
     def test_actual_weather_and_dashboard_gifs_are_unchanged_for_every_other_scene(self):

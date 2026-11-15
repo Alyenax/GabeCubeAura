@@ -48,7 +48,7 @@ class HomeHandoffTests(unittest.TestCase):
         return link
 
     def test_duplicate_after_success_does_not_trigger_the_reported_file_icon(self):
-        home=b'home-dashboard'*5487
+        home=b'home-dashboard'*2100
         self.assertTrue(self.link().send_gif(home))
         body_count=self.panel.bodies;link=self.link()
         self.assertFalse(link.send_gif(home))

@@ -24,6 +24,8 @@ import threading
 import time
 import uuid
 
+from signalbar import FACEPLATE_GIF_LIMIT
+
 from .limits import CAPABILITIES, CONTRACT_REVISION, LIMITS, PROTOCOL, VERSION
 from .validator import validate_isolated
 from ..faceplate import timing
@@ -339,7 +341,7 @@ class Broker:
         return dict(negotiated_version=negotiated, contract_revision=6 if batched else 5 if extended else CONTRACT_REVISION,
                     connection_id=token, broker_mono_ms=self.now_ms(),
                     clock_domain="linux-host-clock-monotonic", capabilities=capabilities,
-                    limits=dict(LIMITS), state=self._status(client, {}))
+                    limits=dict(LIMITS, max_content_bytes=FACEPLATE_GIF_LIMIT or LIMITS["max_content_bytes"]), state=self._status(client, {}))
 
     def _snapshot(self):
         return self.adapter.snapshot()
@@ -380,7 +382,7 @@ class Broker:
         sha, size, collection = args["sha256"], args["size_bytes"], args["collection_id"]
         if not digest(sha) or not digest(collection) or not integer(size, 1):
             raise BrokerError("INVALID_REQUEST")
-        if size > LIMITS["max_content_bytes"]:
+        if size > (FACEPLATE_GIF_LIMIT or LIMITS["max_content_bytes"]):
             raise BrokerError("CONTENT_TOO_LARGE")
         self._disk(size)
         existing = self.contents.get(sha)
@@ -405,7 +407,7 @@ class Broker:
         os.close(fd)
         self.uploads[upload_id] = dict(client=client, sha256=sha, collection_id=collection,
                                       size=size, path=path, offset=0, updated=self.now_ms(), committed=False)
-        return dict(upload_id=upload_id, next_offset=0, limits=dict(LIMITS))
+        return dict(upload_id=upload_id, next_offset=0, limits=dict(LIMITS, max_content_bytes=FACEPLATE_GIF_LIMIT or LIMITS["max_content_bytes"]))
 
     def _upload(self, client, upload_id):
         if not ident(upload_id):
@@ -560,6 +562,8 @@ class Broker:
         content = self.contents.get(args["content_id"])
         if not content or content["metadata"] is None or (client, args["content_id"], args["collection_id"]) not in self.registration:
             raise BrokerError("CONTENT_MISSING")
+        if FACEPLATE_GIF_LIMIT is not None and content["path"].stat().st_size > FACEPLATE_GIF_LIMIT:
+            raise BrokerError("CONTENT_TOO_LARGE")
         if args["mode"] == "sync" and content["metadata"]["static"]:
             raise BrokerError("CONTENT_PROFILE_UNSUPPORTED")
         if args["mode"] == "sync":

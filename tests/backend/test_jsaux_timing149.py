@@ -32,14 +32,14 @@ class Timing149Tests(unittest.TestCase):
             calls.append((packet[2],packet[3]))
             if packet[3]==11:
                 self.assertEqual(options['retries'],1)
-                # Model a 6.2s commit: the old 4.95s wait fails this trace.
-                if options['timeout']<6.2:raise ReplyTimeout('late END')
+                # Model a late 2.7-second commit for a file near the Light cap.
+                if options['timeout']<2.7:raise ReplyTimeout('late END')
             return protocol.Reply(packet[2],packet[3],b'\x01')
         link.command=command
         with patch('signalbar.faceplate.transport.time.sleep'):
-            self.assertTrue(link.send_gif(b'x'*147518))
+            self.assertTrue(link.send_gif(b'x'*32767))
         self.assertEqual(calls.count((1,11)),1)
-        self.assertEqual(calls.count((2,2)),297)
+        self.assertEqual(calls.count((2,2)),66)
         self.assertEqual(link.flash_manager.session['confirmed'],1)
 
     def test_absent_final_ack_remains_unconfirmed_without_fallback_upload(self):
@@ -51,7 +51,7 @@ class Timing149Tests(unittest.TestCase):
             return protocol.Reply(packet[2],packet[3],b'\x01')
         link.command=command
         with patch('signalbar.faceplate.transport.time.sleep'):
-            with self.assertRaises(GifCommitUnconfirmed):link.send_gif(b'x'*65536)
+            with self.assertRaises(GifCommitUnconfirmed):link.send_gif(b'x'*32767)
         self.assertEqual(calls.count((1,4)),1)
         self.assertEqual(calls.count((1,11)),1)
         self.assertEqual(link.flash_manager.session['confirmed'],0)
@@ -66,7 +66,7 @@ class Timing149Tests(unittest.TestCase):
         sized=Path(f.temporary.name)/'sized-fixture.gif'
         sized.write_bytes(b'x'*147518)
         f.broker.contents[content]['path']=sized
-        f.error('ALIGNMENT_EXPIRED','acquire_display',dict(
+        f.error('CONTENT_TOO_LARGE','acquire_display',dict(
             content_id=content,collection_id=collection,mode='sync',
             activation_id='activation-1',session_id='session-1'))
         self.assertEqual(f.adapter.reservations,[])

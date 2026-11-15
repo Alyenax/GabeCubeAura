@@ -16,7 +16,7 @@ from signalbar.integration_api import ExternalPresentation as Assistant
 from signalbar.core.profiles import Profiles
 from datetime import datetime, timedelta
 
-from signalbar import __version__
+from signalbar import FACEPLATE_GIF_LIMIT, __version__
 from signalbar.shutdown import ShutdownBudget
 from signalbar.screen_sync_trace import ScreenSyncTrace
 from signalbar.activation import ScreenSyncActivation
@@ -81,7 +81,7 @@ def faceplate_scene_cache_namespace(payload):
     kind = str(payload.get("kind", ""))
     visual_theme = str(payload.get("visual_theme", ""))
     # Preserve the Lab183 pixel-cache generation; only the gain policy changed.
-    parts = ["gabecubeaura", "encoded-rgb-peak-1", kind or "scene"]
+    parts = ["gabecubeaura", "native-gif-2", str(FACEPLATE_GIF_LIMIT), kind or "scene"]
     if kind in ("weather", "dashboard", "artwork-dashboard"):
         parts.append("lossless-frame-reuse-1")
     if kind == "clock":
@@ -3584,10 +3584,12 @@ class Engine:
                 and self._weather_preview_allowed())
 
     def run_faceplate_gif_size_test(self, size):
-        from signalbar.faceplate.gif_probe import EXACT_SIZES_BYTES, build
+        from signalbar.faceplate.gif_probe import ALL_EXACT_SIZES, build
         try:
             data, frames = build(size)
         except ValueError:
+            return {"state": "invalid"}
+        if FACEPLATE_GIF_LIMIT is not None and len(data) > FACEPLATE_GIF_LIMIT:
             return {"state": "invalid"}
         if not self._faceplate_gif_test_lock.acquire(blocking=False):
             return {"state": "busy"}
@@ -3597,7 +3599,7 @@ class Engine:
             if not self.faceplate.device_status().get("available"):
                 return {"state": "unavailable"}
             cancelled = threading.Event()
-            target = {"target_bytes": size} if size in EXACT_SIZES_BYTES else {"target_kib": size}
+            target = {"target_bytes": size} if size in ALL_EXACT_SIZES else {"target_kib": size}
             generation = self.faceplate_worker.submit(
                 "gif-size-test", {"kind": "gif-size-test", "data": data, "frames": frames,
                                   "target": target, "test_cancelled": cancelled},

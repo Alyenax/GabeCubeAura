@@ -8,6 +8,7 @@ from . import gif, protocol
 
 SIZES_KIB = (1, 4, 32, 56, 64, 80)
 EXACT_SIZES_BYTES = (32_768, 32_769)
+ALL_EXACT_SIZES = (*EXACT_SIZES_BYTES, 32_767)
 
 
 def _split_first_image_block(data, target):
@@ -35,11 +36,11 @@ def _split_first_image_block(data, target):
     return data[:offset] + split + data[offset + 1 + block_length:]
 
 
-@lru_cache(maxsize=len(SIZES_KIB) + len(EXACT_SIZES_BYTES))
+@lru_cache(maxsize=len(SIZES_KIB) + len(ALL_EXACT_SIZES))
 def build(size):
-    if type(size) is not int or size not in SIZES_KIB + EXACT_SIZES_BYTES:
+    if type(size) is not int or size not in SIZES_KIB + ALL_EXACT_SIZES:
         raise ValueError("unsupported GIF test size")
-    exact = size in EXACT_SIZES_BYTES
+    exact = size in ALL_EXACT_SIZES
     # Both motifs are invariant under a 180-degree rotation. The exact pair
     # uses a seed that yields 32,762 bytes before splitting one image block.
     rng = Random(16138 if exact else 16103)

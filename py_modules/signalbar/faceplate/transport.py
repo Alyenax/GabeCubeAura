@@ -19,6 +19,7 @@ import threading
 import math
 from pathlib import Path
 
+from signalbar import FACEPLATE_GIF_LIMIT
 from . import protocol
 from . import runtime
 from .flash import default_manager, UploadDeferred, ContentCollision
@@ -500,7 +501,7 @@ class Link:
                 # or fabricate a successful display receipt. Reframe the SAME
                 # compressed image once and use the ordinary budgeted upload.
                 source = timings['identity']
-                data = repack_for_restore(data)
+                data = repack_for_restore(data, limit=FACEPLATE_GIF_LIMIT or protocol.MAX_GIF_BYTES)
                 wanted = self.flash_manager.preflight(data, self.flash_priority)
                 if (wanted['size'], wanted['crc32']) == (source['size'], source['crc32']):
                     raise LinkError('recovery GIF identity collision')
@@ -583,8 +584,9 @@ class Link:
         Vendor mode mirrors JSAUX's write-only F0 preflight; it never waits for
         an F0 reply. Auto tries baseline first, then the vendor preflight.
         """
-        if len(data) > protocol.MAX_GIF_BYTES:
-            raise ValueError("faceplate GIF exceeds the 192 KiB transfer limit")
+        if len(data) > (FACEPLATE_GIF_LIMIT or protocol.MAX_GIF_BYTES):
+            label = "32 KiB Light" if FACEPLATE_GIF_LIMIT else "192 KiB"
+            raise ValueError(f"faceplate GIF exceeds the {label} transfer limit")
         total_started = time.monotonic()
         self.last_wire_data = bytes(data)
         # Every caller, including future tools using Link directly, crosses

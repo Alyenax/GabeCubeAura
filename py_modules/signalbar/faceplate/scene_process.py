@@ -38,6 +38,8 @@ from signalbar.faceplate.weather_artwork import (  # noqa: E402
     build_weather_artwork_scene,
 )
 from signalbar.faceplate.player_city import build_player_city
+from signalbar import FACEPLATE_GIF_LIMIT
+from signalbar.faceplate.gif_transform import prepare_gif
 from signalbar.faceplate.player_city_animation import animation_manifest
 from signalbar.faceplate.render_lock import (  # noqa: E402
     FaceplateRenderBusy, exclusive_render_lock,
@@ -222,6 +224,9 @@ def main(argv) -> int:
                 payload = result.gif(reuse_pixels=True)
             else:
                 payload = result.gif()
+            payload = prepare_gif(payload, limit=FACEPLATE_GIF_LIMIT,
+                                 max_frames=1024 if kind == 'clock' else 192,
+                                 preserve_timeline=kind == 'clock', metadata=render_metadata)
         _write_bytes(gif_path, payload)
         _write_json(result_path, {
             "ok": True, "kind": kind, "signature": result.signature,

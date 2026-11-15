@@ -97,6 +97,7 @@ TEST_VERSION = re.compile(
 BETA_VERSION = re.compile(
     r"^(?:v)?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)-beta\.?(0|[1-9]\d*)$"
 )
+NORMAL_BETA_VERSION = re.compile(BETA_VERSION.pattern[:-1] + r"\.normal$")
 LAB_VERSION = re.compile(
     r"^(?:v)?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)-lab\.?(0|[1-9]\d*)$"
 )
@@ -125,10 +126,11 @@ def _version_tuple(value: str, *, allow_test=False):
         if test:
             major, minor, patch, iteration = (int(part) for part in test.groups())
             return major, minor, patch, -1, iteration
-        beta = BETA_VERSION.fullmatch(text)
+        beta = BETA_VERSION.fullmatch(text) or NORMAL_BETA_VERSION.fullmatch(text)
         if beta:
             major, minor, patch, iteration = (int(part) for part in beta.groups())
-            return major, minor, patch, -2, iteration
+            base = (major, minor, patch, -2, iteration)
+            return (*base, 1) if text.endswith(".normal") else base
         lab = LAB_VERSION.fullmatch(text)
         if lab:
             major, minor, patch, iteration = (int(part) for part in lab.groups())
@@ -810,7 +812,8 @@ class UpdateManager:
             returning = (
                 bool(state.get("return_to_stable"))
                 and self._configured_channel() == "stable"
-                and bool(BETA_VERSION.fullmatch(self.installed_version))
+                and bool(BETA_VERSION.fullmatch(self.installed_version)
+                         or NORMAL_BETA_VERSION.fullmatch(self.installed_version))
                 and bool(STABLE_VERSION.fullmatch(available))
                 and available != self.installed_version
             )
@@ -1061,6 +1064,9 @@ class UpdateManager:
 
     def _automatic_update(self):
         """Opt-in only; latest verified newer release, never a recovery package."""
+        if NORMAL_BETA_VERSION.fullmatch(self.installed_version):
+            # Normal is delivered privately. Public updates remain a manual choice.
+            return self.status()
         if not self._operation_lock.acquire(blocking=False):
             return self.status()
         try:
@@ -1160,7 +1166,8 @@ class UpdateManager:
     def _availability(self, version: str, channel: str):
         installed = _version_order(self.installed_version, allow_test=True)
         candidate = _version_order(version, allow_test=True)
-        installed_beta = bool(BETA_VERSION.fullmatch(self.installed_version))
+        installed_beta = bool(BETA_VERSION.fullmatch(self.installed_version)
+                              or NORMAL_BETA_VERSION.fullmatch(self.installed_version))
         candidate_stable = bool(STABLE_VERSION.fullmatch(version))
         if channel == "stable" and installed_beta and candidate_stable:
             return version != self.installed_version, candidate < installed

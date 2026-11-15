@@ -8,7 +8,7 @@ import tempfile
 import threading
 import unittest
 from unittest.mock import patch
-from PIL import Image
+from PIL import Image, ImageSequence
 
 from signalbar.providers.current_players import CurrentPlayers, PlayerCountError, validate_response, fetch_current_players
 from signalbar.faceplate.player_city import (ROOT, TIERS, WEATHER, SMILE, build_player_city,
@@ -120,8 +120,13 @@ class PlayerCityPixels(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             data,manifest = render_isolated(dict(kind='player-city',appid=620,weather='STR',phase='night',players=32809),temporary_root=folder)
         self.assertEqual(manifest['players'],32809)
-        self.assertEqual((manifest['frames'],manifest['duration_ms'],manifest['animation_speed'],manifest['rain_style']),
-                         (192,24000,2,'inclined-home-trails-surface-impacts'))
+        self.assertEqual((manifest['duration_ms'], manifest['animation_speed'], manifest['rain_style']),
+                         (24000, 2, 'inclined-home-trails-surface-impacts'))
+        with Image.open(BytesIO(data)) as image:
+            self.assertLess(len(data), 32768)
+            self.assertLess(manifest['frames'], 192)
+            self.assertEqual(image.n_frames, manifest['frames'])
+            self.assertEqual(sum(f.info['duration'] for f in ImageSequence.Iterator(image)), 24000)
         self.assertEqual(manifest['style'],'architectural-pixel-3d')
         self.assertEqual(manifest['source_revision'],'steam-player-city-greenery-v1')
         self.assertEqual(Image.open(BytesIO(data)).convert('RGB').tobytes(),build_player_city('STR','night',32809).frames[0])
@@ -506,12 +511,15 @@ class PlayerCitySerial(unittest.TestCase):
         payload=scene.gif()
         rotated=self.coordinator._orient_gif(payload)
         decoded=Image.open(BytesIO(rotated))
-        self.assertEqual(decoded.n_frames,192)
-        for n,frame in enumerate(scene.frames):
-            decoded.seek(n)
-            expected=Image.frombytes('RGB',(64,54),frame).transpose(Image.Transpose.ROTATE_180)
-            self.assertEqual(decoded.convert('RGB').tobytes(),expected.tobytes())
-            self.assertEqual(decoded.info['duration'],scene.delays_cs[n]*10)
+        self.assertLess(len(rotated), 32768)
+        self.assertLess(decoded.n_frames, 192)
+        source = iter(Image.frombytes('RGB', (64, 54), rgb).transpose(Image.Transpose.ROTATE_180).tobytes()
+                      for rgb in scene.frames)
+        duration = 0
+        for frame in ImageSequence.Iterator(decoded):
+            self.assertIn(frame.convert('RGB').tobytes(), source)
+            duration += frame.info['duration']
+        self.assertEqual(duration, sum(scene.delays_cs) * 10)
         self.assertTrue(self.coordinator.synchronize_scene(payload,'player-city',scene.signature)['synchronized'])
         self.assertEqual(self.panel.calls.count((protocol.TYPE_CONTROL,protocol.CMD_GIF_END)),1,
                          'One GIF transaction, never one transfer per animation frame')

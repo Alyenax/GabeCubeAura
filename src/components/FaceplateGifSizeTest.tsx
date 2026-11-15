@@ -5,12 +5,7 @@ import {ButtonItem, DropdownItem, Localized, PanelSectionRow} from "../localized
 const sizes = [
   {data: 1, label: "1 KiB"},
   {data: 4, label: "4 KiB"},
-  {data: 32768, label: "32,768 bytes (exact)"},
-  {data: 32769, label: "32,769 bytes (exact)"},
-  {data: 32, label: "32 KiB (approx.)"},
-  {data: 56, label: "56 KiB"},
-  {data: 64, label: "64 KiB"},
-  {data: 80, label: "80 KiB"},
+  {data: 32767, label: "32,767 bytes (exact)"},
 ];
 const messages: Record<string, string> = {
   confirmed: "Faceplate confirmed the new GIF.",

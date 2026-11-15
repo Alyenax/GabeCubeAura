@@ -8,6 +8,8 @@ from pathlib import Path
 import zipfile
 
 from .coordinator import validate_gif
+from signalbar import FACEPLATE_GIF_LIMIT
+from .gif_transform import prepare_gif
 from .steamgriddb import MAX_GIF_BYTES, DASHBOARD_PACK_MAX_FRAMES, DASHBOARD_PACK_REVISION
 
 MAX_ARCHIVE_BYTES = 4 * 1024 * 1024
@@ -53,6 +55,9 @@ def creation_archive(library, appid, mode, expected_sha):
             or manifest.get('ready') is not True or manifest.get('sha256') != expected_sha
             or hashlib.sha256(data).hexdigest() != expected_sha):
         raise ValueError('The saved creation changed. Select it again.')
+    exported = {}
+    if FACEPLATE_GIF_LIMIT is not None:
+        data = prepare_gif(data, limit=FACEPLATE_GIF_LIMIT, metadata=exported)
     validate_gif(data)
     files = {'faceplate.gif': data}
     if manifest.get('dashboard_pack'):
@@ -66,6 +71,8 @@ def creation_archive(library, appid, mode, expected_sha):
         files['artwork-dashboard.rgb'] = pack
     portable = {key: manifest[key] for key in MANIFEST_KEYS if key in manifest}
     portable.update(compiled='faceplate.gif', dashboard_pack='artwork-dashboard.rgb' if len(files) == 2 else '')
+    portable.update({key: value for key, value in exported.items() if key in MANIFEST_KEYS})
+    portable['sha256'] = hashlib.sha256(data).hexdigest()
     document = dict(schema='gabecubeaura-creation-v1', active=True, applied_as_defaults=False,
                     manifest=portable, files={name:hashlib.sha256(value).hexdigest() for name,value in files.items()})
     files['creation.json'] = (json.dumps(document, sort_keys=True, indent=2, ensure_ascii=False)+'\n').encode()

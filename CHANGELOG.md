@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.6.1-beta.5
+
+- Keep built-in Faceplate GIFs below 32 KiB in both orientations. Weather and artwork animations hold selected poses longer when lossless encoding alone exceeds the cap.
+- Limit the manual transfer test to files under 32 KiB, including an exact 32,767-byte probe.
+
 ## 1.6.1-beta.4
 
 ### Local diagnostics

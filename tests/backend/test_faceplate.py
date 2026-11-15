@@ -400,7 +400,7 @@ class FaceplateTests(unittest.TestCase):
             return protocol.Reply(data[2], data[3], b"\x01")
 
         link.command = command
-        data = b"x" * (60 * 1024)
+        data = b"x" * (24 * 1024)
         with patch("signalbar.faceplate.transport.time.sleep"):
             self.assertTrue(link.send_gif(data))
         self.assertEqual(end_calls, [(gif_end_timeout(len(data)), 1)])
@@ -757,15 +757,14 @@ class FaceplateTests(unittest.TestCase):
 
     def test_shipped_rain_assets_are_faceplate_native_and_bounded(self):
         expected = {
-            "rain-bluewater-64x54.gif": "7456652e37094b3b64451627622e526c683f910ebfc106d61cd01d6055065d3a",
-            "rain-pearl-64x54.gif": "37abf0cada669d9ff7ba3c4a57f30722919d4cab822a54bb05176397c76102ab",
+            "rain-bluewater-64x54.gif": "cc11950ca01825268fdceccb53d939d8d891fbd43c23b9afd88b40de55af6a55",
+            "rain-pearl-64x54.gif": "fa4896143d9a9190166e8e0b58c927403cdda3b0da5bb7e0fd3803e9a732cab1",
         }
         import hashlib
         for filename, digest in expected.items():
             data = (ASSET_ROOT / "weather" / filename).read_bytes()
             validate_gif(data)
-            self.assertEqual(data[10], 0x87)
-            self.assertLess(len(data), 96 * 1024)
+            self.assertLess(len(data), 32 * 1024)
             self.assertEqual(hashlib.sha256(data).hexdigest(), digest)
 
     def test_static_artwork_encoder_produces_a_native_gif(self):

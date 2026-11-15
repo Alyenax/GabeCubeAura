@@ -4,6 +4,8 @@ from pathlib import Path
 from zipfile import ZipFile
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'py_modules'))
+from signalbar import FACEPLATE_GIF_LIMIT
+from signalbar.faceplate.gif_transform import rotate_gif
 from signalbar.updates import validate_and_stage_archive,read_bundle_contract
 from check_license_scope import check_license_scope
 from package_plugin import FORBIDDEN
@@ -21,6 +23,10 @@ def main():
             assert names==expected and z.testzip() is None
             assert not any(any(n.startswith(p) for p in FORBIDDEN) for n in names)
             assert not any('RELEASE_NOTES_' in n or 'PRIVATE_CREATION' in n for n in names)
+            if FACEPLATE_GIF_LIMIT is not None:
+                for name in sorted(n for n in names if n.endswith('.gif')):
+                    gif = z.read('GabeCubeAura/' + name)
+                    assert max(len(gif), len(rotate_gif(gif))) <= FACEPLATE_GIF_LIMIT, name
         with tempfile.TemporaryDirectory() as tmp:
             staged=validate_and_stage_archive(archive,Path(tmp).resolve()/'stage',version)
             read_bundle_contract(staged,version);check_license_scope(ROOT,staged,public_build=True)

@@ -196,6 +196,7 @@ export const publicFrench: Record<string, string> = {
   "GIF size": "Taille du GIF",
   "1 KiB": "1 Kio",
   "4 KiB": "4 Kio",
+  "32,767 bytes (exact)": "32 767 octets (exact)",
   "32,768 bytes (exact)": "32 768 octets (exact)",
   "32,769 bytes (exact)": "32 769 octets (exact)",
   "32 KiB (approx.)": "32 Kio (env.)",

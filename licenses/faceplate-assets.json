@@ -1782,17 +1782,6 @@
       "modifications": "User-created weather artwork; rendered and encoded animation."
     },
     {
-      "path": "assets/faceplate/weather-artwork-v1/night-rain-reference.gif",
-      "sha256": "bcfc2e416071a1ced71da3da2e4a1f9e21563a93e418e96e7f4bc3ad4316d79d",
-      "collection": "weather-artwork-v1",
-      "creator": "Alyenax",
-      "attribution": "Copyright 2026 Alyenax - GabeCubeAura Faceplate artwork",
-      "license": "CC-BY-NC-SA-4.0",
-      "source": "assets/faceplate/weather-artwork-v1/catalog.json",
-      "source_sha256": "9afd70d67851f5adaabc12b23a9b0db69f3bee0e62da9729ec58494cffb49445",
-      "modifications": "User-created weather artwork; rendered and encoded animation."
-    },
-    {
       "path": "assets/faceplate/weather-artwork-v1/rain-bluewater.rgbz",
       "sha256": "4d5ed818266d16149c13e7f54edb6df0615c478680d7cf0378ee64350dc7df16",
       "collection": "weather-artwork-v1",
@@ -2168,25 +2157,25 @@
     },
     {
       "path": "assets/faceplate/weather/rain-bluewater-64x54.gif",
-      "sha256": "7456652e37094b3b64451627622e526c683f910ebfc106d61cd01d6055065d3a",
+      "sha256": "cc11950ca01825268fdceccb53d939d8d891fbd43c23b9afd88b40de55af6a55",
       "collection": "weather-rain",
       "creator": "Alyenax",
       "attribution": "Copyright 2026 Alyenax - GabeCubeAura Faceplate artwork",
       "license": "CC-BY-NC-SA-4.0",
       "source": "tools/pixel-studio-alternative/assets/weather-artwork-palette-v1/integration-manifest.json",
       "source_sha256": "6b66fe20615f846cbea31559b0027efbf793e82743edf5d9553da343b95c8611",
-      "modifications": "User-created rain artwork; GIF animation."
+      "modifications": "User-created rain artwork; GIF animation. Lossless GIF palette and frame reuse optimization."
     },
     {
       "path": "assets/faceplate/weather/rain-pearl-64x54.gif",
-      "sha256": "37abf0cada669d9ff7ba3c4a57f30722919d4cab822a54bb05176397c76102ab",
+      "sha256": "fa4896143d9a9190166e8e0b58c927403cdda3b0da5bb7e0fd3803e9a732cab1",
       "collection": "weather-rain",
       "creator": "Alyenax",
       "attribution": "Copyright 2026 Alyenax - GabeCubeAura Faceplate artwork",
       "license": "CC-BY-NC-SA-4.0",
       "source": "tools/pixel-studio-alternative/assets/weather-artwork-palette-v1/integration-manifest.json",
       "source_sha256": "6b66fe20615f846cbea31559b0027efbf793e82743edf5d9553da343b95c8611",
-      "modifications": "User-created rain artwork; GIF animation."
+      "modifications": "User-created rain artwork; GIF animation. Lossless GIF palette and frame reuse optimization."
     }
   ]
 }

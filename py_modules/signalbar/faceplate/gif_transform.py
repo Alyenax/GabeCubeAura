@@ -18,7 +18,7 @@ class GifTransformError(ValueError):
     pass
 
 
-def repack_for_restore(data):
+def repack_for_restore(data, *, limit=MAX_BYTES):
     """Change only GIF image subblock boundaries, not a single LZW bit.
 
     One deterministic recovery representation for an uncertain delegated
@@ -45,7 +45,7 @@ def repack_for_restore(data):
             # 127 or 126 bytes, choosing a representation different from the
             # source. Short streams are split in two instead of padded.
             for size in (min(127, max(1, len(packed)//2)),
-                         min(126, max(1, len(packed)//3)), 1):
+                         min(126, max(1, len(packed)//3)), 254, 1):
                 out = bytearray()
                 for pos in range(0, len(packed), size):
                     chunk = packed[pos:pos + size]
@@ -54,9 +54,8 @@ def repack_for_restore(data):
                 out.append(0)
                 if out != data[start:end]:
                     result = data[:start] + out + data[end:]
-                    if len(result) > MAX_BYTES:
-                        raise GifTransformError('repacked GIF exceeds the limit')
-                    return bytes(result)
+                    if len(result) <= limit:
+                        return bytes(result)
             raise GifTransformError('no distinct recovery representation')
         if block == 0x21:
             if offset + 2 >= len(data):
@@ -153,8 +152,7 @@ def _decode_lzw(packed, minimum, expected):
     return bytes(output)
 
 
-def rotate_gif(data, *, max_frames=MAX_FRAMES):
-    """Rotate every RGB-indexed frame, including all animated GIF frames."""
+def _read_native(data, max_frames):
     if type(max_frames) is not int or not 1 <= max_frames <= 1024:
         raise GifTransformError("invalid rotation frame budget")
     data = bytes(data)
@@ -182,6 +180,7 @@ def rotate_gif(data, *, max_frames=MAX_FRAMES):
     next_transparent = None
     transparency = []
     loop = False
+    explicit_delay = False
     while offset < len(data):
         block = data[offset]
         if block == 0x3B:
@@ -205,6 +204,7 @@ def rotate_gif(data, *, max_frames=MAX_FRAMES):
                 if next_transparent is not None and next_transparent >= colours:
                     raise GifTransformError("GIF transparency index out of range")
                 next_delay = int.from_bytes(data[first + 1:first + 3], "little")
+                explicit_delay = True
                 offset = last + 1
                 continue
             if label == 0xFF and data[first:last] == b"NETSCAPE2.0":
@@ -230,7 +230,7 @@ def rotate_gif(data, *, max_frames=MAX_FRAMES):
             raise GifTransformError("GIF palette index out of range")
         if not frames and next_transparent is not None and next_transparent in indices:
             raise GifTransformError("first GIF frame must draw every pixel")
-        frames.append(indices[::-1])
+        frames.append(indices)
         delays.append(next_delay)
         transparency.append(next_transparent)
         next_delay = 10
@@ -239,5 +239,71 @@ def rotate_gif(data, *, max_frames=MAX_FRAMES):
             raise GifTransformError("too many GIF frames")
     if not frames or offset >= len(data) or data[offset] != 0x3B:
         raise GifTransformError("missing GIF trailer")
-    return gif.encode(width, height, palette, frames, delay_cs=delays, loop=loop,
-                      transparent_index=transparency[0] if len(set(transparency)) == 1 else transparency)
+    return palette, frames, delays, transparency, loop, explicit_delay
+
+
+def rotate_gif(data, *, max_frames=MAX_FRAMES):
+    """Rotate every indexed frame, including all animated GIF frames."""
+    palette, frames, delays, transparency, loop, explicit_delay = _read_native(data, max_frames)
+    return gif.encode(protocol.WIDTH, protocol.HEIGHT, palette,
+                      [frame[::-1] for frame in frames], delay_cs=delays,
+                      loop=loop, transparent_index=transparency,
+                      preserve_delay=explicit_delay)
+
+
+def _opaque_frames(frames, transparency):
+    opaque = []
+    for frame, transparent in zip(frames, transparency):
+        if opaque and transparent is not None:
+            frame = bytes(old if value == transparent else value
+                          for old, value in zip(opaque[-1], frame))
+        opaque.append(frame)
+    return opaque
+
+
+def _encode_native(palette, frames, delays, loop, *, explicit_delay):
+    used = sorted(set().union(*(set(frame) for frame in frames)))
+    table = bytearray(256)
+    for slot, old in enumerate(used):
+        table[old] = slot
+    return gif.encode(protocol.WIDTH, protocol.HEIGHT, [palette[i] for i in used],
+                      [frame.translate(table) for frame in frames], delay_cs=delays,
+                      loop=loop, reuse_pixels=True, preserve_delay=explicit_delay)
+
+
+def prepare_gif(data, *, limit=None, max_frames=MAX_FRAMES, preserve_timeline=False, metadata=None):
+    """Optimize exact frames first, then sample fewer poses if the edition needs it."""
+    palette, frames, delays, transparency, loop, explicit_delay = _read_native(data, max_frames)
+    opaque = _opaque_frames(frames, transparency)
+    optimized = _encode_native(palette, opaque, delays, loop, explicit_delay=explicit_delay)
+    if limit is None:
+        return min((data, optimized), key=len)
+
+    def fits(candidate):
+        return len(candidate) <= limit and len(rotate_gif(candidate, max_frames=max_frames)) <= limit
+
+    for candidate in sorted((data, optimized), key=len):
+        if fits(candidate):
+            return candidate
+    if preserve_timeline:
+        raise GifTransformError('Clock GIF exceeds the edition transfer limit')
+
+    # Keep the original period and maintain even sampling across the loop.
+    # Coarser candidates keep the complete first frame every time the GIF loops.
+    offsets = [0]
+    for delay in delays:
+        offsets.append(offsets[-1] + delay)
+    count = len(opaque)
+    while count > 1:
+        count = max(1, min(count - 1, count * 4 // 5))
+        selected = [i * len(opaque) // count for i in range(count)] + [len(opaque)]
+        holds = [offsets[b] - offsets[a] for a, b in zip(selected, selected[1:])]
+        if max(holds) > 65535:
+            break
+        candidate = _encode_native(palette, [opaque[i] for i in selected[:-1]], holds, loop,
+                                   explicit_delay=True)
+        if fits(candidate):
+            if metadata is not None:
+                metadata.update(frames=count, delay_cs=holds[0] if len(set(holds)) == 1 else 0)
+            return candidate
+    raise GifTransformError('Faceplate GIF exceeds the edition transfer limit')

@@ -97,7 +97,7 @@ class GifSizeTestWorkerTests(unittest.TestCase):
             first = engine.run_faceplate_gif_size_test(1)
             stored = engine.run_faceplate_gif_size_test(1)
             self.serial.panel.refuse_begin = True
-            refused = engine.run_faceplate_gif_size_test(56)
+            refused = engine.run_faceplate_gif_size_test(4)
         self.assertEqual(first["state"], "confirmed")
         self.assertEqual(stored["state"], "already-stored")
         self.assertEqual(refused["state"], "begin-refused")
@@ -113,27 +113,20 @@ class GifSizeTestWorkerTests(unittest.TestCase):
     def test_exact_sizes_reach_usb_with_rotation_and_a_cached_recovery_alias(self):
         engine = self.engine
         engine.faceplate.rotate_180 = True
-        at_limit, over_limit = EXACT_SIZES_BYTES
-        exact_data, _ = build(at_limit)
+        exact_data, _ = build(32767)
         engine.faceplate._restore_alias = (
             hashlib.sha256(exact_data).hexdigest(), rotate_gif(exact_data))
-        accepted = engine.run_faceplate_gif_size_test(at_limit)
-        self.serial.panel.refuse_begin = True
-        refused = engine.run_faceplate_gif_size_test(over_limit)
-
-        self.assertEqual(accepted, {"state": "confirmed", "size_bytes": 32768})
-        self.assertEqual(refused, {"state": "begin-refused", "size_bytes": 32769})
+        self.assertEqual(engine.run_faceplate_gif_size_test(32767),
+                         {"state": "confirmed", "size_bytes": 32767})
+        for size in (32768, 32769, 32, 56, 64, 80):
+            self.assertEqual(engine.run_faceplate_gif_size_test(size), {"state": "invalid"})
         self.assertEqual(self.serial.panel.stored, exact_data)
-        self.assertEqual(self.serial.panel.commits, 1)
         begins = [payload for kind, cmd, payload in self.serial.panel.events if (kind, cmd) == (1, 4)]
-        self.assertEqual([int.from_bytes(payload[:4], "big") for payload in begins], [32768, 32769])
+        self.assertEqual([int.from_bytes(payload[:4], "big") for payload in begins], [32767])
         records = runtime(engine)["gif_size_tests"]
-        self.assertEqual([r["target_bytes"] for r in records], [32768, 32769])
-        self.assertEqual([r["transfer"]["expected_bytes"] for r in records], [32768, 32769])
-        self.assertGreater(records[0]["transfer"]["chunks"], 0)
+        self.assertEqual([r["target_bytes"] for r in records], [32767])
+        self.assertEqual(records[0]["transfer"]["expected_bytes"], 32767)
         self.assertTrue(records[0]["transfer"]["end_sent"])
-        self.assertEqual(records[1]["transfer"]["chunks"], 0)
-        self.assertFalse(records[1]["transfer"]["end_sent"])
 
     def test_explicit_off_or_foreign_owner_never_sends_a_usb_command(self):
         engine = self.engine

@@ -500,6 +500,7 @@ def compile_source(path, crop_y=50, saturation=100, brightness=100,
                    cleanup_stats=None, appid=0, art_style="art",
                    logo_position="bottom", logo_scale=100):
     from .artwork_layout import compose_frame, prepare_logo, validate_layout, validate_logo_scale
+    from .gif_transform import prepare_gif
     validate_layout(art_style, logo_position)
     validate_logo_scale(logo_scale)
     frames = decode_frames(
@@ -525,6 +526,8 @@ def compile_source(path, crop_y=50, saturation=100, brightness=100,
         protocol.WIDTH, protocol.HEIGHT, PALETTE_332, indexed,
         delay_cs=round(100 / FRAME_RATE), loop=len(indexed) > 1,
     )
+    # Keep a full-quality master across installations of either edition.
+    data = prepare_gif(data)
     if len(data) > MAX_GIF_BYTES:
         raise SteamGridDBError("Compiled faceplate GIF exceeds 2 MiB")
     peak_load = max(sum(frame) / (len(frame) * 255.0) for frame in frames)

@@ -204,8 +204,8 @@ class CoreTests(unittest.TestCase):
         self.assertIn(self.broker.lease["content_id"], self.broker.contents)
         self.assertEqual(len(list(self.broker.contents_dir.glob("*.gif"))), 4)
     def test_admission_size_and_global_staging_cap(self):
-        self.error("CONTENT_TOO_LARGE", "register_content", dict(sha256="a" * 64, collection_id="b" * 64, size_bytes=196609))
-        self.ok("register_content", dict(sha256="a" * 64, collection_id="b" * 64, size_bytes=196608))
+        self.error("CONTENT_TOO_LARGE", "register_content", dict(sha256="a" * 64, collection_id="b" * 64, size_bytes=32768))
+        self.ok("register_content", dict(sha256="a" * 64, collection_id="b" * 64, size_bytes=32767))
         self.error("RATE_LIMITED", "register_content", dict(sha256="c" * 64, collection_id="d" * 64, size_bytes=10))
     def test_bad_hash_rejected_without_usb(self):
         data = gif()

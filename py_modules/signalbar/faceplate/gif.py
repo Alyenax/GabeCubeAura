@@ -69,7 +69,7 @@ def _sub_blocks(data):
 
 
 def encode(width, height, palette, frames, delay_cs=10, loop=True, transparent_index=None,
-           *, reuse_pixels=False):
+           *, reuse_pixels=False, preserve_delay=False):
     """Encode full indexed frames with a global palette and keep-frame disposal.
 
     A transparent index can reuse unchanged pixels from the preceding frame.
@@ -123,7 +123,7 @@ def encode(width, height, palette, frames, delay_cs=10, loop=True, transparent_i
                 candidate = _lzw(delta, minimum_code_size)
                 if len(candidate) < len(compressed):
                     transparent, compressed = borrow, candidate
-        if len(frames) > 1 or transparent is not None:
+        if len(frames) > 1 or transparent is not None or preserve_delay:
             flags = 4 if transparent is None else 5
             out += (b"\x21\xF9\x04" + bytes((flags,))
                     + delays[frame_index].to_bytes(2, "little")

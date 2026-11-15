@@ -97,7 +97,9 @@ class AutomaticDashboardTests(unittest.TestCase):
             show_game_session=True, bottom_mode="controllers", controllers=({"percent": 87},),
             connected_controller_count=1, show_weather_notch=False,
         )
-        self.assertEqual(expected.gif(), data)
+        with Image.open(BytesIO(expected.gif())) as source, Image.open(BytesIO(data)) as actual:
+            self.assertEqual(actual.convert("RGB").tobytes(), source.convert("RGB").tobytes())
+            self.assertEqual(actual.info.get("duration"), source.info.get("duration"))
         self.assertEqual((1, 100), (manifest["frames"], manifest["delay_cs"]))
         with Image.open(BytesIO(data)) as image:
             self.assertEqual((64, 54), image.size)

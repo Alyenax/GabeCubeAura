@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.6.1 · 2026-11-20
+
+### JSAUX PIXEL Faceplate compatibility
+
+Some newer Faceplates have a 32 KiB limit for GIF transfers. When a GIF is too large, the panel can reject the transfer before the animation starts. This release keeps GIFs prepared by GabeCubeAura strictly below that limit, at **32,767 bytes or less**, including with 180° rotation.
+
+GabeCubeAura tries lossless compression first. If an animation still exceeds the limit, it uses fewer frames and holds the remaining frames longer to keep the same total duration. Weather animations and Dashboards that previously failed were reported working with the beta 5 build. This update should fix transfer failures caused by the size limit. [Beta 5 test result](https://github.com/Alyenax/GabeCubeAura/issues/14#issuecomment-6900579017)
+
+### Weather and recovery
+
+- Refresh weather after system sleep and keep the Faceplate off if you switched it off in GabeCubeAura.
+- Stop retrying an image when the Faceplate rejects it before transfer begins. Show the failure and offer **Resume stored picture** when a power-only recovery is available.
+
+### Local diagnostics
+
+- Export a local report with the installed version, transfer and recovery status, and available USB information.
+- Use the optional **Faceplate GIF transfer test** under **Settings > Advanced > Diagnostics** to test a GIF of up to 32,767 bytes.
+
+### Update in Decky
+
+Select **Stable** under **Settings > Updates > Preferences**, then check for **1.6.1**. If you’re on beta 5, choose **Stable** to stay on the stable channel.
+
 ## 1.6.1-beta.5
 
 - Keep built-in Faceplate GIFs below 32 KiB in both orientations. Weather and artwork animations hold selected poses longer when lossless encoding alone exceeds the cap.

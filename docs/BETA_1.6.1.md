@@ -1,6 +1,8 @@
 # GabeCubeAura 1.6.1 beta
 
-Beta 3 sends smaller Weather and Dashboard GIFs with the same picture, timing and loop. It keeps the weather and recovery fixes, existing settings, local diagnostics and the current transfer protocol. The stable release remains **1.6.0**. A test on an affected Faceplate is still needed to confirm the result.
+> **Stable 1.6.1 is available.** It includes the beta 5 Light fix for newer Faceplates. In Decky, choose **Stable** under **Settings > Updates > Preferences** and check for **1.6.1**. The instructions below describe the earlier beta 3 test.
+
+Beta 3 sends smaller Weather and Dashboard GIFs with the same picture, timing and loop. It keeps the weather and recovery fixes, existing settings, local diagnostics and the current transfer protocol. At the time of this test, the stable release was **1.6.0**.
 
 ## Install from 1.5.1, 1.6.0 or an earlier 1.6.1 beta
 

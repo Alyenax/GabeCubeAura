@@ -18,6 +18,7 @@ import unittest
 import uuid
 from unittest.mock import patch
 
+from signalbar import FACEPLATE_GIF_LIMIT
 from signalbar.faceplate.gif import encode
 from signalbar.faceplate.steamgriddb import PALETTE_332
 from signalbar.jsaux_broker import Broker, BrokerServer
@@ -166,7 +167,10 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(set(value), {"negotiated_version", "contract_revision", "connection_id", "broker_mono_ms", "clock_domain", "capabilities", "limits", "state"})
         self.assertEqual(value["contract_revision"], 4)
         self.assertEqual(value["capabilities"], CAPABILITIES)
-        self.assertEqual(value["limits"], LIMITS)
+        expected_limits = dict(LIMITS)
+        if FACEPLATE_GIF_LIMIT is not None:
+            expected_limits["max_content_bytes"] = FACEPLATE_GIF_LIMIT
+        self.assertEqual(value["limits"], expected_limits)
         self.assertNotIn(self.broker.capability, json.dumps(value))
         self.assertNotIn(self.temporary.name, json.dumps(value))
         self.assertEqual(set(value["state"]), {"hardware", "policy", "steam", "ownership", "flash", "lease", "cache"})

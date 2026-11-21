@@ -33,7 +33,7 @@ except ImportError:  # pragma: no cover - defensive fallback for non-POSIX tools
 
 
 PREFERENCES_SCHEMA = 2
-HOME_SCENES: Tuple[str, ...] = ("weather", "dashboard", "native-clock", "artwork", "artwork-dashboard", "library", "clock")
+HOME_SCENES: Tuple[str, ...] = ("weather", "dashboard", "native-clock", "artwork", "artwork-dashboard", "library", "clock", "pixel-clocks")
 GAME_SCENES: Tuple[str, ...] = (
     "dashboard",
     "artwork",
@@ -41,6 +41,7 @@ GAME_SCENES: Tuple[str, ...] = (
     "weather",
     "player-city",
     "clock",
+    "pixel-clocks",
 )
 DEFAULT_HOME_SCENE = "dashboard"
 DEFAULT_GAME_SCENE = "artwork"
@@ -222,6 +223,14 @@ class FaceplatePreferencesStore:
         # rejected by update() and cannot resurrect the retired writer.
         home_scene = _validate_scene("home", "dashboard" if routes.get("home") == "performance" else routes.get("home"))
         game_scene = _validate_scene("game", "dashboard" if routes.get("game") == "performance" else routes.get("game"))
+        # Older releases can load the ordinary routes in the same document.
+        # A route write from an older release invalidates the old Pixel selection.
+        pixel = payload.get('pixel_clocks')
+        if isinstance(pixel, dict) and pixel.get('revision') == revision:
+            if pixel.get('home') is True:
+                home_scene = 'pixel-clocks'
+            if pixel.get('game') is True:
+                game_scene = 'pixel-clocks'
         legacy_visual_theme = str(payload.get(
             "visual_theme", DEFAULT_VISUAL_THEME,
         )).strip().lower()
@@ -303,6 +312,7 @@ class FaceplatePreferencesStore:
 
     def _write_unlocked(self, preferences: FaceplateRoutingPreferences, *, preserve_unknown=True) -> None:
         payload = preferences.as_dict()
+        previous = {}
         # Keep unknown fields from a compatible schema for forward/backward
         # editing. Never expose them via the public snapshot or interpret them.
         if preserve_unknown and self.path.exists():
@@ -315,6 +325,19 @@ class FaceplatePreferencesStore:
                 payload["route_migration"] = "performance-retired-v1"
             for name in ('routes', 'scene_themes'):
                 payload[name] = {**previous.get(name, {}), **preferences.as_dict()[name]}
+        payload.pop('pixel_clocks', None)
+        prior_routes = previous.get('routes', {})
+        pixel = {'revision': preferences.revision}
+        for context, allowed in (('home', HOME_SCENES), ('game', GAME_SCENES)):
+            if payload['routes'][context] != 'pixel-clocks':
+                continue
+            previous_scene = prior_routes.get(context)
+            if previous_scene not in allowed or previous_scene == 'pixel-clocks':
+                previous_scene = self.defaults().scene_for(context)
+            payload['routes'][context] = previous_scene
+            pixel[context] = True
+        if len(pixel) > 1:
+            payload['pixel_clocks'] = pixel
         encoded = json.dumps(payload, indent=2, sort_keys=True) + '\n'
         if len(encoded.encode('utf-8')) > 65536:
             raise FaceplatePreferencesError('faceplate preferences exceed 64 KiB')

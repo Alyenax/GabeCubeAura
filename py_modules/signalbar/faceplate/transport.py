@@ -404,6 +404,17 @@ class Link:
                 self.rx += chunk
 
     def command(self, data: bytes, timeout: float = 1.0, retries: int = 3):
+        # Only an explicit external minute-clock transaction sets this fence.
+        # Body bytes can be staged early; never commit before its civil minute.
+        commit_at = getattr(self, 'clock_commit_at', None)
+        if commit_at is not None and data == protocol.gif_end():
+            valid = getattr(self, 'clock_commit_valid', None)
+            while time.time() < commit_at:
+                if callable(valid) and not valid():
+                    raise TransferCancelled('Clock superseded before scheduled commit')
+                time.sleep(min(.02,max(0.,commit_at-time.time())))
+            if (callable(valid) and not valid()) or time.time() > commit_at + .35:
+                raise TransferCancelled('Clock missed scheduled commit')
         kind, command = data[2], data[3]
         self.last_command_first_sent_at = None
         self.last_command_attempts = 0

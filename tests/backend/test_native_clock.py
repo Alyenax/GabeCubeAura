@@ -2,6 +2,7 @@
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import json
+import hashlib
 import itertools
 import os
 import tempfile
@@ -151,6 +152,76 @@ class NativeSceneTests(unittest.TestCase):
         self.assertEqual(len(self.activations()), 1)
         self.assertEqual(self.engine.faceplate_router.status()['effective_scene'], 'native-clock')
         self.assertTrue(self.engine._onboarding_recovery_blocked)
+
+    def test_pixel_clock_missing_expired_and_reconnected_use_reversible_native_backup(self):
+        self.prefs.update(home_scene='pixel-clocks')
+        before=self.prefs.read()
+        bridge=self.engine.pixel_clocks
+        self.engine._reconcile_faceplate('pixel-missing')
+        self.assertEqual(1,len(self.activations()))
+        snapshot=bridge.status()
+        self.assertEqual('fallback-clock',snapshot['state']);self.assertFalse(snapshot['active'])
+        self.assertEqual('',snapshot['confirmed_sha256']);self.assertTrue(snapshot['selected_for_context'])
+        self.engine._reconcile_faceplate('pixel-still-missing')
+        self.assertEqual(1,len(self.activations()))
+        now=time.time();bridge.client='test-client';bridge.models=['mario'];bridge.model='mario'
+        bridge.seen=bridge.clock();bridge.seen_wall=bridge.wall()
+        # The expired minute cannot keep the old GIF as an effective Pixel clock.
+        packet=dict(context='home',revision=before.revision,client=bridge.client,model='mario',weather_revision=bridge.weather_revision,display_at=now-76,end_at=now-1,sha256='a'*64)
+        bridge.packets=[packet]
+        self.engine._reconcile_faceplate('pixel-expired')
+        self.assertEqual('fallback-clock',bridge.status()['state']);self.assertEqual(1,len(self.activations()))
+        # A fresh packet immediately returns through the normal Pixel worker.
+        bridge.packets=[dict(packet,display_at=now+60,end_at=now+136)]
+        data=encode_frame(bytes([1,2,3])*3456)
+        self.engine._synchronize_pixel_clocks=Mock(side_effect=lambda *a:self.faceplate.synchronize_scene(data,'clock','pixel-packet',prepared_orientation=True))
+        with patch('signalbar.faceplate.transport.time.sleep'):
+            self.engine._reconcile_faceplate('pixel-reconnected')
+        self.engine._synchronize_pixel_clocks.assert_called_once()
+        self.assertTrue(bridge.status()['active']);self.assertEqual('display-confirmed',bridge.status()['state'])
+        # Lease expiration replaces that external picture with the ticking MCU.
+        bridge.seen=bridge.clock()-9
+        self.engine._reconcile_faceplate('pixel-lease-expired')
+        self.assertEqual(2,len(self.activations()))
+        self.assertEqual('fallback-clock',bridge.status()['state'])
+        self.assertEqual(before,self.prefs.read())
+
+    def test_pixel_backup_does_not_preempt_priority_or_explicit_display_off(self):
+        self.prefs.update(home_scene='pixel-clocks')
+        with patch.object(self.engine,'_assistant_holds_matrix',return_value=True):
+            self.engine._reconcile_faceplate('pixel-missing-priority')
+        self.assertEqual([],self.activations())
+        self.faceplate.powered=False
+        self.engine._reconcile_faceplate('pixel-missing-off')
+        self.assertEqual([],self.activations())
+        self.assertEqual('pixel-clocks',self.prefs.read().home_scene)
+        self.faceplate.powered=True;self.faceplate.rotate_180=True
+        self.engine._reconcile_faceplate('pixel-native-rotation-unsupported')
+        self.assertEqual('fallback-failed',self.engine.pixel_clocks.status()['state'])
+        self.assertEqual('',self.engine.pixel_clocks.status()['confirmed_sha256'])
+
+    def test_live_pixel_packet_uses_the_gca_worker_and_usb_receipt(self):
+        from signalbar.faceplate.timing import transfer_ms
+        self.prefs.update(home_scene='pixel-clocks')
+        bridge=self.engine.pixel_clocks
+        now=1795214400.
+        bridge.wall=lambda:now
+        bridge.client='test-client';bridge.model='stardew-hud'
+        bridge.seen=bridge.clock();bridge.seen_wall=now
+        data=encode_frame(bytes([1,2,3])*3456)
+        start=now+transfer_ms(len(data))/1000
+        packet=dict(context='home',revision=self.prefs.read().revision,client=bridge.client,
+                    model='stardew-hud',weather_revision=bridge.weather_revision,
+                    display_at=start,end_at=start+76,sha256=hashlib.sha256(data).hexdigest(),
+                    data=data,manifest={'peak_load':.04})
+        bridge.packets=[packet]
+        with patch('signalbar.backend.engine.time.time',return_value=now), \
+             patch('signalbar.faceplate.transport.time.sleep'):
+            self.engine._reconcile_faceplate('pixel-gif')
+        self.assertTrue(self.result['synchronized'], self.result)
+        self.assertIn(protocol.gif_begin(data),self.calls)
+        self.assertIn(protocol.gif_end(),self.calls)
+        self.assertEqual(bridge.status()['confirmed_sha256'],packet['sha256'])
 
     def test_stable_home_does_not_render_budget_or_send_per_second_minute_or_midnight(self):
         with patch.object(self.faceplate.flash, 'preflight', side_effect=AssertionError('GIF budget')), \

@@ -300,6 +300,8 @@ class Engine:
         self._runtime_failures = []
         self._faceplate_maintenance_retry_at = 0.0
         self._game = GameState()
+        from signalbar.faceplate.pixel_clocks_bridge import PixelClocksBridge
+        self.pixel_clocks = PixelClocksBridge(self)
         self._artwork_identity = None
         self._steam_active_until = 0.0
         self._steam_reason = ""
@@ -526,6 +528,9 @@ class Engine:
 
     def _faceplate_weather_required(self, values):
         """Weather fetching follows Faceplate routes, never LED selection."""
+        pixel = getattr(self, "pixel_clocks", None)
+        if pixel is not None and pixel.present():
+            return True
         if not values.get("faceplate_lab_enabled"):
             return False
         preferences = self.faceplate_preferences.read()
@@ -664,6 +669,7 @@ class Engine:
                 return
             self._stop.clear()
             self.weather.start()
+            self.pixel_clocks.start()
             self.dashboard_stats.start()
             values = self.settings.all()
             self._assistant_wake_allowed = self._assistant_wake_policy(values)
@@ -690,6 +696,8 @@ class Engine:
             self.home_library.stop()
         budget = ShutdownBudget(timeout)
         self._stop.set()
+        if getattr(self, 'pixel_clocks', None) is not None:
+            budget.call(self.pixel_clocks.stop)
         self.faceplate_router.invalidate("plugin-stopped")
         self.countdown.end_action.cancel('plugin-stopped')
         adapter = getattr(self, 'jsaux_broker_adapter', None)
@@ -1696,11 +1704,19 @@ class Engine:
                     return ((cancelled is not None and cancelled.is_set())
                             or self._stop.is_set()
                             or self._faceplate_suspended or self._display_panel_off()
-                            or self.faceplate_router.status()["generation"] != ticket.generation)
+                            or self.faceplate_router.status()["generation"] != ticket.generation
+                            or (payload.get('_pixel_fallback') and
+                                (not self.faceplate_control.permitted() or
+                                 self.pixel_clocks.has_delivery(ticket.context))))
                 result = self.faceplate.synchronize_native_clock(
                     sync_key=ticket.content_key, reason=payload["_upload_reason"],
                     cancelled=native_cancelled,
                 )
+                successful = bool(result.get("synchronized")) and not result.get("error")
+            elif kind == "pixel-clocks":
+                packet = payload["_pixel_packet"]
+                result = self._synchronize_pixel_clocks(packet, ticket, request)
+                self.pixel_clocks.receipt(packet, result)
                 successful = bool(result.get("synchronized")) and not result.get("error")
             elif kind == "clock":
                 result = self._synchronize_clock(payload, ticket, request)
@@ -1934,6 +1950,42 @@ class Engine:
             and self._faceplate_power_target is not True and not self._assistant_holds_matrix()
             and not self._screensaver_owns_matrix())
         return self.clock_runtime.snapshot(selected,context,time.time() if now is None else now,eligible=eligible)
+
+    def _synchronize_pixel_clocks(self, packet, ticket, request):
+        """Admit a prepared native minute packet through the existing sole owner."""
+        from signalbar.faceplate.pixel_clocks_bridge import GIF_LIMIT
+        from signalbar.faceplate.timing import transfer_ms
+        cancelled = request.get('_cancelled')
+        anchor_wall, anchor_mono = time.time(), time.monotonic()
+        def serial_stale():
+            return (bool(cancelled and cancelled.is_set()) or self._stop.is_set()
+                or self._faceplate_suspended or self._display_faceplate_off
+                or self.faceplate_router.status()['generation'] != ticket.generation
+                or not self.faceplate_control.permitted()
+                or not self.pixel_clocks.delivery_current(packet)
+                or abs((time.time()-anchor_wall)-(time.monotonic()-anchor_mono)) > .5)
+        def stale():
+            return bool(serial_stale() or self.pixel_clocks.blocked_reason() or not self.pixel_clocks.current(packet))
+
+        data = packet['data']
+        if stale():return {'superseded':True}
+        size = len(data)
+        if isinstance(self.faceplate,FaceplateCoordinator) and self.faceplate.rotate_180:
+            from signalbar.faceplate.pixel_clocks_gif import rotate
+            data = rotate(data)
+            size = len(data)
+        if size > GIF_LIMIT:return {'error':'Rotated clock exceeds the Faceplate edition limit'}
+        estimate = transfer_ms(size) / 1000
+        deadline = packet['display_at']-estimate
+        if time.time() > deadline+.35:return {'error':'Clock missed transfer window'}
+        self.faceplate_router.mark_prepared(ticket)
+        while time.time()<deadline:
+            if stale():return {'superseded':True}
+            self._stop.wait(min(.05,max(0,deadline-time.time())))
+        if stale() or time.time()>deadline+.35:return {'superseded':True}
+        return self.faceplate.synchronize_scene(data,'clock',packet['sha256'],
+            peak_load=packet['manifest']['peak_load'],reason='clock-minute',cancelled=serial_stale,
+            clock_commit_at=packet['display_at'],prepared_orientation=True)
 
     def _synchronize_clock(self, payload, ticket, request):
         from signalbar.faceplate.timing import SYNC_MAX_BYTES
@@ -3099,7 +3151,7 @@ class Engine:
         # Coalesce before rendering as well as at the serial gate. A periodic
         # telemetry tick must not repeatedly encode a GIF while the shared
         # budget is empty. Explicit/new context requests still reach the gate.
-        if scene not in {"native-clock", "player-city", "clock"} and not force and reason == "periodic" and isinstance(self.faceplate, FaceplateCoordinator):
+        if scene not in {"native-clock", "player-city", "clock", "pixel-clocks"} and not force and reason == "periodic" and isinstance(self.faceplate, FaceplateCoordinator):
             priority = self.faceplate._upload_priority(scene, reason)
             if self.faceplate.flash.delay(priority) > 0:
                 return 0
@@ -3110,7 +3162,7 @@ class Engine:
         if scene != "artwork-dashboard" or not game.running:
             self._faceplate_artwork_dashboard_target_minute = None
             self._faceplate_artwork_dashboard_battery = None
-        if scene not in {"weather", "dashboard", "native-clock", "library", "clock"} and not game.running:
+        if scene not in {"weather", "dashboard", "native-clock", "library", "clock", "pixel-clocks"} and not game.running:
             weather, _, _ = self._faceplate_weather_payload(values, game.running)
             if weather is not None:
                 artwork_revision = weather_artwork_cache_revision(
@@ -3134,7 +3186,22 @@ class Engine:
         background_fingerprint = ''
         background_layout = None
         error = ""
-        if scene == 'clock':
+        if scene == 'pixel-clocks':
+            context = 'game' if game.running else 'home'
+            if self.pixel_clocks.blocked_reason():
+                return 0
+            candidate = self.pixel_clocks.packet_for(context, time.time())
+            if candidate is None:
+                # A finite external GIF must never freeze an obsolete minute.
+                # Keep the user's saved Pixel destination and prepare the MCU's
+                # ticking clock through the same router and sole USB owner.
+                payload.update(kind='native-clock', _pixel_fallback=True)
+                content_key = f"pixel-clocks:fallback:{self._faceplate_native_epoch}:{values.get('faceplate_rotate_180', False)}"
+                metadata['fallback'] = 'native-clock'
+            else:
+                payload['_pixel_packet'] = candidate
+                content_key = 'pixel-clocks:' + candidate['sha256'] + ':' + str(candidate['display_at'])
+        elif scene == 'clock':
             from signalbar.faceplate.clocks import is_night
             context = 'game' if game.running else 'home'
             selected = values.get('faceplate_clock_'+context, '')
@@ -3527,7 +3594,7 @@ class Engine:
             game_running=game.running, content_key=content_key,
             reason=reason, force=force,
         )
-        source_key = None if error or scene == "native-clock" else background_key(payload, ticket.context, game.appid,
+        source_key = None if error or scene in ("native-clock", "pixel-clocks") else background_key(payload, ticket.context, game.appid,
             background_fingerprint, background_layout)
         self._faceplate_extension_target = {'key': source_key, 'context': ticket.context,
             'appid': game.appid, 'generation': ticket.generation}

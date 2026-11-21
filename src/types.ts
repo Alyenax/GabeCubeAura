@@ -536,8 +536,8 @@ export interface Status {
         dashboard: FaceplateDashboardVisualTheme;
       };
       routes: {
-        home: "weather" | "dashboard" | "artwork" | "artwork-dashboard" | "native-clock" | "library" | "clock";
-        game: "dashboard" | "artwork" | "artwork-dashboard" | "weather" | "player-city" | "clock";
+        home: "weather" | "dashboard" | "artwork" | "artwork-dashboard" | "native-clock" | "library" | "clock" | "pixel-clocks";
+        game: "dashboard" | "artwork" | "artwork-dashboard" | "weather" | "player-city" | "clock" | "pixel-clocks";
       };
       context: "home" | "game";
       generation: number;

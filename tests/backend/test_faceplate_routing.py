@@ -31,9 +31,9 @@ class FaceplatePreferencesStoreTests(unittest.TestCase):
     def test_absent_store_has_inert_route_defaults_without_enabling_hardware(self):
         snapshot = self.store.read()
 
-        self.assertEqual(("weather", "dashboard", "native-clock", "artwork", "artwork-dashboard", "library", "clock"), HOME_SCENES)
+        self.assertEqual(("weather", "dashboard", "native-clock", "artwork", "artwork-dashboard", "library", "clock", "pixel-clocks"), HOME_SCENES)
         self.assertEqual(
-            ("dashboard", "artwork", "artwork-dashboard", "weather", "player-city", "clock"),
+            ("dashboard", "artwork", "artwork-dashboard", "weather", "player-city", "clock", "pixel-clocks"),
             GAME_SCENES,
         )
         self.assertEqual(DEFAULT_HOME_SCENE, snapshot.home_scene)
@@ -80,6 +80,18 @@ class FaceplatePreferencesStoreTests(unittest.TestCase):
 
         self.assertEqual(1, self.store.read().revision)
         self.assertEqual("artwork", self.store.read().game_scene)
+
+    def test_pixel_destination_preserves_the_underlying_route_for_stable(self):
+        first = self.store.update(home_scene='weather', game_scene='player-city')
+        pixel = self.store.update(home_scene='pixel-clocks', expected_revision=first.revision)
+        stored = json.loads(self.path.read_text())
+        self.assertEqual(stored['routes'], {'home':'weather','game':'player-city'})
+        self.assertEqual(stored['pixel_clocks'], {'revision':pixel.revision,'home':True})
+        self.assertEqual(self.store.read().home_scene,'pixel-clocks')
+        # Older versions preserve unknown keys while incrementing the revision.
+        stored['revision']+=1;stored['routes']['home']='artwork'
+        self.path.write_text(json.dumps(stored))
+        self.assertEqual(self.store.read().home_scene,'artwork')
 
     def test_context_routes_are_strict_and_independent(self):
         with self.assertRaises(ValueError):

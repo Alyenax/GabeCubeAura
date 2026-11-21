@@ -27,7 +27,7 @@ const descriptions={
 };
 function initial(status:Status):SetupDraft{return{step:'ambiance',preset:choices.some(item=>item[0]===status.display_preset)?status.display_preset as SetupDraft['preset']:'custom',brightness:status.light_bar_day_brightness||15,
   night:status.night_mode_enabled,night_percentage:status.night_mode_brightness||75,city:status.weather_location,
-  faceplate_requested:null,home:'dashboard',game:status.faceplate.routing.routes.game==='clock'?'keep':status.faceplate.routing.routes.game};}
+  faceplate_requested:null,home:'dashboard',game:['clock','pixel-clocks'].includes(status.faceplate.routing.routes.game)?'keep':status.faceplate.routing.routes.game as SetupDraft['game']};}
 
 /** Native setup; temporary bar previews never persist the selected recipe. */
 export function FirstRunOnboarding({status,setStatus,onClose,openBrowser,faceplateOnly=false}:{faceplateOnly?:boolean;status:Status;setStatus:(s:Status)=>void;onClose:()=>void;openBrowser:(url:string)=>void}){

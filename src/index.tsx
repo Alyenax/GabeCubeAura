@@ -43,7 +43,7 @@ import {PlayerCityRowSettings} from './components/PlayerCityRowSettings';
 import {CreationBackupSettings} from './components/CreationBackupSettings';
 import {ConfigurationExportSettings} from './components/ConfigurationExportSettings';
 import {gameDisplayOptions} from './game_display_options';
-import {FACEPLATE_HOME_OPTIONS,FACEPLATE_GAME_OPTIONS,homeFaceChoice,isDashboardChoice} from './faceplate_choices';
+import {FACEPLATE_HOME_OPTIONS,FACEPLATE_GAME_OPTIONS,homeFaceChoice,includeCurrentPixelClock,isDashboardChoice} from './faceplate_choices';
 import { UpdateAvailableButton } from './components/UpdateAvailableButton';
 import { statusRefreshGate } from './status_refresh_gate';
 import {publishQuickSetupStatus,subscribeQuickSetup} from './quick_setup_access';
@@ -3325,8 +3325,8 @@ function Content({ active=true, page: sourcePage = "quick", settingsView, initia
     }
   };
   const changeFaceplateRoute = async (
-    home: "weather" | "dashboard" | "artwork" | "artwork-dashboard" | "native-clock" | "library" | "clock",
-    game: "dashboard" | "artwork" | "artwork-dashboard" | "weather" | "player-city" | "clock",
+    home: "weather" | "dashboard" | "artwork" | "artwork-dashboard" | "native-clock" | "library" | "clock" | "pixel-clocks",
+    game: "dashboard" | "artwork" | "artwork-dashboard" | "weather" | "player-city" | "clock" | "pixel-clocks",
   ) => {
     setFaceplateActionBusy(true); setFaceplateRoutingMessage("");
     try {
@@ -3897,13 +3897,13 @@ function Content({ active=true, page: sourcePage = "quick", settingsView, initia
           <PanelSectionRow><DropdownItem
             label="Faceplate at Home"
             description="Choose your Home background here. Dashboard adds the information configured in the Dashboard tab."
-            rgOptions={FACEPLATE_HOME_OPTIONS}
+            rgOptions={includeCurrentPixelClock(FACEPLATE_HOME_OPTIONS,homeFaceChoice(status))}
             disabled={faceplateActionBusy}
             selectedOption={homeFaceChoice(status)}
             onChange={async (option) => {
               if(option.data==='clock'){openClockPicker(status,setStatus,'home');return;}
               await changeFaceplateRoute(
-                option.data as "weather" | "dashboard" | "artwork" | "artwork-dashboard" | "native-clock" | "library" | "clock",
+                option.data as "weather" | "dashboard" | "artwork" | "artwork-dashboard" | "native-clock" | "library" | "clock" | "pixel-clocks",
                 status.faceplate.routing.routes.game,
               );
             }}
@@ -3929,14 +3929,14 @@ function Content({ active=true, page: sourcePage = "quick", settingsView, initia
           <PanelSectionRow><DropdownItem
             label="Faceplate in game"
             description="Choose your in-game background here. Dashboard adds the information configured in the Dashboard tab."
-            rgOptions={FACEPLATE_GAME_OPTIONS}
+            rgOptions={includeCurrentPixelClock(FACEPLATE_GAME_OPTIONS,status.faceplate.routing.routes.game)}
             disabled={faceplateActionBusy}
             selectedOption={status.faceplate.routing.routes.game}
             onChange={async (option) => {
               if(option.data==='clock'){openClockPicker(status,setStatus,'game');return;}
               await changeFaceplateRoute(
               homeFaceChoice(status),
-              option.data as "dashboard" | "artwork" | "artwork-dashboard" | "weather" | "player-city" | "clock",
+              option.data as "dashboard" | "artwork" | "artwork-dashboard" | "weather" | "player-city" | "clock" | "pixel-clocks",
             );}}
           /></PanelSectionRow>
           {isDashboardChoice(status.faceplate.routing.routes.game) ? <PanelSectionRow><Localized><div role="status" style={{color:'#ffd27a',fontSize:'.85em'}}>

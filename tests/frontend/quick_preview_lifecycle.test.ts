@@ -10,7 +10,7 @@ import {faceplateBrightnessNotice} from '../../src/faceplate_power';
 import {trailingSetting} from '../../src/trailingSetting';
 import {gameDisplayOptions} from '../../src/game_display_options';
 import {homeDisplayOptions} from '../../src/home_display_options';
-import {quickFaceOptions,homeFaceChoice,isDashboardChoice,showArtworkPreparationHint} from '../../src/faceplate_choices';
+import {quickFaceOptions,homeFaceChoice,isDashboardChoice,includeCurrentPixelClock,showArtworkPreparationHint} from '../../src/faceplate_choices';
 
 const source = readFileSync(new URL('../../src/components/CompactQuickPanel.tsx', import.meta.url), 'utf8');
 const componentSource = source.slice(source.indexOf('export function CompactQuickPanel')).replace('export function','function');
@@ -50,6 +50,7 @@ function harness(faceplateControls=false, rejectRoute=false) {
     setGameDisplay:async(appid:number,display:string)=>{displayRequests.push({appid,display});return {game:{appid},current_display:display};},
     trailingSetting:(save:any,delay:number)=>trailingSetting(save,delay,fn=>{const id=++nextJob;trailingJobs.set(id,fn);return id as any;},id=>{trailingJobs.delete(id as any);}),
     reportQuickUI(){},TimerEditor:'timer-editor',CompactLedPreview:'led-preview',
+    PixelClocksIntegration:'pixel-clocks-integration',includeCurrentPixelClock,
     quickPanelState: () => ({faceplateControls}),
     getQuickArtwork: (appid: number) => new Promise(resolve => requests.push({ appid, resolve })),
     Navigation:{CloseSideMenus(){},Navigate(){}},ButtonItem:'dva-launcher',PanelSection:'section-native',PanelSectionRow:'row-native',Field:'field-native',DialogButton:'button',SliderField:'slider',ToggleField:'toggle',QuickInlineChoice:'select',Focusable:'div',Localized:'Localized',

@@ -5,6 +5,9 @@ import { flashProtectionFrench } from "./flash_protection";
 import {auditedFrench} from './audit174';
 import {backendFrench} from './backend_messages';
 const historicalFrench: Readonly<Record<string, string>> = {
+  "Show Pixel Clocks": "Afficher Pixel Clocks",
+  "Applying…": "Application…",
+  "Pixel Clocks": "Pixel Clocks",
   "Without AM/PM": "Sans AM/PM",
   "With AM/PM": "Avec AM/PM",
   "Clock colours": "Couleurs de l’horloge",

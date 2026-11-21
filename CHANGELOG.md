@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.6.2-beta.1
+
+- Added automatic local integration with Pixel Clocks beta 6 Light. Choose where to show Pixel Clocks from either plugin. GabeCubeAura handles Faceplate transfers and shares its weather settings with the clock.
+- Returning to Stable restores the underlying Home and in-game routes. The beta keeps the Light transfer limit at 32,767 bytes and follows the existing Faceplate priority and power settings.
+
 ## 1.6.1 · 2026-11-20
 
 ### JSAUX PIXEL Faceplate compatibility

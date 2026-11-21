@@ -237,6 +237,12 @@ class Plugin:
         await self._shutdown_plugin()
         self.pixel_studio.uninstall()
 
+    async def get_pixel_clocks_state(self):
+        return await asyncio.get_running_loop().run_in_executor(None,self.engine.pixel_clocks.status)
+
+    async def set_pixel_clocks_destinations(self, destination, expected_revision):
+        return await asyncio.get_running_loop().run_in_executor(None,self.engine.pixel_clocks.set_destinations,destination,expected_revision)
+
     async def get_status(self):
         # Status gathers several providers and optional filesystem snapshots.
         # Keep that synchronous work off Decky's asyncio thread so one slow

@@ -18,6 +18,9 @@ export const FACEPLATE_GAME_OPTIONS = [
   {data:'player-city',label:'Steam Players City'},
   ...SHARED_FACEPLATE_OPTIONS,
 ];
+export function includeCurrentPixelClock(options:typeof FACEPLATE_HOME_OPTIONS, selection:string) {
+  return selection==='pixel-clocks'?[...options,{data:'pixel-clocks',label:'Pixel Clocks'}]:options;
+}
 export function homeFaceChoice(status:Status) {
   const route=status.faceplate.routing.routes.home;
   // Preserve existing assignments until the user explicitly selects a new route.

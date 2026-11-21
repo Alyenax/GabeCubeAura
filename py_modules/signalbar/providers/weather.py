@@ -232,7 +232,7 @@ def fetch_current(location, read_json=_read_json):
         ),
         "hourly": "weather_code,temperature_2m,precipitation_probability",
         "timezone": "auto",
-        "daily": "sunrise,sunset,weather_code", "forecast_days": 2,
+        "daily": "sunrise,sunset,weather_code", "forecast_days": 2, "past_days": 1,
     }
     url = "https://api.open-meteo.com/v1/forecast?" + urlencode(parameters)
     payload = read_json(url)
@@ -252,17 +252,23 @@ def fetch_current(location, read_json=_read_json):
     sunset_at = ""
     next_transition_at = ""
     seconds_until_transition = None
+    previous_sunset_at = ""
+    next_sunrise_at = ""
     daily = payload.get("daily")
     if isinstance(daily, dict):
         sunrises = daily.get("sunrise")
         sunsets = daily.get("sunset")
         if isinstance(sunrises, list) and isinstance(sunsets, list):
-            sunrise_at = str(sunrises[0])[:32] if sunrises else ""
-            sunset_at = str(sunsets[0])[:32] if sunsets else ""
             try:
                 observed = datetime.fromisoformat(observed_at)
+                index = next((i for i,value in enumerate(sunrises[:4])
+                              if datetime.fromisoformat(str(value)).date()==observed.date()),0)
+                sunrise_at = str(sunrises[index])[:32] if index<len(sunrises) else ""
+                sunset_at = str(sunsets[index])[:32] if index<len(sunsets) else ""
+                previous_sunset_at = str(sunsets[index-1])[:32] if index>0 else ""
+                next_sunrise_at = str(sunrises[index+1])[:32] if index+1<len(sunrises) else ""
                 transitions = []
-                for value in [*sunrises[:2], *sunsets[:2]]:
+                for value in [*sunrises[:4], *sunsets[:4]]:
                     parsed = datetime.fromisoformat(str(value))
                     if parsed > observed:
                         transitions.append(parsed)
@@ -294,7 +300,8 @@ def fetch_current(location, read_json=_read_json):
     return {"weather_code": code, "is_day": day,
             "condition": condition_for_code(code, day), "temperature_c": temperature,
             "observed_at": observed_at, "sunrise_at": sunrise_at,
-            "sunset_at": sunset_at, "next_solar_transition_at": next_transition_at,
+            "sunset_at": sunset_at, "previous_sunset_at": previous_sunset_at,
+            "next_sunrise_at": next_sunrise_at, "next_solar_transition_at": next_transition_at,
             "seconds_until_solar_transition": seconds_until_transition,
             "timezone": str(payload.get("timezone", ""))[:64],
             "utc_offset_seconds": utc_offset_seconds,
@@ -710,6 +717,8 @@ class WeatherProvider:
                 "observed_at": sample["observed_at"] if sample else "",
                 "sunrise_at": sample.get("sunrise_at", "") if sample else "",
                 "sunset_at": sample.get("sunset_at", "") if sample else "",
+                "previous_sunset_at": sample.get("previous_sunset_at", "") if sample else "",
+                "next_sunrise_at": sample.get("next_sunrise_at", "") if sample else "",
                 "next_solar_transition_at": sample.get("next_solar_transition_at", "") if sample else "",
                 "precipitation_probability": sample.get("precipitation_probability") if sample else None,
                 "next_hour_temperature_c": sample.get("next_hour_temperature_c") if sample else None,

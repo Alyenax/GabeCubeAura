@@ -1,3 +1,4 @@
+import {PixelClocksIntegration} from './PixelClocksIntegration';
 import {ClockCountdowns,openClockPicker} from './FaceplateClocks';
 import {useEffect,useRef,useState} from 'react';
 import {DialogButton,Field,Focusable,Localized,PanelSection,PanelSectionRow,SliderField,TextField,ToggleField} from '../localized_ui';
@@ -6,7 +7,7 @@ import {CompactLedPreview} from './LiveLedPreview';
 import {extendFreeTimer,getQuickArtwork,setFaceplatePower,setFaceplateRouting,setGameDisplay,setLightBarBrightness,setSetting,startFreeTimer,stopFreeTimer} from '../api';
 import {gameDisplayOptions} from '../game_display_options';
 import {homeDisplayOptions} from '../home_display_options';
-import {quickFaceOptions,homeFaceChoice,showArtworkPreparationHint} from '../faceplate_choices';
+import {quickFaceOptions,homeFaceChoice,includeCurrentPixelClock,showArtworkPreparationHint} from '../faceplate_choices';
 
 import {trailingSetting} from '../trailingSetting';
 import {faceplateTransferNotice} from '../faceplate_transfer';
@@ -110,8 +111,8 @@ export function CompactQuickPanel({status,setStatus,colors,onOpenGame,onOpenSett
   const pending=controlsBusy||!status.signalbar_enabled;
   const faceBusy=Boolean(face.busy)||!face.available||pending;
   const french=status.ui_language==='fr';
-  const faceOptions=quickFaceOptions(game,french);
   const faceChoice=quickFaceChoice(status);
+  const faceOptions=includeCurrentPixelClock(quickFaceOptions(game,french),faceChoice);
   const artworkPending=showArtworkPreparationHint(status);
   // Allow the current route to settle before offering creation help. Status
   // refreshes keep the same deadline; closing the panel or changing context cancels it.
@@ -139,7 +140,7 @@ export function CompactQuickPanel({status,setStatus,colors,onOpenGame,onOpenSett
     if(value==='clock'){openClockPicker(latest.current,next=>{if(canUse())setStatus(next);},game?'game':'home');return;}
     if(value==='off'){await update(setFaceplatePower(false));return;}
     let next=latest.current;
-    next=await setFaceplateRouting(game?homeFaceChoice(next):value as Status['faceplate']['routing']['routes']['home'],game?value as 'dashboard'|'weather'|'artwork'|'artwork-dashboard'|'player-city'|'clock':next.faceplate.routing.routes.game,next.faceplate.routing.preference_revision);
+    next=await setFaceplateRouting(game?homeFaceChoice(next):value as Status['faceplate']['routing']['routes']['home'],game?value as 'dashboard'|'weather'|'artwork'|'artwork-dashboard'|'player-city'|'clock'|'pixel-clocks':next.faceplate.routing.routes.game,next.faceplate.routing.preference_revision);
     if(!canUse())return;
     if(next.faceplate.powered===false)next=await setFaceplatePower(true);
     if(canUse())setStatus(next);
@@ -179,7 +180,7 @@ export function CompactQuickPanel({status,setStatus,colors,onOpenGame,onOpenSett
       {status.countdown.active&&status.countdown.source==='parental'?<Localized><small>Steam Families limit takes priority.</small></Localized>:null}
       {error&&errorAction==='timer'?<Localized><small className="gca-compact-action-error" role="alert">{error}</small></Localized>:null}
     </PanelSectionRow></PanelSection></section>
-    {quickPanelState(status).faceplateControls?<section className="gca-compact-faceplate"><PanelSection title="JSAUX"><PanelSectionRow><QuickInlineChoice label="JSAUX screen" rgOptions={faceOptions} selectedOption={faceChoice} disabled={faceBusy}
+    {quickPanelState(status).faceplateControls?<section className="gca-compact-faceplate"><PanelSection title="JSAUX"><PixelClocksIntegration active={active} french={french}/><PanelSectionRow><QuickInlineChoice label="JSAUX screen" rgOptions={faceOptions} selectedOption={faceChoice} disabled={faceBusy}
       onMenuWillOpen={()=>reportQuickUI('faceplate','opening')}
       onMenuOpened={()=>reportQuickUI('faceplate','opened')}
       onChange={option=>{if(!canUse())return;const value=String(option.data);reportQuickUI('faceplate','selected',value);void run(()=>selectFace(value),'faceplate',value);}}/>

@@ -107,8 +107,8 @@ export const sendDiagnosticReport = callable<[], DiagnosticStatus>("send_diagnos
 export const setFaceplatePower = callable<[enabled: boolean], Status>("set_faceplate_power");
 export const resumeFaceplate = callable<[], Status>("resume_faceplate");
 export const setFaceplateRouting = callable<[
-  homeScene: "weather" | "dashboard" | "artwork" | "artwork-dashboard" | "native-clock" | "library" | "clock",
-  gameScene: "dashboard" | "artwork" | "artwork-dashboard" | "weather" | "player-city" | "clock",
+  homeScene: "weather" | "dashboard" | "artwork" | "artwork-dashboard" | "native-clock" | "library" | "clock" | "pixel-clocks",
+  gameScene: "dashboard" | "artwork" | "artwork-dashboard" | "weather" | "player-city" | "clock" | "pixel-clocks",
   expectedRevision: number,
 ], Status>("set_faceplate_routing");
 export const setFaceplateVisualTheme = callable<[

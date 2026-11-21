@@ -280,6 +280,8 @@
   "py_modules/signalbar/faceplate/home_library.py",
   "py_modules/signalbar/faceplate/library.py",
   "py_modules/signalbar/faceplate/performance_policy.py",
+  "py_modules/signalbar/faceplate/pixel_clocks_bridge.py",
+  "py_modules/signalbar/faceplate/pixel_clocks_gif.py",
   "py_modules/signalbar/faceplate/player_city.py",
   "py_modules/signalbar/faceplate/player_city_animation.py",
   "py_modules/signalbar/faceplate/player_city_row.py",

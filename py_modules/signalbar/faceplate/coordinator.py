@@ -1478,7 +1478,7 @@ class FaceplateCoordinator(ContinuousReturn):
 
     def synchronize_scene(self, data: bytes, scene: str, signature: str,
                           peak_load=POWER_BUDGET, reason="scene", cancelled=None,
-                          delegated=False, power_profile=None):
+                          delegated=False, power_profile=None, clock_commit_at=None, prepared_orientation=False):
         """Upload one already-rendered scene through the sole serial owner.
 
         Rendering and route decisions happen outside this coordinator.  The
@@ -1488,7 +1488,7 @@ class FaceplateCoordinator(ContinuousReturn):
         data = bytes(data)
         # The generated test motif is symmetric. Re-encoding it would
         # normalize its GIF sub-blocks and lose the exact test length.
-        if not delegated and scene != "gif-size-test":
+        if not delegated and not prepared_orientation and scene != "gif-size-test":
             data = self._orient_gif(data, max_frames=1024 if scene == "clock" else 192)
         # The saved brightness is the command. No media decode, RGB profile
         # lookup or unknown-content dimming runs on this delivery path.
@@ -1544,7 +1544,7 @@ class FaceplateCoordinator(ContinuousReturn):
                     and not self._screensaver_exit_blank
                     and not self._delegated_gif_activation_pending
                     and self._native_attempt is None and not self._continuous_return)
-                retained = None if delegated or scene in ("player-city", "gif-size-test") else self._retained_restore(data, token)
+                retained = None if delegated or scene in ("player-city", "gif-size-test") or clock_commit_at is not None else self._retained_restore(data, token)
                 if retained:
                     return retained
                 if token != self.device_token:
@@ -1567,9 +1567,17 @@ class FaceplateCoordinator(ContinuousReturn):
                         and getattr(link, 'transport_profile', '') == 'baseline')
                     if not keep_clock_running:
                         self._begin_scene_power(link)
+                    if clock_commit_at is not None:
+                        if scene != 'clock' or not isinstance(clock_commit_at,(float,int)) or not math.isfinite(clock_commit_at):
+                            raise ValueError('Invalid scheduled clock commit')
+                        link.clock_commit_at = float(clock_commit_at)
+                        link.clock_commit_valid = lambda: not (callable(cancelled) and cancelled())
                     try:
                         wrote = self._send_protected(link, data, scene=scene, reason=reason, cancelled=cancelled)
                     finally:
+                        if clock_commit_at is not None:
+                            link.clock_commit_at = None
+                            link.clock_commit_valid = None
                         self.last_transfer = dict(
                             getattr(link, "last_transfer_timings", {}) or {},
                         )

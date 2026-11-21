@@ -1,6 +1,6 @@
 # Passerelle locale Pixel Clocks
 
-GabeCubeAura 1.6.2-beta.1 reprend la stable 1.6.1 Light et ajoute la passerelle pour Pixel Clocks beta 6 Light. Installe les deux versions et choisis le pilotage Automatique dans Pixel Clocks. Dans les réglages Faceplate de GCA, le suivi doit être activé et la priorité doit laisser GCA piloter l’écran.
+GabeCubeAura 1.6.2-beta.2 est compatible avec Pixel Clocks beta 6 Light en pilotage Automatique. Dans les réglages Faceplate de GCA, le suivi doit être activé et la priorité doit laisser GCA piloter l’écran.
 
 ## Parcours Decky
 
@@ -59,7 +59,7 @@ Le compagnon prépare un GIF fini de 64 × 54, de 32 767 octets maximum en Light
 
 GCA conserve son worker et son unique coordinateur série. Les paquets sont rejetés s’ils visent un ancien contexte, une ancienne route, un ancien modèle, une ancienne ville ou une ancienne session. La rotation à 180° conserve les pixels et les délais décodés, avec le même plafond d’octets.
 
-Si le compagnon est absent, si son bail expire ou si le dernier paquet finit sans remplacement, le worker active l’horloge native de secours sans modifier les destinations enregistrées. Une nouvelle minute valide reprend automatiquement la route Pixel. Les priorités et l’écran éteint bloquent ce secours. Limite existante de l’horloge native : elle ne gère pas la rotation 180°. Dans cette orientation, le secours échoue explicitement (`fallback-failed`) et aucun affichage n’est déclaré confirmé ; désactiver la rotation permet le secours natif. Le statut distingue `selected_for_context` (choix enregistré), `active` (paquet Pixel disponible) et `fallback-pending`/`fallback-clock` ; aucun SHA Pixel confirmé n’est annoncé pendant le secours.
+Pendant la préparation d’un GIF et tant que la liaison est active, le worker laisse l’écran courant. Si la liaison expire ou que le dernier GIF confirmé se termine sans remplacement, le worker reprend la scène GCA précédemment choisie pour le contexte. Les destinations Pixel restent enregistrées. Une nouvelle minute valide reprend automatiquement la route Pixel. Les priorités et l’écran éteint restent pris en compte. Le statut distingue `awaiting-packet` pendant la préparation, puis `fallback-route-pending` (ou `fallback-pending` pour l’horloge native) et `fallback-route` si un repli est nécessaire.
 
 Les données sont envoyées avant la frontière de minute ; seule cette nouvelle route peut demander à la couche série d'attendre `display_at` avant `GIF_END`. L'attente contrôle l'annulation toutes les 20 ms. Une priorité, un changement de contexte/route/modèle, un arrêt, une perte de session ou un saut d'horloge annule le commit ; un créneau dépassé de plus de 350 ms est refusé. Ce contrat vise la commande hôte ; le délai physique du firmware reste à mesurer.
 

@@ -797,6 +797,10 @@ class Engine:
                 self._refresh_launch_palettes(self._game.appid)
                 self.launch_artwork.arm(self._game.appid)
         if changed:
+            previous_context = 'game' if previous_appid else 'home'
+            if self.faceplate_preferences.read().scene_for(previous_context) == 'pixel-clocks':
+                self.faceplate_router.invalidate('pixel-clocks-context-changed')
+                self.faceplate_worker.cancel_scene_class('pixel-clocks')
             if appid and getattr(self,'assistant',None): self.assistant.remember_game(appid)
             # Gamescope replaces/reconfigures its PipeWire producer across game
             # transitions.  Tear the old gst-launch process down synchronously
@@ -1705,9 +1709,7 @@ class Engine:
                             or self._stop.is_set()
                             or self._faceplate_suspended or self._display_panel_off()
                             or self.faceplate_router.status()["generation"] != ticket.generation
-                            or (payload.get('_pixel_fallback') and
-                                (not self.faceplate_control.permitted() or
-                                 self.pixel_clocks.has_delivery(ticket.context))))
+                            or self._pixel_fallback_superseded(payload, ticket))
                 result = self.faceplate.synchronize_native_clock(
                     sync_key=ticket.content_key, reason=payload["_upload_reason"],
                     cancelled=native_cancelled,
@@ -1734,7 +1736,8 @@ class Engine:
                     return ((cancelled is not None and cancelled.is_set())
                             or self._stop.is_set() or self._faceplate_suspended
                             or self._display_panel_off()
-                            or self.faceplate_router.status()["generation"] != ticket.generation)
+                            or self.faceplate_router.status()["generation"] != ticket.generation
+                            or self._pixel_fallback_superseded(payload, ticket))
                 if dashboard_cancelled():
                     return {"attempted": False, "superseded": True, "cancelled_before_serial": True}
                 prepared = self._dashboard_background(
@@ -1996,7 +1999,8 @@ class Engine:
                 or self._faceplate_suspended or self._display_faceplate_off
                 or self.faceplate_router.status()['generation'] != ticket.generation
                 or abs((time.time()-anchor_wall)-(time.monotonic()-anchor_mono))>.5
-                or not self.faceplate_control.permitted())
+                or not self.faceplate_control.permitted()
+                or self._pixel_fallback_superseded(payload, ticket))
         if stale(): return {'superseded':True}
         data, manifest = self._render_faceplate_scene(payload,ticket)
         if not 0 < len(data) <= SYNC_MAX_BYTES:
@@ -2045,7 +2049,12 @@ class Engine:
             keywords["reason"] = payload.get("_upload_reason") or "artwork"
             # Serial callbacks may only read events/route state, never acquire
             # the engine or settings locks.
-            keywords['cancelled'] = lambda: bool(cancelled and cancelled.is_set()) or self._stop.is_set() or self._faceplate_suspended or self._display_faceplate_off or self.faceplate_router.status()['generation'] != ticket.generation
+            keywords['cancelled'] = lambda: (
+                bool(cancelled and cancelled.is_set()) or self._stop.is_set()
+                or self._faceplate_suspended or self._display_faceplate_off
+                or self.faceplate_router.status()['generation'] != ticket.generation
+                or self._pixel_fallback_superseded(payload, ticket)
+            )
         if getattr(self.faceplate, 'supports_source_projection_callback', False) is True:
             def source_ready(original):
                 self.faceplate_router.mark_prepared(ticket)
@@ -2227,6 +2236,14 @@ class Engine:
                 and source.get('background_key') == target.get('key')))
         return state
 
+    def _pixel_fallback_superseded(self, payload, ticket):
+        return bool(payload.get('_pixel_fallback') and (
+            ticket.context != ('game' if self._game.running else 'home')
+            or not self.faceplate_control.permitted()
+            or self.pixel_clocks.has_delivery(ticket.context)
+            or not self.pixel_clocks.restore_saved_route(time.time())
+        ))
+
     def _synchronize_faceplate_handoff(self, data, kind, manifest, ticket, request):
         """Restore the current full animation once, without an extra flash write."""
         cancelled = request.get('_cancelled')
@@ -2234,6 +2251,11 @@ class Engine:
         if kind == 'player-city':
             payload_appid = request['payload']['appid']
             check = lambda: bool(cancelled and cancelled.is_set()) or self._stop.is_set() or self._faceplate_suspended or self._display_faceplate_off or self._game.appid != payload_appid or self.faceplate_router.status()['generation'] != ticket.generation
+        elif (payload := request.get('payload', {})).get('_pixel_fallback'):
+            check = lambda: (bool(cancelled and cancelled.is_set()) or self._stop.is_set()
+                or self._faceplate_suspended or self._display_faceplate_off
+                or self.faceplate_router.status()['generation'] != ticket.generation
+                or self._pixel_fallback_superseded(payload, ticket))
         if not self.faceplate_router.mark_prepared(ticket):
             return {'attempted': False, 'superseded': True}
         reason = str((request.get('metadata') or {}).get('reason', kind))
@@ -3138,7 +3160,22 @@ class Engine:
         with self._lock:
             game = self._game
         preferences = self.faceplate_preferences.read()
-        scene = preferences.scene_for("game" if game.running else "home")
+        context = "game" if game.running else "home"
+        scene = preferences.scene_for(context)
+        candidate = None
+        pixel_unavailable = False
+        if scene == 'pixel-clocks':
+            if self.pixel_clocks.blocked_reason():
+                return 0
+            now = time.time()
+            candidate = self.pixel_clocks.packet_for(context, now)
+            if candidate is None:
+                pixel_unavailable = self.pixel_clocks.restore_saved_route(now)
+                if not pixel_unavailable:
+                    self.faceplate_router.reconcile(game_running=game.running,
+                        content_key='pixel-clocks:waiting', reason='pixel-clocks-awaiting-packet')
+                    return 0
+                scene = preferences.underlying_scene_for(context)
         if scene != 'clock' and self.clock_runtime.key is not None:
             self.clock_runtime.invalidate('Clock route inactive')
             self.faceplate_worker.cancel_scene_class('clock')
@@ -3183,24 +3220,15 @@ class Engine:
                     )
         payload = {"kind": scene, "visual_theme": visual_theme}
         metadata = {"reason": str(reason)[:96], "scene_class": scene}
+        if pixel_unavailable:
+            payload['_pixel_fallback'] = True
+            metadata.update(scene_class='pixel-clocks', fallback=scene)
         background_fingerprint = ''
         background_layout = None
         error = ""
-        if scene == 'pixel-clocks':
-            context = 'game' if game.running else 'home'
-            if self.pixel_clocks.blocked_reason():
-                return 0
-            candidate = self.pixel_clocks.packet_for(context, time.time())
-            if candidate is None:
-                # A finite external GIF must never freeze an obsolete minute.
-                # Keep the user's saved Pixel destination and prepare the MCU's
-                # ticking clock through the same router and sole USB owner.
-                payload.update(kind='native-clock', _pixel_fallback=True)
-                content_key = f"pixel-clocks:fallback:{self._faceplate_native_epoch}:{values.get('faceplate_rotate_180', False)}"
-                metadata['fallback'] = 'native-clock'
-            else:
-                payload['_pixel_packet'] = candidate
-                content_key = 'pixel-clocks:' + candidate['sha256'] + ':' + str(candidate['display_at'])
+        if candidate is not None:
+            payload['_pixel_packet'] = candidate
+            content_key = 'pixel-clocks:' + candidate['sha256'] + ':' + str(candidate['display_at'])
         elif scene == 'clock':
             from signalbar.faceplate.clocks import is_night
             context = 'game' if game.running else 'home'
@@ -3592,8 +3620,11 @@ class Engine:
             force = True
         ticket = self.faceplate_router.reconcile(
             game_running=game.running, content_key=content_key,
-            reason=reason, force=force,
+            reason=reason, force=force, pixel_unavailable=pixel_unavailable,
         )
+        if ticket.scene != scene:
+            self._faceplate_next_reconcile = 0.
+            return 0
         source_key = None if error or scene in ("native-clock", "pixel-clocks") else background_key(payload, ticket.context, game.appid,
             background_fingerprint, background_layout)
         self._faceplate_extension_target = {'key': source_key, 'context': ticket.context,

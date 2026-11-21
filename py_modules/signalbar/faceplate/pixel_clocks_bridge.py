@@ -62,6 +62,7 @@ class PixelClocksBridge:
         self.previous={};self.weather_revision=0;self.packets=[];self.receipts=OrderedDict()
         self.server=None;self.thread=None;self.start_error=''
         self.last_sha='';self.confirmed_sha='';self.last_result='idle'
+        self.confirmed_until = None
         self.weather_identity=None
         self.slots=threading.BoundedSemaphore(2)
 
@@ -135,23 +136,39 @@ class PixelClocksBridge:
             self._expire();weather=self.weather();p,routes=self._routes();context='game' if self.engine._game.running else 'home'
             route=self.engine.faceplate_router.status()
             selected=routes[context]==SCENE
-            fallback=selected and self.packet_for(context,self.wall()) is None
-            active=selected and not fallback
+            now=self.wall()
+            packet=self.packet_for(context,now) if selected else None
+            active=packet is not None
+            fallback=selected and packet is None and self.restore_saved_route(now)
+            fallback_scene=p.underlying_scene_for(context) if fallback else None
             blocked=self.blocked_reason()
-            fallback_failed=bool(fallback and route.get('preparation',{}).get('state') in ('error','unconfirmed'))
-            fallback_confirmed=bool(fallback and route.get('context')==context and route.get('preference_revision')==p.revision and str(route.get('effective_content_key','')).startswith('pixel-clocks:fallback:') and route.get('effective_content_key')==route.get('desired_content_key'))
+            fallback_current=(fallback and route.get('context')==context
+                and route.get('preference_revision')==p.revision
+                and route.get('desired_scene')==fallback_scene)
+            if fallback_current and route.get('preparation',{}).get('state') in ('error','unconfirmed'):
+                fallback_state='fallback-failed'
+            elif (fallback_current and route.get('effective_scene')==fallback_scene
+                    and route.get('effective_content_key')==route.get('desired_content_key')):
+                fallback_state='fallback-route'
+            else:
+                fallback_state='fallback-pending' if fallback_scene=='native-clock' else 'fallback-route-pending'
             confirmed=bool(not blocked and active and route.get('context')==context and route.get('preference_revision')==p.revision and route.get('effective_scene')==SCENE and route.get('effective_content_key')==route.get('desired_content_key') and self.confirmed_sha)
             return dict(protocol=PROTOCOL,version=VERSION,boot_id=self.boot_id,revision=p.revision,
                 weather_revision=self.weather_revision,routes=routes,destination=self.destination(routes),
                 context=context,present=self.present(),compatible=self.present(),selected_model=self.model,blocked_reason=blocked,
-                active=active,selected_for_context=selected,fallback='native-clock' if fallback else None,owner='GabeCubeAura',standalone_allowed=False,
-                state='overridden' if selected and blocked else ('fallback-failed' if fallback_failed else 'fallback-clock' if fallback_confirmed else 'fallback-pending') if fallback else 'disconnected' if not self.present() else 'inactive' if not active else 'display-confirmed' if confirmed else self.last_result,
+                active=active,selected_for_context=selected,fallback=fallback_scene,owner='GabeCubeAura',standalone_allowed=False,
+                state='overridden' if selected and blocked else fallback_state if fallback else 'disconnected' if not self.present() else 'awaiting-packet' if selected and not active else 'inactive' if not active else 'display-confirmed' if confirmed else self.last_result,
                 desired_scene=route.get('desired_scene'),effective_scene=route.get('effective_scene'),
                 preparation=route.get('preparation'),accepted_sha256=self.last_sha,
                 confirmed_sha256=self.confirmed_sha if confirmed else '',weather=weather,
                 source_error=self.start_error,needs_weather=not bool(self.engine.settings.all().get('weather_location')),
                 can_adopt_local=not self.previous and self.destination(routes)=='none',
                 max_gif_bytes=GIF_LIMIT,next_minute_at=(math.floor(self.wall()/60)+1)*60)
+
+    def restore_saved_route(self, now):
+        # A live producer may be rendering the next minute. Only restore GCA's
+        # route on lease loss or once a confirmed GIF has run its full lifetime.
+        return not self.present() or (self.confirmed_until is not None and now >= self.confirmed_until)
 
     def set_destinations(self,destination,expected_revision):
         with self.lock:
@@ -317,6 +334,7 @@ class PixelClocksBridge:
             if not self.current(packet):return
             if result.get('synchronized') and not result.get('error'):
                 self.confirmed_sha=packet['sha256'];self.last_result='display-confirmed'
+                self.confirmed_until=packet['end_at']
             else:self.last_result='unconfirmed' if result.get('sent_unconfirmed') else 'failed'
 
     def start(self):

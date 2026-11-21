@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.6.2-beta.2
+
+- Keep the current Faceplate display while Pixel Clocks prepares the next GIF. When the link expires or a confirmed GIF ends without a replacement, use the saved GabeCubeAura scene for that context.
+- Cancel pending Pixel Clocks transfers on a Steam game change. Leaving a game with Dashboard Weather set for Home goes back to that dashboard.
+
 ## 1.6.2-beta.1
 
 - Added automatic local integration with Pixel Clocks beta 6 Light. Choose where to show Pixel Clocks from either plugin. GabeCubeAura handles Faceplate transfers and shares its weather settings with the clock.

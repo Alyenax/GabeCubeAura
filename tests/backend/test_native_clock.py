@@ -153,14 +153,14 @@ class NativeSceneTests(unittest.TestCase):
         self.assertEqual(self.engine.faceplate_router.status()['effective_scene'], 'native-clock')
         self.assertTrue(self.engine._onboarding_recovery_blocked)
 
-    def test_pixel_clock_missing_expired_and_reconnected_use_reversible_native_backup(self):
+    def test_pixel_clock_uses_native_backup_only_when_that_is_the_saved_route(self):
         self.prefs.update(home_scene='pixel-clocks')
         before=self.prefs.read()
         bridge=self.engine.pixel_clocks
         self.engine._reconcile_faceplate('pixel-missing')
         self.assertEqual(1,len(self.activations()))
         snapshot=bridge.status()
-        self.assertEqual('fallback-clock',snapshot['state']);self.assertFalse(snapshot['active'])
+        self.assertEqual('fallback-route',snapshot['state']);self.assertFalse(snapshot['active'])
         self.assertEqual('',snapshot['confirmed_sha256']);self.assertTrue(snapshot['selected_for_context'])
         self.engine._reconcile_faceplate('pixel-still-missing')
         self.assertEqual(1,len(self.activations()))
@@ -170,7 +170,7 @@ class NativeSceneTests(unittest.TestCase):
         packet=dict(context='home',revision=before.revision,client=bridge.client,model='mario',weather_revision=bridge.weather_revision,display_at=now-76,end_at=now-1,sha256='a'*64)
         bridge.packets=[packet]
         self.engine._reconcile_faceplate('pixel-expired')
-        self.assertEqual('fallback-clock',bridge.status()['state']);self.assertEqual(1,len(self.activations()))
+        self.assertEqual('awaiting-packet',bridge.status()['state']);self.assertEqual(1,len(self.activations()))
         # A fresh packet immediately returns through the normal Pixel worker.
         bridge.packets=[dict(packet,display_at=now+60,end_at=now+136)]
         data=encode_frame(bytes([1,2,3])*3456)
@@ -183,8 +183,75 @@ class NativeSceneTests(unittest.TestCase):
         bridge.seen=bridge.clock()-9
         self.engine._reconcile_faceplate('pixel-lease-expired')
         self.assertEqual(2,len(self.activations()))
-        self.assertEqual('fallback-clock',bridge.status()['state'])
+        self.assertEqual('fallback-route',bridge.status()['state'])
         self.assertEqual(before,self.prefs.read())
+
+    def test_exit_from_pixel_game_goes_directly_to_home_weather_dashboard(self):
+        self.prefs.update(home_scene='dashboard', game_scene='artwork')
+        self.prefs.update(game_scene='pixel-clocks')
+        self.engine._game=GameState(620,'Fixture')
+        bridge=self.engine.pixel_clocks
+        bridge.client='test-client';bridge.model='stardew-hud'
+        bridge.seen=bridge.clock();bridge.seen_wall=bridge.wall()
+        self.engine._reconcile_faceplate('periodic')
+        self.assertEqual(bridge.status()['state'],'awaiting-packet')
+        self.assertEqual([], self.activations())
+        with patch('signalbar.faceplate.transport.time.sleep'):
+            self.engine.set_game(0)
+        self.engine.faceplate_worker.cancel_scene_class.assert_called_with('pixel-clocks')
+        route=self.engine.faceplate_router.status()
+        self.assertEqual((route['context'],route['effective_scene']),('home','dashboard'))
+        self.assertEqual([], self.activations())
+        self.assertEqual(self.prefs.read().game_scene,'pixel-clocks')
+
+    def test_missing_pixel_restores_the_saved_weather_dashboard_once(self):
+        self.prefs.update(home_scene='dashboard')
+        self.prefs.update(home_scene='pixel-clocks')
+        bridge=self.engine.pixel_clocks
+        bridge.client='test-client';bridge.seen=bridge.clock();bridge.seen_wall=bridge.wall()
+        bridge.confirmed_until=bridge.wall()+16
+        self.engine._reconcile_faceplate('periodic')
+        self.assertEqual([], self.calls)
+        self.assertEqual(bridge.status()['state'],'awaiting-packet')
+        bridge.confirmed_until=bridge.wall()-1
+        with patch('signalbar.faceplate.transport.time.sleep'):
+            self.engine._reconcile_faceplate('periodic')
+            self.engine._reconcile_faceplate('periodic')
+        self.assertEqual([], self.activations())
+        self.assertEqual('dashboard',self.engine.faceplate_router.status()['effective_scene'])
+        self.assertEqual('fallback-route',bridge.status()['state'])
+        self.assertEqual('dashboard',bridge.status()['fallback'])
+        self.assertEqual(self.prefs.read().home_scene,'pixel-clocks')
+
+    def test_pixel_stays_selected_on_both_sides_of_game_exit(self):
+        self.prefs.update(home_scene='dashboard', game_scene='artwork')
+        self.prefs.update(home_scene='pixel-clocks', game_scene='pixel-clocks')
+        self.engine._game=GameState(620,'Fixture')
+        bridge=self.engine.pixel_clocks
+        bridge.client='test-client';bridge.seen=bridge.clock();bridge.seen_wall=bridge.wall()
+        bridge.confirmed_until=bridge.wall()+16
+        self.engine._reconcile_faceplate('periodic')
+        self.engine.set_game(0)
+        self.engine._reconcile_faceplate('periodic')
+        self.assertEqual([], self.calls)
+        self.assertEqual([], self.engine.faceplate_worker.submit.call_args_list)
+        self.assertEqual('awaiting-packet',bridge.status()['state'])
+        self.assertEqual('home',bridge.status()['context'])
+        self.assertEqual('both',bridge.status()['destination'])
+
+    def test_queued_fallback_cannot_write_after_pixel_reconnects(self):
+        self.prefs.update(home_scene='dashboard')
+        self.prefs.update(home_scene='pixel-clocks')
+        self.engine.faceplate_worker.submit.side_effect=None
+        self.engine.faceplate_worker.submit.return_value=1
+        self.engine._reconcile_faceplate('disconnected')
+        _, payload, metadata = self.engine.faceplate_worker.submit.call_args.args
+        self.assertEqual('dashboard',payload['kind'])
+        bridge=self.engine.pixel_clocks
+        bridge.client='test-client';bridge.seen=bridge.clock();bridge.seen_wall=bridge.wall()
+        self.dispatch('', payload, metadata)
+        self.assertEqual([],self.calls)
+        self.assertEqual('awaiting-packet',bridge.status()['state'])
 
     def test_pixel_backup_does_not_preempt_priority_or_explicit_display_off(self):
         self.prefs.update(home_scene='pixel-clocks')

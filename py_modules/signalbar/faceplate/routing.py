@@ -134,6 +134,8 @@ class FaceplateRoutingPreferences:
     # this same atomic document as their routes, never in a second write.
     performance_consent: Optional[str] = None
     schema: int = PREFERENCES_SCHEMA
+    underlying_home: Optional[str] = None
+    underlying_game: Optional[str] = None
 
     def scene_for(self, context: str) -> str:
         context = str(context or "").strip().lower()
@@ -142,6 +144,14 @@ class FaceplateRoutingPreferences:
         if context == "game":
             return self.game_scene
         raise ValueError(f"invalid faceplate context {context!r}")
+
+    def underlying_scene_for(self, context: str) -> str:
+        current = self.scene_for(context)
+        if current != 'pixel-clocks':
+            return current
+        if context == 'home':
+            return self.underlying_home or DEFAULT_HOME_SCENE
+        return self.underlying_game or DEFAULT_GAME_SCENE
 
     @property
     def visual_theme(self) -> str:
@@ -223,6 +233,8 @@ class FaceplatePreferencesStore:
         # rejected by update() and cannot resurrect the retired writer.
         home_scene = _validate_scene("home", "dashboard" if routes.get("home") == "performance" else routes.get("home"))
         game_scene = _validate_scene("game", "dashboard" if routes.get("game") == "performance" else routes.get("game"))
+        underlying_home = home_scene if home_scene != 'pixel-clocks' else None
+        underlying_game = game_scene if game_scene != 'pixel-clocks' else None
         # Older releases can load the ordinary routes in the same document.
         # A route write from an older release invalidates the old Pixel selection.
         pixel = payload.get('pixel_clocks')
@@ -260,6 +272,8 @@ class FaceplatePreferencesStore:
             revision=revision,
             home_scene=home_scene,
             game_scene=game_scene,
+            underlying_home=underlying_home if home_scene == 'pixel-clocks' else None,
+            underlying_game=underlying_game if game_scene == 'pixel-clocks' else None,
             weather_visual_theme=weather_visual_theme,
             dashboard_visual_theme=dashboard_visual_theme,
             performance_visual_theme=performance_visual_theme,
@@ -499,6 +513,7 @@ class FaceplateSceneRouter:
         reason: str = "context",
         force: bool = False,
         transient_scene: str = "",
+        pixel_unavailable: bool = False,
     ) -> FaceplateSceneTicket:
         """Resolve the selected route and create work only when it changed.
 
@@ -512,6 +527,8 @@ class FaceplateSceneRouter:
         if transient_scene and transient_scene != "cinema":
             raise ValueError("Unknown temporary Faceplate route")
         scene = transient_scene or snapshot.scene_for(context)
+        if pixel_unavailable and scene == 'pixel-clocks':
+            scene = snapshot.underlying_scene_for(context)
         if transient_scene:
             context = "cinema"
         key = str(content_key or "")
